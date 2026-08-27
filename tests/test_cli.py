@@ -59,6 +59,8 @@ class EasyPrentCliTests(unittest.TestCase):
             cli, "restart_server", return_value=0
         ) as restart_mock, mock.patch.object(cli, "run_command", return_value=0) as run_command_mock, mock.patch.object(
             cli.subprocess, "run", return_value=completed
+        ), mock.patch.object(
+            cli, "systemd_service_is_running", return_value=False
         ):
             exit_code = cli.update_project()
 
@@ -78,8 +80,29 @@ class EasyPrentCliTests(unittest.TestCase):
             cli, "run_command", return_value=0
         ) as run_command_mock, mock.patch("shutil.which", return_value=None), mock.patch.object(
             cli.subprocess, "run", return_value=completed
+        ), mock.patch.object(
+            cli, "systemd_service_is_running", return_value=False
         ):
             exit_code = cli.update_project()
 
         self.assertEqual(exit_code, 0)
         run_command_mock.assert_called_once_with(["git", "pull", "--ff-only"])
+
+    def test_update_restarts_active_systemd_service(self) -> None:
+        completed = mock.Mock(returncode=0)
+        with mock.patch.object(cli, "running_pid", return_value=None), mock.patch.object(
+            cli, "systemd_service_is_running", return_value=True
+        ), mock.patch.object(cli, "restart_server") as restart_mock, mock.patch.object(
+            cli, "run_command", return_value=0
+        ) as run_command_mock, mock.patch.object(cli.subprocess, "run", return_value=completed):
+            exit_code = cli.update_project()
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(
+            run_command_mock.call_args_list,
+            [
+                mock.call(["git", "pull", "--ff-only"]),
+                mock.call(["systemctl", "restart", "easy-prent.service"]),
+            ],
+        )
+        restart_mock.assert_not_called()

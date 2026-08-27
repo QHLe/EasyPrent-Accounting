@@ -13,6 +13,9 @@ from pathlib import Path
 from .server import DEFAULT_PORT
 
 
+SYSTEMD_SERVICE_NAME = "easy-prent.service"
+
+
 def resolve_project_root() -> Path:
     env_root = os.environ.get("EASY_REM_ROOT")
     if env_root:
@@ -164,8 +167,20 @@ def run_command(command: list[str]) -> int:
     return completed.returncode
 
 
+def systemd_service_is_running() -> bool:
+    if shutil.which("systemctl") is None:
+        return False
+    completed = subprocess.run(
+        ["systemctl", "is-active", "--quiet", SYSTEMD_SERVICE_NAME],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    return completed.returncode == 0
+
+
 def update_project() -> int:
     was_running = running_pid() is not None
+    systemd_service_was_running = systemd_service_is_running()
     git_check = subprocess.run(
         ["git", "rev-parse", "--is-inside-work-tree"],
         cwd=project_root(),
@@ -195,6 +210,10 @@ def update_project() -> int:
     if requirements.exists() and venv_pip.exists():
         if run_command([str(venv_pip), "install", "-r", str(requirements)]) != 0:
             return 1
+
+    if systemd_service_was_running:
+        print("Systemd-Dienst war aktiv und wird neu gestartet.")
+        return run_command(["systemctl", "restart", SYSTEMD_SERVICE_NAME])
 
     if was_running:
         print("Server war aktiv und wird neu gestartet.")
