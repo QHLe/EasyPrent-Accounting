@@ -1022,6 +1022,22 @@
       });
     }
 
+    function setUnitBuildingId(value) {
+      const building = (overview && overview.buildings ? overview.buildings : []).find(function (entry) {
+        return String(entry.id) === String(value);
+      });
+      setForms(function (current) {
+        return Object.assign({}, current, {
+          unit: Object.assign({}, current.unit, {
+            building_id: value,
+            street: building ? building.street || "" : "",
+            city: building ? building.city || "" : "",
+            postal_code: building ? building.postal_code || "" : "",
+          }),
+        });
+      });
+    }
+
     function setLeaseUnitId(value) {
       setForms(function (current) {
         const selectedRoom = (overview && overview.rooms ? overview.rooms : []).find(function (room) {
@@ -2830,6 +2846,7 @@
       handleMeterReadingSubmit: handleMeterReadingSubmit,
       handleExpenseSubmit: handleExpenseSubmit,
       setFormField: setFormField,
+      setUnitBuildingId: setUnitBuildingId,
       setLeaseUnitId: setLeaseUnitId,
       setLeaseRoomId: setLeaseRoomId,
       clearEditingForTab: clearEditingForTab,

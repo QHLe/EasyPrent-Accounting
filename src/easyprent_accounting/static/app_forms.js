@@ -684,7 +684,7 @@
               {
                 value: forms.unit.building_id,
                 onChange: function (event) {
-                  props.setFormField("unit", "building_id", event.target.value);
+                  props.setUnitBuildingId(event.target.value);
                 },
               },
               e("option", { value: "" }, "Ohne Gebäude"),
@@ -741,6 +741,7 @@
                 props.setFormField("unit", "street", event.target.value);
               },
               required: true,
+              readOnly: forms.unit.building_id !== "",
             })
           ),
           e(
@@ -753,6 +754,7 @@
                 props.setFormField("unit", "city", event.target.value);
               },
               required: true,
+              readOnly: forms.unit.building_id !== "",
             })
           ),
           e(
@@ -765,6 +767,7 @@
                 props.setFormField("unit", "postal_code", event.target.value);
               },
               required: true,
+              readOnly: forms.unit.building_id !== "",
             })
           ),
           e(

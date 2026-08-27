@@ -2100,7 +2100,22 @@ def create_building(connection: sqlite3.Connection, payload: dict) -> dict:
     return {"id": cursor.lastrowid, **payload}
 
 
+def _unit_address(connection: sqlite3.Connection, payload: dict) -> tuple[str, str, str]:
+    building_id = payload.get("building_id")
+    if building_id is None:
+        return payload["street"], payload["city"], payload["postal_code"]
+
+    building = connection.execute(
+        "SELECT street, city, postal_code FROM buildings WHERE id = ?",
+        (building_id,),
+    ).fetchone()
+    if building is None:
+        raise ValueError("building not found")
+    return building["street"], building["city"], building["postal_code"]
+
+
 def create_unit(connection: sqlite3.Connection, payload: dict) -> dict:
+    street, city, postal_code = _unit_address(connection, payload)
     cursor = connection.execute(
         """
         INSERT INTO units (building_id, label, area_sqm, room_count, street, city, postal_code)
@@ -2111,13 +2126,19 @@ def create_unit(connection: sqlite3.Connection, payload: dict) -> dict:
             payload["label"],
             str(Decimal(str(payload["area_sqm"]))),
             payload["room_count"],
-            payload["street"],
-            payload["city"],
-            payload["postal_code"],
+            street,
+            city,
+            postal_code,
         ),
     )
     connection.commit()
-    return {"id": cursor.lastrowid, **payload}
+    return {
+        "id": cursor.lastrowid,
+        **payload,
+        "street": street,
+        "city": city,
+        "postal_code": postal_code,
+    }
 
 
 def create_room(connection: sqlite3.Connection, payload: dict) -> dict:
@@ -2541,6 +2562,7 @@ def update_unit(connection: sqlite3.Connection, unit_id: int, payload: dict) -> 
     if room_count_row is not None and room_count_row["actual_room_count"] > requested_room_count:
         raise ValueError("room_count cannot be lower than existing rooms")
 
+    street, city, postal_code = _unit_address(connection, payload)
     connection.execute(
         """
         UPDATE units
@@ -2552,14 +2574,20 @@ def update_unit(connection: sqlite3.Connection, unit_id: int, payload: dict) -> 
             payload["label"],
             str(Decimal(str(payload["area_sqm"]))),
             requested_room_count,
-            payload["street"],
-            payload["city"],
-            payload["postal_code"],
+            street,
+            city,
+            postal_code,
             unit_id,
         ),
     )
     connection.commit()
-    return {"id": unit_id, **payload}
+    return {
+        "id": unit_id,
+        **payload,
+        "street": street,
+        "city": city,
+        "postal_code": postal_code,
+    }
 
 
 def update_room(connection: sqlite3.Connection, room_id: int, payload: dict) -> dict:

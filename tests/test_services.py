@@ -19,6 +19,7 @@ from src.easyprent_accounting.services import (
     restore_object,
     settlement_for_period,
     update_expense,
+    update_unit,
 )
 
 
@@ -1061,6 +1062,57 @@ class PropertyRelationshipTests(unittest.TestCase):
         self.assertEqual(row["street"], "Sonnenallee 10")
         self.assertEqual(row["city"], "Berlin")
         self.assertEqual(row["postal_code"], "12045")
+
+    def test_create_unit_inherits_address_from_building(self) -> None:
+        created = create_unit(
+            self.connection,
+            {
+                "building_id": 1,
+                "label": "A-04",
+                "area_sqm": "56.0",
+                "room_count": 2,
+                "street": "Abweichende Straße 1",
+                "city": "Hamburg",
+                "postal_code": "20095",
+            },
+        )
+
+        row = self.connection.execute(
+            "SELECT street, city, postal_code FROM units WHERE id = ?", (created["id"],)
+        ).fetchone()
+        self.assertEqual(dict(row), {"street": "Lindenweg 12", "city": "Berlin", "postal_code": "10439"})
+
+    def test_update_unit_inherits_address_from_new_building(self) -> None:
+        building = create_building(
+            self.connection,
+            {
+                "property_id": 1,
+                "name": "Haus B",
+                "year_built": 2010,
+                "street": "Birkenstraße 7",
+                "city": "Potsdam",
+                "postal_code": "14467",
+            },
+        )
+
+        update_unit(
+            self.connection,
+            1,
+            {
+                "building_id": building["id"],
+                "label": "A-01",
+                "area_sqm": "74.5",
+                "room_count": 3,
+                "street": "Abweichende Straße 1",
+                "city": "Hamburg",
+                "postal_code": "20095",
+            },
+        )
+
+        row = self.connection.execute(
+            "SELECT street, city, postal_code FROM units WHERE id = 1"
+        ).fetchone()
+        self.assertEqual(dict(row), {"street": "Birkenstraße 7", "city": "Potsdam", "postal_code": "14467"})
 
     def test_create_room_requires_unit(self) -> None:
         with self.assertRaises(ValueError):
