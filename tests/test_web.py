@@ -4,13 +4,14 @@ import base64
 import json
 import os
 import shutil
+import sqlite3
 import subprocess
 import tempfile
 import unittest
 from io import BytesIO
 from unittest import mock
 
-from src.easyprent_accounting.db import initialize_database
+from src.easyprent_accounting.db import initialize_database, seed_demo_data
 from src.easyprent_accounting.web import application
 
 
@@ -21,6 +22,9 @@ class WebApiAndUiTests(unittest.TestCase):
         self.original_db_path = os.environ.get("EASYPRENT_DB_PATH")
         os.environ["EASYPRENT_DB_PATH"] = self.db_path
         initialize_database()
+        with sqlite3.connect(self.db_path) as connection:
+            seed_demo_data(connection)
+            connection.commit()
 
     def tearDown(self) -> None:
         if self.original_db_path is None:

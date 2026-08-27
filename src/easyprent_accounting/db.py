@@ -241,9 +241,6 @@ def initialize_database() -> None:
     try:
         connection.executescript(SCHEMA)
         ensure_schema_updates(connection)
-        organization_count = connection.execute("SELECT COUNT(*) FROM organizations").fetchone()[0]
-        if organization_count == 0:
-            seed_demo_data(connection)
         connection.commit()
     finally:
         connection.close()
