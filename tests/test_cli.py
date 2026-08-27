@@ -68,3 +68,18 @@ class EasyPrentCliTests(unittest.TestCase):
             [mock.call(["git", "pull", "--ff-only"]), mock.call(["npm", "install"])],
         )
         restart_mock.assert_called_once_with()
+
+    def test_update_skips_npm_when_it_is_not_installed(self) -> None:
+        (self.project_root / "package.json").write_text("{}", encoding="utf-8")
+        (self.project_root / "package-lock.json").write_text("{}", encoding="utf-8")
+
+        completed = mock.Mock(returncode=0)
+        with mock.patch.object(cli, "running_pid", return_value=False), mock.patch.object(
+            cli, "run_command", return_value=0
+        ) as run_command_mock, mock.patch("shutil.which", return_value=None), mock.patch.object(
+            cli.subprocess, "run", return_value=completed
+        ):
+            exit_code = cli.update_project()
+
+        self.assertEqual(exit_code, 0)
+        run_command_mock.assert_called_once_with(["git", "pull", "--ff-only"])

@@ -4,6 +4,7 @@ import argparse
 import os
 import shlex
 import signal
+import shutil
 import subprocess
 import sys
 import time
@@ -181,7 +182,12 @@ def update_project() -> int:
     package_lock = project_root() / "package-lock.json"
     package_json = project_root() / "package.json"
     if package_json.exists() and package_lock.exists():
-        if run_command(["npm", "install"]) != 0:
+        if shutil.which("npm") is None:
+            print(
+                "Warnung: npm ist nicht installiert; überspringe npm install.",
+                file=sys.stderr,
+            )
+        elif run_command(["npm", "install"]) != 0:
             return 1
 
     requirements = project_root() / "requirements.txt"
