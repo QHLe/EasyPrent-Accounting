@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "easy-rem"
+version = "0.1.0"
+description = "EasyPrent Accounting CLI and local web server"
+readme = "README.md"
+requires-python = ">=3.11"
+
+[project.scripts]
+easy-rem = "src.easyprent_accounting.cli:main"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src.easyprent_accounting*"]
+
+[tool.setuptools.package-data]
+"src.easyprent_accounting" = ["static/*.css", "static/*.js", "static/vendor/*.js"]

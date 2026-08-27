@@ -1,0 +1,11 @@
+{
+  "name": "easyprent-accounting",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Local React runtime for EasyPrent Accounting UI",
+  "dependencies": {
+    "echarts": "^5.5.1",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  }
+}
