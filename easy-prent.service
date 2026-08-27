@@ -1,0 +1,15 @@
+[Unit]
+Description=EasyPrent Accounting Webserver
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/EasyPrent-Accounting
+ExecStart=/root/EasyPrent-Accounting/.venv/bin/python -m src.easyprent_accounting.server
+Restart=on-failure
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
