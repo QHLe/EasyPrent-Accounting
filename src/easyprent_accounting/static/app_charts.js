@@ -119,7 +119,7 @@
             yAxis: {
               type: "value",
               scale: true,
-              min: "dataMin",
+              min: chartMode === "bar" || hasCompositionBars ? 0 : "dataMin",
               max: "dataMax",
               axisLabel: {
                 color: "#52606d",
@@ -339,7 +339,7 @@
             yAxis: {
               type: "value",
               scale: true,
-              min: "dataMin",
+              min: chartMode === "bars" ? 0 : "dataMin",
               max: "dataMax",
               axisLabel: {
                 color: "#52606d",
