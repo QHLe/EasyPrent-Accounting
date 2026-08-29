@@ -259,27 +259,20 @@
     const selectedMeter = (overview.meters || []).find(function (meter) {
       return String(meter.id) === String(selectedMeterId);
     });
+    function sortMeterReadingsByDateDesc(left, right) {
+      if (left.reading_date === right.reading_date) {
+        return Number(right.id) - Number(left.id);
+      }
+      return left.reading_date < right.reading_date ? 1 : -1;
+    }
+
     const selectedMeterReadings = (overview.meter_readings || [])
       .filter(function (reading) {
         return String(reading.meter_id) === String(selectedMeterId);
-      })
-      .sort(function (left, right) {
-        if (left.reading_date === right.reading_date) {
-          return Number(left.id) - Number(right.id);
-        }
-        return left.reading_date < right.reading_date ? -1 : 1;
       });
     const historyMeterReadings = selectedMeterId
-      ? selectedMeterReadings
-      : (overview.meter_readings || []).slice().sort(function (left, right) {
-          if (left.meter_id === right.meter_id) {
-            if (left.reading_date === right.reading_date) {
-              return Number(left.id) - Number(right.id);
-            }
-            return left.reading_date < right.reading_date ? -1 : 1;
-          }
-          return Number(left.meter_id) - Number(right.meter_id);
-        });
+      ? selectedMeterReadings.slice().sort(sortMeterReadingsByDateDesc)
+      : (overview.meter_readings || []).slice().sort(sortMeterReadingsByDateDesc);
     const meterReadingRows = historyMeterReadings.map(function (reading) {
       return e(
         "tr",
