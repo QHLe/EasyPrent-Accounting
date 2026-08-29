@@ -334,6 +334,45 @@
     });
   }
 
+  function buildExpenseCategoryTotalRows(expenses) {
+    const totalsByCategory = {};
+    (expenses || []).forEach(function (expense) {
+      if (expense.is_archived) {
+        return;
+      }
+      const category = String(expense.expense_category || expense.label || "Nicht kategorisiert");
+      if (!totalsByCategory[category]) {
+        totalsByCategory[category] = { total: 0, hasUncalculatedExpense: false };
+      }
+      const amount = Number(expense.total_amount);
+      if (expense.total_amount == null || expense.total_amount === "" || !Number.isFinite(amount)) {
+        totalsByCategory[category].hasUncalculatedExpense = true;
+        return;
+      }
+      totalsByCategory[category].total += amount;
+    });
+
+    return Object.keys(totalsByCategory)
+      .sort(function (left, right) {
+        return left.localeCompare(right, "de");
+      })
+      .map(function (category) {
+        const categoryTotal = totalsByCategory[category];
+        return e(
+          "tr",
+          { key: "expense-category-total-" + category },
+          e("td", null, category),
+          e(
+            "td",
+            null,
+            categoryTotal.hasUncalculatedExpense
+              ? "–"
+              : categoryTotal.total.toFixed(2)
+          )
+        );
+      });
+  }
+
   function buildManagementInlineEditorRow(props) {
     return e(
       "tr",
@@ -1015,12 +1054,28 @@
       previewTitle = "Kostenliste";
       previewDescription =
         "Alle bereits angelegten Kosten. Aktive Kosten können per Klick auf die Zeile inline bearbeitet werden.";
-      previewToolbar = buildExpenseFilterToolbar({
-        filters: props.expenseListFilters,
-        expenseListTargetOptions: props.expenseListTargetOptions,
-        expenseCategoryFilterOptions: props.expenseCategoryFilterOptions,
-        onChange: props.onExpenseListFilterChange,
-      });
+      const expenseCategoryTotalRows = buildExpenseCategoryTotalRows(filteredExpenses);
+      previewToolbar = e(
+        Fragment,
+        null,
+        buildExpenseFilterToolbar({
+          filters: props.expenseListFilters,
+          expenseListTargetOptions: props.expenseListTargetOptions,
+          expenseCategoryFilterOptions: props.expenseCategoryFilterOptions,
+          onChange: props.onExpenseListFilterChange,
+        }),
+        e(
+          "div",
+          { className: "stack" },
+          e("h3", null, "Gesamtkosten je Kostenart"),
+          e(
+            "p",
+            { className: "hint" },
+            "Aktive Kosten gemäß den gesetzten Filtern. Ein Strich bedeutet, dass mindestens eine Kostenposition noch nicht berechnet werden kann."
+          ),
+          table(["Kostenart", "Gesamtkosten (EUR)"], expenseCategoryTotalRows)
+        )
+      );
       previewHeaders = [
         "Kostenart",
         "Empfänger",
@@ -1115,6 +1170,7 @@
 
   window.EasyPrentAppPreviews = {
     buildFilteredExpenses: buildFilteredExpenses,
+    buildExpenseCategoryTotalRows: buildExpenseCategoryTotalRows,
     buildManagementPreview: buildManagementPreview,
     buildMeterData: buildMeterData,
     buildOverviewRows: buildOverviewRows,
