@@ -334,34 +334,12 @@
     });
   }
 
-  function buildExpenseCategoryTotalRows(expenses) {
-    const totalsByCategory = {};
-    (expenses || []).forEach(function (expense) {
-      if (expense.is_archived) {
-        return;
-      }
-      const category = String(expense.expense_category || expense.label || "Nicht kategorisiert");
-      if (!totalsByCategory[category]) {
-        totalsByCategory[category] = { total: 0, hasUncalculatedExpense: false };
-      }
-      const amount = Number(expense.total_amount);
-      if (expense.total_amount == null || expense.total_amount === "" || !Number.isFinite(amount)) {
-        totalsByCategory[category].hasUncalculatedExpense = true;
-        return;
-      }
-      totalsByCategory[category].total += amount;
-    });
-
-    return Object.keys(totalsByCategory)
-      .sort(function (left, right) {
-        return left.localeCompare(right, "de");
-      })
-      .map(function (category) {
-        const categoryTotal = totalsByCategory[category];
+  function buildExpenseCategoryTotalRows(categoryTotals) {
+    return (categoryTotals || []).map(function (categoryTotal) {
         return e(
           "tr",
-          { key: "expense-category-total-" + category },
-          e("td", null, category),
+          { key: "expense-category-total-" + categoryTotal.category },
+          e("td", null, categoryTotal.category),
           e(
             "td",
             null,
@@ -1054,7 +1032,7 @@
       previewTitle = "Kostenliste";
       previewDescription =
         "Alle bereits angelegten Kosten. Aktive Kosten können per Klick auf die Zeile inline bearbeitet werden.";
-      const expenseCategoryTotalRows = buildExpenseCategoryTotalRows(filteredExpenses);
+      const expenseCategoryTotalRows = buildExpenseCategoryTotalRows(props.expenseCategoryPeriodTotals);
       previewToolbar = e(
         Fragment,
         null,
@@ -1069,9 +1047,37 @@
           { className: "stack" },
           e("h3", null, "Gesamtkosten je Kostenart"),
           e(
+            "div",
+            { className: "chart-controls" },
+            e(
+              "label",
+              null,
+              "Zeitraum von",
+              e("input", {
+                type: "date",
+                value: props.expenseCategoryPeriod.from,
+                onChange: function (event) {
+                  props.onExpenseCategoryPeriodChange("from", event.target.value);
+                },
+              })
+            ),
+            e(
+              "label",
+              null,
+              "Zeitraum bis",
+              e("input", {
+                type: "date",
+                value: props.expenseCategoryPeriod.to,
+                onChange: function (event) {
+                  props.onExpenseCategoryPeriodChange("to", event.target.value);
+                },
+              })
+            )
+          ),
+          e(
             "p",
             { className: "hint" },
-            "Aktive Kosten gemäß den gesetzten Filtern. Ein Strich bedeutet, dass mindestens eine Kostenposition noch nicht berechnet werden kann."
+            "Aktive Kosten gemäß den gesetzten Filtern, anteilig für den gewählten Zeitraum. Ein Strich bedeutet, dass mindestens eine Kostenposition noch nicht berechnet werden kann."
           ),
           table(["Kostenart", "Gesamtkosten (EUR)"], expenseCategoryTotalRows)
         )

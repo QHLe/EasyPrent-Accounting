@@ -476,30 +476,6 @@
           e(
             "label",
             null,
-            "Kosten-Zeitraum von",
-            e("input", {
-              type: "date",
-              value: props.expenseChartConfig.from,
-              onChange: function (event) {
-                props.onExpenseChartRangeBoundaryChange("from", event.target.value);
-              },
-            })
-          ),
-          e(
-            "label",
-            null,
-            "Kosten-Zeitraum bis",
-            e("input", {
-              type: "date",
-              value: props.expenseChartConfig.to,
-              onChange: function (event) {
-                props.onExpenseChartRangeBoundaryChange("to", event.target.value);
-              },
-            })
-          ),
-          e(
-            "label",
-            null,
             "Kosten-Granularität",
             e(
               "select",

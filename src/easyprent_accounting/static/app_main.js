@@ -585,6 +585,59 @@
       });
   }
 
+  function buildExpenseCategoryPeriodTotals(expenses, rangeStart, rangeEnd) {
+    if (!rangeStart || !rangeEnd) {
+      return [];
+    }
+    const selectedStart = parseIsoDate(rangeStart);
+    const selectedEnd = parseIsoDate(rangeEnd);
+    if (selectedStart > selectedEnd) {
+      return [];
+    }
+
+    const totalsByCategory = {};
+    (expenses || []).forEach(function (expense) {
+      if (expense.is_archived) {
+        return;
+      }
+      const expenseRange = resolveExpenseDateRange(expense);
+      if (!expenseRange) {
+        return;
+      }
+      const overlapStart = selectedStart > expenseRange.start ? selectedStart : expenseRange.start;
+      const overlapEnd = selectedEnd < expenseRange.end ? selectedEnd : expenseRange.end;
+      if (overlapStart > overlapEnd) {
+        return;
+      }
+
+      const category = String(expense.expense_category || expense.label || "Nicht kategorisiert");
+      if (!totalsByCategory[category]) {
+        totalsByCategory[category] = { total: 0, hasUncalculatedExpense: false };
+      }
+      const totalAmount = Number(expense.total_amount);
+      if (expense.total_amount == null || expense.total_amount === "" || !Number.isFinite(totalAmount)) {
+        totalsByCategory[category].hasUncalculatedExpense = true;
+        return;
+      }
+
+      const expenseDays = Math.floor((expenseRange.end - expenseRange.start) / 86400000) + 1;
+      const overlapDays = Math.floor((overlapEnd - overlapStart) / 86400000) + 1;
+      totalsByCategory[category].total += totalAmount * overlapDays / expenseDays;
+    });
+
+    return Object.keys(totalsByCategory)
+      .sort(function (left, right) {
+        return left.localeCompare(right, "de");
+      })
+      .map(function (category) {
+        return {
+          category: category,
+          total: Number(totalsByCategory[category].total.toFixed(2)),
+          hasUncalculatedExpense: totalsByCategory[category].hasUncalculatedExpense,
+        };
+      });
+  }
+
   function App() {
     const [overview, setOverview] = useState(null);
     const [settlement, setSettlement] = useState(null);
@@ -2764,6 +2817,11 @@
       meterChartRange.to
     );
     const filteredExpenses = buildFilteredExpenses(overview.expenses || [], expenseListFilters);
+    const expenseCategoryPeriodTotals = buildExpenseCategoryPeriodTotals(
+      filteredExpenses,
+      expenseChartConfig.from,
+      expenseChartConfig.to
+    );
     const expenseDevelopmentExpenses = filteredExpenses.filter(function (expense) {
       return expenseChartConfig.include_archived || !expense.is_archived;
     });
@@ -2918,6 +2976,12 @@
       expenseListTargetOptions: expenseListTargetOptions,
       expenseCategoryFilterOptions: expenseCategoryFilterOptions,
       filteredExpenses: filteredExpenses,
+      expenseCategoryPeriodTotals: expenseCategoryPeriodTotals,
+      expenseCategoryPeriod: {
+        from: expenseChartConfig.from,
+        to: expenseChartConfig.to,
+      },
+      onExpenseCategoryPeriodChange: setExpenseChartRangeBoundary,
       editingExpenseId: editingExpenseId,
       onExpenseEdit: startExpenseEdit,
       expenseEditForm: expenseEditForm,
