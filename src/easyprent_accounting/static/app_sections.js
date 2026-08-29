@@ -444,10 +444,9 @@
 
   function ExpenseDevelopmentPanel(props) {
     const monthlySeries = props.expenseDevelopmentMonthlySeries || [];
-    const averageMonthlyCost = monthlySeries.length
-      ? props.expenseDevelopmentTotal / monthlySeries.length
-      : 0;
+    const monthCount = monthlySeries.length;
     const categoryTotalRows = (props.expenseCategoryPeriodTotals || []).map(function (categoryTotal) {
+      const isCalculable = !categoryTotal.hasUncalculatedExpense;
       return e(
         "tr",
         { key: "expense-category-period-total-" + categoryTotal.category },
@@ -455,9 +454,16 @@
         e(
           "td",
           null,
-          categoryTotal.hasUncalculatedExpense
+          !isCalculable
             ? "–"
             : formatMoneyValue(categoryTotal.total) + " EUR"
+        ),
+        e(
+          "td",
+          null,
+          !isCalculable || monthCount === 0
+            ? "–"
+            : formatMoneyValue(categoryTotal.total / monthCount) + " EUR"
         )
       );
     });
@@ -536,13 +542,6 @@
         e(
           "div",
           { className: "expense-development-table" },
-          e(
-            "p",
-            { className: "hint" },
-            "Durchschnitt pro Monat: ",
-            formatMoneyValue(averageMonthlyCost),
-            " EUR"
-          ),
           e("h3", null, "Gesamtkosten je Kostenart"),
           e(
             "div",
@@ -577,7 +576,10 @@
             { className: "hint" },
             "Aktive Kosten gemäß den gesetzten Filtern, anteilig für den gewählten Zeitraum. Ein Strich bedeutet, dass mindestens eine Kostenposition noch nicht berechnet werden kann."
           ),
-          table(["Kostenart", "Gesamtkosten (EUR)"], categoryTotalRows)
+          table(
+            ["Kostenart", "Gesamtkosten (EUR)", "Durchschnitt pro Monat (EUR)"],
+            categoryTotalRows
+          )
         )
       )
     );
