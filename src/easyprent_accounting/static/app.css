@@ -318,6 +318,19 @@ td {
   background: rgba(255, 255, 255, 0.66);
 }
 
+.expense-development-table {
+  margin-top: 1rem;
+}
+
+.expense-development-table h3 {
+  margin-bottom: 0.5rem;
+}
+
+.table-total th {
+  border-bottom: 0;
+  padding-top: 0.85rem;
+}
+
 .echarts-host {
   width: 100%;
   min-height: 320px;

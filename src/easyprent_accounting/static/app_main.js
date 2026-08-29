@@ -2779,6 +2779,15 @@
       expenseChartConfig.from,
       expenseChartConfig.to
     );
+    const expenseDevelopmentMonthlySeries = buildExpenseDevelopmentSeries(
+      expenseDevelopmentExpenses,
+      "months",
+      expenseChartConfig.from,
+      expenseChartConfig.to
+    );
+    const expenseDevelopmentTotal = expenseDevelopmentMonthlySeries.reduce(function (total, item) {
+      return total + Number(item.value || 0);
+    }, 0);
 
     function tabButton(tabKey, label) {
       return e(
@@ -3043,6 +3052,8 @@
               },
               expenseDevelopmentSeries: expenseDevelopmentSeries,
               expenseDevelopmentCompositionSeries: expenseDevelopmentCompositionSeries,
+              expenseDevelopmentMonthlySeries: expenseDevelopmentMonthlySeries,
+              expenseDevelopmentTotal: Number(expenseDevelopmentTotal.toFixed(2)),
             })
           : null;
 

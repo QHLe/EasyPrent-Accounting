@@ -9,6 +9,7 @@
   const charts = window.EasyPrentAppCharts || {};
   const summaryCards = domain.summaryCards;
   const table = domain.table;
+  const formatMoneyValue = domain.formatMoneyValue;
   const formatDisplayName = domain.formatDisplayName;
   const MeterChart = charts.MeterChart;
   const ExpenseDevelopmentChart = charts.ExpenseDevelopmentChart;
@@ -442,6 +443,26 @@
   }
 
   function ExpenseDevelopmentPanel(props) {
+    const monthlySeries = props.expenseDevelopmentMonthlySeries || [];
+    const monthlyCostRows = monthlySeries.map(function (item) {
+      return e(
+        "tr",
+        { key: item.label },
+        e("td", null, item.label),
+        e("td", null, formatMoneyValue(item.value) + " EUR")
+      );
+    });
+    if (monthlySeries.length) {
+      monthlyCostRows.push(
+        e(
+          "tr",
+          { key: "total", className: "table-total" },
+          e("th", null, "Gesamtsumme"),
+          e("th", null, formatMoneyValue(props.expenseDevelopmentTotal) + " EUR")
+        )
+      );
+    }
+
     return e(
       "section",
       { className: "panel panel-wide" },
@@ -536,7 +557,13 @@
           series: props.expenseDevelopmentSeries,
           compositionSeries: props.expenseDevelopmentCompositionSeries,
           chartMode: props.expenseChartConfig.mode,
-        })
+        }),
+        e(
+          "div",
+          { className: "expense-development-table" },
+          e("h3", null, "Monatliche Kosten"),
+          table(["Monat", "Kosten (EUR)"], monthlyCostRows)
+        )
       )
     );
   }
