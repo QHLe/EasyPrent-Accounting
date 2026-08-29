@@ -2976,12 +2976,6 @@
       expenseListTargetOptions: expenseListTargetOptions,
       expenseCategoryFilterOptions: expenseCategoryFilterOptions,
       filteredExpenses: filteredExpenses,
-      expenseCategoryPeriodTotals: expenseCategoryPeriodTotals,
-      expenseCategoryPeriod: {
-        from: expenseChartConfig.from,
-        to: expenseChartConfig.to,
-      },
-      onExpenseCategoryPeriodChange: setExpenseChartRangeBoundary,
       editingExpenseId: editingExpenseId,
       onExpenseEdit: startExpenseEdit,
       expenseEditForm: expenseEditForm,
@@ -3118,6 +3112,12 @@
               expenseDevelopmentCompositionSeries: expenseDevelopmentCompositionSeries,
               expenseDevelopmentMonthlySeries: expenseDevelopmentMonthlySeries,
               expenseDevelopmentTotal: Number(expenseDevelopmentTotal.toFixed(2)),
+              expenseCategoryPeriodTotals: expenseCategoryPeriodTotals,
+              expenseCategoryPeriod: {
+                from: expenseChartConfig.from,
+                to: expenseChartConfig.to,
+              },
+              onExpenseCategoryPeriodChange: setExpenseChartRangeBoundary,
             })
           : null;
 

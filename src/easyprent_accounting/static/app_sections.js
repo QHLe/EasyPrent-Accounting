@@ -444,24 +444,23 @@
 
   function ExpenseDevelopmentPanel(props) {
     const monthlySeries = props.expenseDevelopmentMonthlySeries || [];
-    const monthlyCostRows = monthlySeries.map(function (item) {
+    const averageMonthlyCost = monthlySeries.length
+      ? props.expenseDevelopmentTotal / monthlySeries.length
+      : 0;
+    const categoryTotalRows = (props.expenseCategoryPeriodTotals || []).map(function (categoryTotal) {
       return e(
         "tr",
-        { key: item.label },
-        e("td", null, item.label),
-        e("td", null, formatMoneyValue(item.value) + " EUR")
-      );
-    });
-    if (monthlySeries.length) {
-      monthlyCostRows.push(
+        { key: "expense-category-period-total-" + categoryTotal.category },
+        e("td", null, categoryTotal.category),
         e(
-          "tr",
-          { key: "total", className: "table-total" },
-          e("th", null, "Gesamtsumme"),
-          e("th", null, formatMoneyValue(props.expenseDevelopmentTotal) + " EUR")
+          "td",
+          null,
+          categoryTotal.hasUncalculatedExpense
+            ? "–"
+            : formatMoneyValue(categoryTotal.total) + " EUR"
         )
       );
-    }
+    });
 
     return e(
       "section",
@@ -537,8 +536,48 @@
         e(
           "div",
           { className: "expense-development-table" },
-          e("h3", null, "Monatliche Kosten"),
-          table(["Monat", "Kosten (EUR)"], monthlyCostRows)
+          e(
+            "p",
+            { className: "hint" },
+            "Durchschnitt pro Monat: ",
+            formatMoneyValue(averageMonthlyCost),
+            " EUR"
+          ),
+          e("h3", null, "Gesamtkosten je Kostenart"),
+          e(
+            "div",
+            { className: "chart-controls" },
+            e(
+              "label",
+              null,
+              "Zeitraum von",
+              e("input", {
+                type: "date",
+                value: props.expenseCategoryPeriod.from,
+                onChange: function (event) {
+                  props.onExpenseCategoryPeriodChange("from", event.target.value);
+                },
+              })
+            ),
+            e(
+              "label",
+              null,
+              "Zeitraum bis",
+              e("input", {
+                type: "date",
+                value: props.expenseCategoryPeriod.to,
+                onChange: function (event) {
+                  props.onExpenseCategoryPeriodChange("to", event.target.value);
+                },
+              })
+            )
+          ),
+          e(
+            "p",
+            { className: "hint" },
+            "Aktive Kosten gemäß den gesetzten Filtern, anteilig für den gewählten Zeitraum. Ein Strich bedeutet, dass mindestens eine Kostenposition noch nicht berechnet werden kann."
+          ),
+          table(["Kostenart", "Gesamtkosten (EUR)"], categoryTotalRows)
         )
       )
     );

@@ -334,23 +334,6 @@
     });
   }
 
-  function buildExpenseCategoryTotalRows(categoryTotals) {
-    return (categoryTotals || []).map(function (categoryTotal) {
-        return e(
-          "tr",
-          { key: "expense-category-total-" + categoryTotal.category },
-          e("td", null, categoryTotal.category),
-          e(
-            "td",
-            null,
-            categoryTotal.hasUncalculatedExpense
-              ? "–"
-              : categoryTotal.total.toFixed(2)
-          )
-        );
-      });
-  }
-
   function buildManagementInlineEditorRow(props) {
     return e(
       "tr",
@@ -1032,56 +1015,12 @@
       previewTitle = "Kostenliste";
       previewDescription =
         "Alle bereits angelegten Kosten. Aktive Kosten können per Klick auf die Zeile inline bearbeitet werden.";
-      const expenseCategoryTotalRows = buildExpenseCategoryTotalRows(props.expenseCategoryPeriodTotals);
-      previewToolbar = e(
-        Fragment,
-        null,
-        buildExpenseFilterToolbar({
-          filters: props.expenseListFilters,
-          expenseListTargetOptions: props.expenseListTargetOptions,
-          expenseCategoryFilterOptions: props.expenseCategoryFilterOptions,
-          onChange: props.onExpenseListFilterChange,
-        }),
-        e(
-          "div",
-          { className: "stack" },
-          e("h3", null, "Gesamtkosten je Kostenart"),
-          e(
-            "div",
-            { className: "chart-controls" },
-            e(
-              "label",
-              null,
-              "Zeitraum von",
-              e("input", {
-                type: "date",
-                value: props.expenseCategoryPeriod.from,
-                onChange: function (event) {
-                  props.onExpenseCategoryPeriodChange("from", event.target.value);
-                },
-              })
-            ),
-            e(
-              "label",
-              null,
-              "Zeitraum bis",
-              e("input", {
-                type: "date",
-                value: props.expenseCategoryPeriod.to,
-                onChange: function (event) {
-                  props.onExpenseCategoryPeriodChange("to", event.target.value);
-                },
-              })
-            )
-          ),
-          e(
-            "p",
-            { className: "hint" },
-            "Aktive Kosten gemäß den gesetzten Filtern, anteilig für den gewählten Zeitraum. Ein Strich bedeutet, dass mindestens eine Kostenposition noch nicht berechnet werden kann."
-          ),
-          table(["Kostenart", "Gesamtkosten (EUR)"], expenseCategoryTotalRows)
-        )
-      );
+      previewToolbar = buildExpenseFilterToolbar({
+        filters: props.expenseListFilters,
+        expenseListTargetOptions: props.expenseListTargetOptions,
+        expenseCategoryFilterOptions: props.expenseCategoryFilterOptions,
+        onChange: props.onExpenseListFilterChange,
+      });
       previewHeaders = [
         "Kostenart",
         "Empfänger",
@@ -1176,7 +1115,6 @@
 
   window.EasyPrentAppPreviews = {
     buildFilteredExpenses: buildFilteredExpenses,
-    buildExpenseCategoryTotalRows: buildExpenseCategoryTotalRows,
     buildManagementPreview: buildManagementPreview,
     buildMeterData: buildMeterData,
     buildOverviewRows: buildOverviewRows,
