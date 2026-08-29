@@ -366,7 +366,8 @@
         e(
           "label",
           null,
-          formState.charge_type === "consumption" && selectedMeter
+          (formState.charge_type === "consumption" && selectedMeter) ||
+            formState.charge_type === "recurring"
             ? "Bis Datum (optional)"
             : "Bis Datum",
           e("input", {
@@ -375,7 +376,10 @@
             onChange: function (event) {
               props.setField("period_end", event.target.value);
             },
-            required: !(formState.charge_type === "consumption" && selectedMeter),
+            required: !(
+              (formState.charge_type === "consumption" && selectedMeter) ||
+              formState.charge_type === "recurring"
+            ),
           })
         ),
         formState.charge_type === "consumption"

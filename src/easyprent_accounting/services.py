@@ -52,6 +52,8 @@ DOCUMENT_EXPORT_TABLES = {
     "lease_documents",
 }
 
+OPEN_ENDED_PERIOD_END = "9999-12-31"
+
 
 def _row_dicts(rows: list[sqlite3.Row]) -> list[dict]:
     return [dict(row) for row in rows]
@@ -772,7 +774,7 @@ def _normalize_expense_dates(
     payload: dict,
     charge_type: str,
     meter_id: int | None,
-) -> tuple[str | None, str, str]:
+) -> tuple[str | None, str, str, bool]:
     booking_date = payload.get("booking_date")
     period_start = payload.get("period_start")
     period_end = payload.get("period_end")
@@ -798,18 +800,21 @@ def _normalize_expense_dates(
                 else start_text
             )
             parse_date(normalized_booking_date)
-            return normalized_booking_date, start_text, end_text
+            return normalized_booking_date, start_text, end_text, False
 
         effective_booking_date = booking_date
         if effective_booking_date in (None, ""):
             raise ValueError("booking_date is required for one_time expenses")
         parse_date(str(effective_booking_date))
         normalized_date = str(effective_booking_date)
-        return normalized_date, normalized_date, normalized_date
+        return normalized_date, normalized_date, normalized_date, False
 
     if period_start in (None, ""):
         raise ValueError("period_start is required for recurring expenses")
     if period_end in (None, ""):
+        if charge_type in {"monthly", "yearly"}:
+            parse_date(str(period_start))
+            return None, str(period_start), OPEN_ENDED_PERIOD_END, True
         if charge_type != "consumption" or meter_id is None:
             raise ValueError("period_end is required for recurring expenses")
         period_end = _latest_meter_reading_date(connection, meter_id)
@@ -819,7 +824,7 @@ def _normalize_expense_dates(
     end_date = parse_date(str(period_end))
     if start_date > end_date:
         raise ValueError("period_start must be before or equal to period_end")
-    return None, str(period_start), str(period_end)
+    return None, str(period_start), str(period_end), False
 
 
 def _normalize_expense_payload(connection: sqlite3.Connection, payload: dict) -> dict:
@@ -833,7 +838,7 @@ def _normalize_expense_payload(connection: sqlite3.Connection, payload: dict) ->
         property_id,
         charge_type,
     )
-    booking_date, period_start, period_end = _normalize_expense_dates(
+    booking_date, period_start, period_end, is_open_ended = _normalize_expense_dates(
         connection,
         payload,
         charge_type,
@@ -871,6 +876,7 @@ def _normalize_expense_payload(connection: sqlite3.Connection, payload: dict) ->
         "booking_date": booking_date,
         "period_start": period_start,
         "period_end": period_end,
+        "is_open_ended": is_open_ended,
     }
 
 
@@ -879,18 +885,15 @@ def _expense_response_payload(
     expense_id: int,
     normalized_payload: dict,
 ) -> dict:
-    meter_unit, total_amount = _total_amount_for_expense_period(
-        connection,
-        normalized_payload,
-        normalized_payload["period_start"],
-        normalized_payload["period_end"],
-    )
-    _, effective_consumption_value = _effective_consumption_quantity(
-        connection,
-        normalized_payload,
-        normalized_payload["period_start"],
-        normalized_payload["period_end"],
-    )
+    if normalized_payload["is_open_ended"]:
+        meter_unit, total_amount, effective_consumption_value = None, None, None
+    else:
+        meter_unit, total_amount = _total_amount_for_expense_period(
+            connection, normalized_payload, normalized_payload["period_start"], normalized_payload["period_end"]
+        )
+        _, effective_consumption_value = _effective_consumption_quantity(
+            connection, normalized_payload, normalized_payload["period_start"], normalized_payload["period_end"]
+        )
     return {
         "id": expense_id,
         "object_type": normalized_payload["object_type"],
@@ -912,7 +915,8 @@ def _expense_response_payload(
         "total_amount": total_amount,
         "booking_date": normalized_payload["booking_date"],
         "period_start": normalized_payload["period_start"],
-        "period_end": normalized_payload["period_end"],
+        "period_end": None if normalized_payload["is_open_ended"] else normalized_payload["period_end"],
+        "is_open_ended": normalized_payload["is_open_ended"],
     }
 
 
@@ -1946,6 +1950,12 @@ def list_overview(connection: sqlite3.Connection) -> dict:
         ).fetchall()
     )
     for expense in expenses:
+        expense["is_open_ended"] = expense["period_end"] == OPEN_ENDED_PERIOD_END
+        if expense["is_open_ended"]:
+            expense["effective_consumption_value"] = None
+            expense["total_amount"] = None
+            expense["period_end"] = None
+            continue
         meter_unit, total_amount = _total_amount_for_expense_period(
             connection,
             expense,

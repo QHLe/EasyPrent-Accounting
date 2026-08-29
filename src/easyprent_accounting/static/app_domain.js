@@ -123,6 +123,9 @@
       }
       return expense.booking_date || expense.period_start || "Kein Datum";
     }
+    if (expense.is_open_ended) {
+      return [expense.period_start, "laufend"].filter(Boolean).join(" bis ");
+    }
     return [expense.period_start, expense.period_end].filter(Boolean).join(" bis ") || "Kein Zeitraum";
   }
 
@@ -199,7 +202,7 @@
           expense.period_end !== expense.booking_date
         ),
       period_start: expense.period_start || formState.period_start,
-      period_end: expense.period_end || formState.period_end,
+      period_end: expense.is_open_ended ? "" : expense.period_end || formState.period_end,
       meter_id:
         expense.meter_id === null || typeof expense.meter_id === "undefined"
           ? ""

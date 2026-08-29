@@ -416,7 +416,7 @@
     );
   }
 
-  function resolveExpenseDateRange(expense) {
+  function resolveExpenseDateRange(expense, openEndedFallbackEnd) {
     if (!expense) {
       return null;
     }
@@ -431,7 +431,9 @@
           ? expense.period_start
           : expense.booking_date || expense.period_start || expense.period_end
         : expense.period_start;
-    const endDateText =
+    const endDateText = expense.is_open_ended
+      ? openEndedFallbackEnd
+      :
       expense.charge_type === "one_time"
         ? hasOneTimeRange
           ? expense.period_end
@@ -449,6 +451,45 @@
       start: startDate,
       end: endDate,
     };
+  }
+
+  function countCoveredMonths(startDate, endDate) {
+    return (endDate.getUTCFullYear() - startDate.getUTCFullYear()) * 12 +
+      endDate.getUTCMonth() - startDate.getUTCMonth() + 1;
+  }
+
+  function amountForExpenseOverlap(expense, expenseRange, overlapStart, overlapEnd) {
+    if (expense.is_open_ended) {
+      const amount = Number(expense.amount);
+      if (!Number.isFinite(amount)) {
+        return null;
+      }
+      if (expense.charge_type === "monthly") {
+        return amount * countCoveredMonths(overlapStart, overlapEnd);
+      }
+      if (expense.charge_type === "yearly") {
+        let occurrences = 0;
+        for (let year = expenseRange.start.getUTCFullYear(); year <= overlapEnd.getUTCFullYear(); year += 1) {
+          const occurrence = new Date(Date.UTC(
+            year,
+            expenseRange.start.getUTCMonth(),
+            expenseRange.start.getUTCDate()
+          ));
+          if (occurrence >= overlapStart && occurrence <= overlapEnd) {
+            occurrences += 1;
+          }
+        }
+        return amount * occurrences;
+      }
+    }
+
+    const totalAmount = Number(expense.total_amount);
+    if (expense.total_amount == null || expense.total_amount === "" || !Number.isFinite(totalAmount)) {
+      return null;
+    }
+    const expenseDays = Math.floor((expenseRange.end - expenseRange.start) / 86400000) + 1;
+    const overlapDays = Math.floor((overlapEnd - overlapStart) / 86400000) + 1;
+    return totalAmount * overlapDays / expenseDays;
   }
 
   function buildExpenseDevelopmentPeriods(granularity, rangeStart, rangeEnd) {
@@ -493,31 +534,20 @@
     });
 
     (expenses || []).forEach(function (expense) {
-      const expenseRange = resolveExpenseDateRange(expense);
+      const expenseRange = resolveExpenseDateRange(expense, rangeEnd);
       if (!expenseRange) {
         return;
       }
-      const amountValue = Number(
-        expense.total_amount == null || expense.total_amount === ""
-          ? expense.amount
-          : expense.total_amount
-      );
-      if (Number.isNaN(amountValue)) {
-        return;
-      }
-      const expenseDays = Math.floor((expenseRange.end - expenseRange.start) / 86400000) + 1;
-      if (expenseDays <= 0) {
-        return;
-      }
-
       periods.forEach(function (period, index) {
         const overlapStart = period.start > expenseRange.start ? period.start : expenseRange.start;
         const overlapEnd = period.end < expenseRange.end ? period.end : expenseRange.end;
         if (overlapStart > overlapEnd) {
           return;
         }
-        const overlapDays = Math.floor((overlapEnd - overlapStart) / 86400000) + 1;
-        series[index].value += amountValue * overlapDays / expenseDays;
+        const overlapAmount = amountForExpenseOverlap(expense, expenseRange, overlapStart, overlapEnd);
+        if (overlapAmount !== null) {
+          series[index].value += overlapAmount;
+        }
       });
     });
 
@@ -537,20 +567,8 @@
 
     const valuesByCategory = {};
     (expenses || []).forEach(function (expense) {
-      const expenseRange = resolveExpenseDateRange(expense);
+      const expenseRange = resolveExpenseDateRange(expense, rangeEnd);
       if (!expenseRange) {
-        return;
-      }
-      const amountValue = Number(
-        expense.total_amount == null || expense.total_amount === ""
-          ? expense.amount
-          : expense.total_amount
-      );
-      if (Number.isNaN(amountValue)) {
-        return;
-      }
-      const expenseDays = Math.floor((expenseRange.end - expenseRange.start) / 86400000) + 1;
-      if (expenseDays <= 0) {
         return;
       }
       const categoryName = String(expense.expense_category || "").trim() || "Sonstige";
@@ -566,8 +584,10 @@
         if (overlapStart > overlapEnd) {
           return;
         }
-        const overlapDays = Math.floor((overlapEnd - overlapStart) / 86400000) + 1;
-        valuesByCategory[categoryName][index] += amountValue * overlapDays / expenseDays;
+        const overlapAmount = amountForExpenseOverlap(expense, expenseRange, overlapStart, overlapEnd);
+        if (overlapAmount !== null) {
+          valuesByCategory[categoryName][index] += overlapAmount;
+        }
       });
     });
 
@@ -600,7 +620,7 @@
       if (expense.is_archived) {
         return;
       }
-      const expenseRange = resolveExpenseDateRange(expense);
+      const expenseRange = resolveExpenseDateRange(expense, rangeEnd);
       if (!expenseRange) {
         return;
       }
@@ -614,15 +634,12 @@
       if (!totalsByCategory[category]) {
         totalsByCategory[category] = { total: 0, hasUncalculatedExpense: false };
       }
-      const totalAmount = Number(expense.total_amount);
-      if (expense.total_amount == null || expense.total_amount === "" || !Number.isFinite(totalAmount)) {
+      const overlapAmount = amountForExpenseOverlap(expense, expenseRange, overlapStart, overlapEnd);
+      if (overlapAmount === null) {
         totalsByCategory[category].hasUncalculatedExpense = true;
         return;
       }
-
-      const expenseDays = Math.floor((expenseRange.end - expenseRange.start) / 86400000) + 1;
-      const overlapDays = Math.floor((overlapEnd - overlapStart) / 86400000) + 1;
-      totalsByCategory[category].total += totalAmount * overlapDays / expenseDays;
+      totalsByCategory[category].total += overlapAmount;
     });
 
     return Object.keys(totalsByCategory)

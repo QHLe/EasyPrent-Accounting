@@ -1700,7 +1700,8 @@ def build_openapi_document() -> dict:
                         "total_amount": {"type": ["string", "null"]},
                         "booking_date": {"type": ["string", "null"], "format": "date"},
                         "period_start": {"type": "string", "format": "date"},
-                        "period_end": {"type": "string", "format": "date"},
+                        "period_end": {"type": ["string", "null"], "format": "date"},
+                        "is_open_ended": {"type": "boolean"},
                     },
                 },
                 "HealthResponse": {

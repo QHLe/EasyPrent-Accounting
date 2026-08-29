@@ -800,6 +800,36 @@ class ExpenseServiceTests(unittest.TestCase):
         self.assertEqual(row["object_id"], 1)
         self.assertEqual(row["label"], "Gebäudereinigung")
 
+    def test_recurring_expense_without_end_date_remains_open_ended(self) -> None:
+        baseline = settlement_for_period(self.connection, 1, "2025-01-01", "2025-03-31")
+        created = create_expense(
+            self.connection,
+            {
+                "object_type": "unit",
+                "object_id": 1,
+                "label": "Hausmeisterservice",
+                "amount": "80.00",
+                "allocation_method": "unit_count",
+                "recurrence": "recurring",
+                "interval": "monthly",
+                "period_start": "2025-01-15",
+                "period_end": "",
+            },
+        )
+
+        row = self.connection.execute(
+            "SELECT period_end FROM expense_items WHERE id = ?", (created["id"],)
+        ).fetchone()
+        self.assertTrue(created["is_open_ended"])
+        self.assertIsNone(created["period_end"])
+        self.assertEqual(row["period_end"], "9999-12-31")
+
+        settlement = settlement_for_period(self.connection, 1, "2025-01-01", "2025-03-31")
+        self.assertEqual(
+            Decimal(settlement["totals"]["costs"]) - Decimal(baseline["totals"]["costs"]),
+            Decimal("240.00"),
+        )
+
     def test_settlement_uses_meter_based_consumption_total(self) -> None:
         baseline = settlement_for_period(self.connection, 1, "2025-01-01", "2025-12-31")
         meter = create_meter(
