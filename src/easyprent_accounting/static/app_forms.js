@@ -190,12 +190,23 @@
       selectedMeter &&
       formState.consumption_unit !== "" &&
       formState.consumption_unit !== selectedMeter.unit;
+    const latestMeterReading = selectedMeter
+      ? ((overview && overview.meter_readings) || [])
+          .filter(function (reading) {
+            return String(reading.meter_id) === String(selectedMeter.id);
+          })
+          .sort(function (left, right) {
+            return String(right.reading_date).localeCompare(String(left.reading_date));
+          })[0] || null
+      : null;
+    const effectiveMeterPeriodEnd =
+      formState.period_end || (latestMeterReading ? latestMeterReading.reading_date : "");
     const meterConsumptionValue =
-      selectedMeter && formState.period_start && formState.period_end
+      selectedMeter && formState.period_start && effectiveMeterPeriodEnd
         ? props.calculateMeterConsumptionValue(
             formState.meter_id,
             formState.period_start,
-            formState.period_end,
+            effectiveMeterPeriodEnd,
             overview
           )
         : null;
@@ -355,14 +366,16 @@
         e(
           "label",
           null,
-          "Bis Datum",
+          formState.charge_type === "consumption" && selectedMeter
+            ? "Bis Datum (optional)"
+            : "Bis Datum",
           e("input", {
             type: "date",
             value: formState.period_end,
             onChange: function (event) {
               props.setField("period_end", event.target.value);
             },
-            required: true,
+            required: !(formState.charge_type === "consumption" && selectedMeter),
           })
         ),
         formState.charge_type === "consumption"
@@ -381,6 +394,15 @@
                 e("option", { value: "" }, "Ohne Zähler"),
                 props.meterOptions
               )
+            )
+          : null,
+        formState.charge_type === "consumption" && selectedMeter && latestMeterReading
+          ? e(
+              "p",
+              { className: "hint" },
+              "Ohne Enddatum wird bis zum letzten Zählerstand am ",
+              latestMeterReading.reading_date,
+              " berechnet."
             )
           : null,
         formState.charge_type === "consumption"

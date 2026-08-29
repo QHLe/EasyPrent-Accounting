@@ -753,7 +753,26 @@ def _total_amount_for_expense_period(
     return meter_unit, f"{total_amount:.2f}"
 
 
-def _normalize_expense_dates(payload: dict, charge_type: str) -> tuple[str | None, str, str]:
+def _latest_meter_reading_date(connection: sqlite3.Connection, meter_id: int) -> str | None:
+    row = connection.execute(
+        """
+        SELECT reading_date
+        FROM meter_readings
+        WHERE meter_id = ?
+        ORDER BY reading_date DESC, id DESC
+        LIMIT 1
+        """,
+        (meter_id,),
+    ).fetchone()
+    return str(row["reading_date"]) if row is not None else None
+
+
+def _normalize_expense_dates(
+    connection: sqlite3.Connection,
+    payload: dict,
+    charge_type: str,
+    meter_id: int | None,
+) -> tuple[str | None, str, str]:
     booking_date = payload.get("booking_date")
     period_start = payload.get("period_start")
     period_end = payload.get("period_end")
@@ -788,8 +807,14 @@ def _normalize_expense_dates(payload: dict, charge_type: str) -> tuple[str | Non
         normalized_date = str(effective_booking_date)
         return normalized_date, normalized_date, normalized_date
 
-    if period_start in (None, "") or period_end in (None, ""):
-        raise ValueError("period_start and period_end are required for recurring expenses")
+    if period_start in (None, ""):
+        raise ValueError("period_start is required for recurring expenses")
+    if period_end in (None, ""):
+        if charge_type != "consumption" or meter_id is None:
+            raise ValueError("period_end is required for recurring expenses")
+        period_end = _latest_meter_reading_date(connection, meter_id)
+        if period_end is None:
+            raise ValueError("period_end requires at least one meter reading when omitted")
     start_date = parse_date(str(period_start))
     end_date = parse_date(str(period_end))
     if start_date > end_date:
@@ -800,7 +825,20 @@ def _normalize_expense_dates(payload: dict, charge_type: str) -> tuple[str | Non
 def _normalize_expense_payload(connection: sqlite3.Connection, payload: dict) -> dict:
     object_type, object_id, property_id = _normalize_expense_target(connection, payload)
     charge_type, recurrence, interval_name = _derive_charge_fields(payload)
-    booking_date, period_start, period_end = _normalize_expense_dates(payload, charge_type)
+    meter_id, consumption_unit, meter_unit, conversion_factor = _normalize_meter_link(
+        connection,
+        payload,
+        object_type,
+        object_id,
+        property_id,
+        charge_type,
+    )
+    booking_date, period_start, period_end = _normalize_expense_dates(
+        connection,
+        payload,
+        charge_type,
+        meter_id,
+    )
     amount = _normalize_expense_amount(payload.get("amount"), charge_type)
     explicit_label = str(payload.get("label") or "").strip()
     explicit_expense_category = str(payload.get("expense_category") or "").strip()
@@ -812,14 +850,6 @@ def _normalize_expense_payload(connection: sqlite3.Connection, payload: dict) ->
     if beneficiary_name == "":
         raise ValueError("beneficiary_name is required")
     allocation_method = _require_payload_value(payload, "allocation_method")
-    meter_id, consumption_unit, meter_unit, conversion_factor = _normalize_meter_link(
-        connection,
-        payload,
-        object_type,
-        object_id,
-        property_id,
-        charge_type,
-    )
     consumption_value = _normalize_consumption_value(payload, charge_type, meter_id)
     return {
         "property_id": property_id,

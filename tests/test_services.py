@@ -716,6 +716,45 @@ class ExpenseServiceTests(unittest.TestCase):
         self.assertEqual(Decimal(created["effective_consumption_value"]), Decimal("10"))
         self.assertEqual(created["total_amount"], "10.00")
 
+    def test_consumption_expense_without_end_date_uses_latest_meter_reading(self) -> None:
+        meter = create_meter(
+            self.connection,
+            {
+                "object_type": "unit",
+                "object_id": 1,
+                "label": "Wasserzähler A-01",
+                "meter_type": "water",
+                "unit": "m3",
+            },
+        )
+        create_meter_reading(
+            self.connection,
+            {"meter_id": meter["id"], "reading_date": "2025-01-01", "reading_value": "100"},
+        )
+        create_meter_reading(
+            self.connection,
+            {"meter_id": meter["id"], "reading_date": "2025-02-15", "reading_value": "130"},
+        )
+
+        created = create_expense(
+            self.connection,
+            {
+                "object_type": "unit",
+                "object_id": 1,
+                "label": "Wasserkosten A-01",
+                "amount": "1.50",
+                "allocation_method": "occupants",
+                "charge_type": "consumption",
+                "meter_id": meter["id"],
+                "period_start": "2025-01-01",
+                "period_end": "",
+            },
+        )
+
+        self.assertEqual(created["period_end"], "2025-02-15")
+        self.assertEqual(Decimal(created["effective_consumption_value"]), Decimal("30"))
+        self.assertEqual(created["total_amount"], "45.00")
+
     def test_update_expense_changes_existing_cost(self) -> None:
         created = create_expense(
             self.connection,
