@@ -760,6 +760,7 @@
       rooms: "",
       tenants: "",
       leases: "",
+      meters: "",
     });
     const [meterChartGranularity, setMeterChartGranularity] = useState("months");
     const [meterChartMode, setMeterChartMode] = useState("cumulative");
@@ -1240,6 +1241,7 @@
           buildings: "",
           units: "",
           rooms: "",
+          meters: "",
           [tabKey]: String(entityId),
         });
       });
@@ -1601,6 +1603,19 @@
             status: current.status || "active",
           };
         });
+        return;
+      }
+      if (tabKey === "meters") {
+        resetForm("meter", function (current) {
+          return {
+            object_type: current.object_type || "property",
+            object_id: current.object_id || "",
+            label: "",
+            meter_type: "",
+            unit: "",
+            serial_number: "",
+          };
+        });
       }
     }
 
@@ -1621,7 +1636,7 @@
         setCreateFormVisible(tabKey, true);
         return;
       }
-      if (["properties", "buildings", "units", "rooms", "tenants", "leases"].indexOf(tabKey) >= 0) {
+      if (["properties", "buildings", "units", "rooms", "tenants", "leases", "meters"].indexOf(tabKey) >= 0) {
         cancelManagementEdit(tabKey);
       }
       setCreateFormVisible(tabKey, true);
@@ -1985,7 +2000,7 @@
         });
     }
 
-    function objectActionCell(resourceName, item) {
+    function objectActionCell(resourceName, item, onEdit) {
       const label = formatDisplayName(item);
       if (item.is_archived) {
         return e(
@@ -2046,6 +2061,21 @@
         e(
           "div",
           { className: "inline-actions" },
+          onEdit
+            ? e(
+                "button",
+                {
+                  type: "button",
+                  className: "action-button secondary",
+                  disabled: saving || loading,
+                  onClick: function (event) {
+                    event.stopPropagation();
+                    onEdit(item);
+                  },
+                },
+                "Bearbeiten"
+              )
+            : null,
           e(
             "button",
             {
@@ -2435,6 +2465,8 @@
 
     function handleMeterSubmit(event) {
       event.preventDefault();
+      const editingId = String(editingEntityIds.meters || "");
+      const isEditing = editingId !== "";
       const payload = {
         object_type: forms.meter.object_type,
         object_id: Number(forms.meter.object_id),
@@ -2444,10 +2476,11 @@
         serial_number: forms.meter.serial_number || null,
       };
       submitToApi(
-        "/api/meters",
+        isEditing ? "/api/meters/" + editingId : "/api/meters",
         payload,
-        "Zähler gespeichert.",
+        isEditing ? "Zähler aktualisiert." : "Zähler gespeichert.",
         function () {
+          clearEditingForTab("meters");
           setCreateFormVisible("meters", false);
           resetForm("meter", function (current) {
             return {
@@ -2460,8 +2493,32 @@
             };
           });
         },
-        resolveExpensePropertyId(forms.meter.object_type, forms.meter.object_id)
+        resolveExpensePropertyId(forms.meter.object_type, forms.meter.object_id),
+        isEditing ? "PUT" : "POST"
       );
+    }
+
+    function startMeterEdit(meter) {
+      if (String(editingEntityIds.meters || "") === String(meter.id)) {
+        cancelManagementEdit("meters");
+        return;
+      }
+      setError("");
+      setStatus("");
+      activateObjectEdit("meters", meter.id);
+      setForms(function (current) {
+        return Object.assign({}, current, {
+          meter: {
+            object_type: meter.object_type || "property",
+            object_id: meter.object_id == null ? "" : String(meter.object_id),
+            label: meter.label || "",
+            meter_type: meter.meter_type || "",
+            unit: meter.unit || "",
+            serial_number: meter.serial_number || "",
+          },
+        });
+      });
+      setActiveMeterSelection(meter.id);
     }
 
     function handleMeterReadingSubmit(event) {
@@ -3091,6 +3148,10 @@
       onTenantEdit: startTenantEdit,
       onLeaseEdit: startLeaseEdit,
       onMeterSelect: setActiveMeterSelection,
+      onMeterEdit: startMeterEdit,
+      meterActionCell: function (meter) {
+        return objectActionCell("meters", meter, startMeterEdit);
+      },
       objectActionCell: objectActionCell,
       expenseListFilters: expenseListFilters,
       onExpenseListFilterChange: function (field, value) {
@@ -3139,12 +3200,12 @@
       onExpenseDocumentDelete: handleExpenseDocumentDelete,
       showDeleteActions: showDeleteActions,
       activeInlineEditorHeading:
-        ["properties", "buildings", "units", "rooms", "tenants", "leases"].indexOf(activeTab) >= 0 &&
+        ["properties", "buildings", "units", "rooms", "tenants", "leases", "meters"].indexOf(activeTab) >= 0 &&
         isActiveEntityEditing
           ? activeHeading
           : "",
       activeInlineEditorForm:
-        ["properties", "buildings", "units", "rooms", "tenants", "leases"].indexOf(activeTab) >= 0 &&
+        ["properties", "buildings", "units", "rooms", "tenants", "leases", "meters"].indexOf(activeTab) >= 0 &&
         isActiveEntityEditing
           ? activeForm
           : null,

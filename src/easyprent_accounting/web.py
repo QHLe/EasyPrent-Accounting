@@ -15,6 +15,7 @@ from .services import (
     create_lease,
     create_meter,
     create_meter_reading,
+    update_meter,
     create_property,
     delete_lease_document,
     delete_lease,
@@ -619,6 +620,17 @@ def application(environ, start_response):
                 )
             except ValueError as error:
                 return json_response(start_response, HTTPStatus.BAD_REQUEST, {"error": str(error)})
+        if method == "PUT" and path.startswith("/api/meters/"):
+            meter_id = path.removeprefix("/api/meters/")
+            if meter_id.isdigit():
+                try:
+                    return json_response(
+                        start_response,
+                        HTTPStatus.OK,
+                        update_meter(connection, int(meter_id), read_json(environ)),
+                    )
+                except ValueError as error:
+                    return json_response(start_response, HTTPStatus.BAD_REQUEST, {"error": str(error)})
         if method == "POST" and path == "/api/meter-readings":
             try:
                 return json_response(

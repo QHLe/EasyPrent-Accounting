@@ -981,17 +981,20 @@
         "Status",
         "Aktion",
       ];
-      previewRows = (overview.meters || []).map(function (meter) {
-        return e(
-          "tr",
-          {
-            key: "meter-preview-" + String(meter.id),
-            className:
-              "selectable-row" + (String(selectedMeterId) === String(meter.id) ? " selected" : ""),
-            onClick: function () {
-              props.onMeterSelect(meter.id);
+      previewRows = [];
+      (overview.meters || []).forEach(function (meter) {
+        const isEditing = String(editingEntityIds.meters || "") === String(meter.id);
+        appendManagementPreviewRow(previewRows, {
+          row: e(
+            "tr",
+            {
+              key: "meter-preview-" + String(meter.id),
+              className:
+                "selectable-row" + (String(selectedMeterId) === String(meter.id) ? " selected" : ""),
+              onClick: function () {
+                props.onMeterSelect(meter.id);
+              },
             },
-          },
           e("td", null, formatDisplayName(meter)),
           e("td", null, formatObjectTypeLabel(meter.object_type)),
           e("td", null, meter.object_name || ("ID " + String(meter.object_id))),
@@ -1001,8 +1004,16 @@
           e("td", null, meter.latest_reading_date || "-"),
           e("td", null, String(meter.reading_count || 0)),
           e("td", null, objectStatusLabel(meter)),
-          objectActionCell("meters", meter)
-        );
+            props.meterActionCell
+            ? props.meterActionCell(meter)
+            : objectActionCell("meters", meter)
+          ),
+          isEditing: isEditing,
+          inlineRowKey: "meter-preview-edit-" + String(meter.id),
+          previewHeadersLength: previewHeaders.length,
+          inlineEditorHeading: activeInlineEditorHeading,
+          inlineEditorForm: activeInlineEditorForm,
+        });
       });
     } else {
       previewTitle = "Kostenliste";

@@ -1894,6 +1894,44 @@ class WebApiAndUiTests(unittest.TestCase):
         self.assertEqual(reading_payload["meter_id"], meter_payload["id"])
         self.assertEqual(reading_payload["reading_date"], "2025-03-31")
 
+    def test_api_can_update_meter_master_data(self) -> None:
+        meter_status, _, meter_body = self._call_app(
+            "POST",
+            "/api/meters",
+            json.dumps(
+                {
+                    "object_type": "unit",
+                    "object_id": 1,
+                    "label": "Wasserzähler A-01",
+                    "meter_type": "water",
+                    "unit": "m3",
+                    "serial_number": "ALT-1",
+                }
+            ).encode("utf-8"),
+        )
+        meter_payload = json.loads(meter_body.decode("utf-8"))
+
+        update_status, _, update_body = self._call_app(
+            "PUT",
+            "/api/meters/" + str(meter_payload["id"]),
+            json.dumps(
+                {
+                    "object_type": "unit",
+                    "object_id": 1,
+                    "label": "Wasserzähler Bad",
+                    "meter_type": "Kaltwasser",
+                    "unit": "m3",
+                    "serial_number": "NEU-2",
+                }
+            ).encode("utf-8"),
+        )
+        update_payload = json.loads(update_body.decode("utf-8"))
+
+        self.assertTrue(meter_status.startswith("201"))
+        self.assertTrue(update_status.startswith("200"))
+        self.assertEqual(update_payload["label"], "Wasserzähler Bad")
+        self.assertEqual(update_payload["serial_number"], "NEU-2")
+
     def test_api_rejects_meter_reading_that_breaks_monotonic_order(self) -> None:
         meter_status, _, meter_body = self._call_app(
             "POST",

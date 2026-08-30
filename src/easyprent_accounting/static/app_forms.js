@@ -1245,11 +1245,14 @@
         )
       );
     } else if (activeTab === "meters") {
-      activeHeading = "Zähler und Zählerstände erfassen";
+      const isEditing = String(editingEntityIds.meters || "") !== "";
+      activeHeading = isEditing ? "Zähler bearbeiten" : "Zähler und Zählerstände erfassen";
       activeForm = e(
         "div",
         { className: "stack" },
-        e(
+        isEditing
+          ? null
+          : e(
           "form",
           { onSubmit: props.handleMeterSubmit },
           e(
@@ -1340,13 +1343,29 @@
             e(
               "button",
               { type: "submit", disabled: props.saving || props.loading },
-              props.saving ? "Speichert ..." : "Zähler speichern"
-            )
+              props.saving ? "Speichert ..." : isEditing ? "Zähler aktualisieren" : "Zähler speichern"
+            ),
+            isEditing
+              ? e(
+                  "button",
+                  {
+                    type: "button",
+                    className: "action-button secondary",
+                    disabled: props.saving || props.loading,
+                    onClick: function () {
+                      handleCancelEdit("meters");
+                    },
+                  },
+                  "Bearbeitung abbrechen"
+                )
+              : null
           )
         ),
-        e(
-          "form",
-          { onSubmit: props.handleMeterReadingSubmit },
+        isEditing
+          ? null
+          : e(
+              "form",
+              { onSubmit: props.handleMeterReadingSubmit },
           e("h4", null, "Zählerstand erfassen"),
           e(
             "div",
@@ -1401,7 +1420,7 @@
               props.saving ? "Speichert ..." : "Zählerstand speichern"
             )
           )
-        )
+          )
       );
     } else {
       activeHeading = "Kosten erfassen";

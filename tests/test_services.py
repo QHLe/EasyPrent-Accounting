@@ -18,6 +18,7 @@ from src.easyprent_accounting.services import (
     list_overview,
     restore_object,
     settlement_for_period,
+    update_meter,
     update_expense,
     update_unit,
 )
@@ -384,6 +385,67 @@ class ExpenseServiceTests(unittest.TestCase):
         self.assertEqual(reading_row["meter_id"], meter["id"])
         self.assertEqual(reading_row["reading_date"], "2025-03-31")
         self.assertEqual(str(reading_row["reading_value"]), "125.4")
+
+    def test_update_meter_allows_correcting_master_data(self) -> None:
+        meter = create_meter(
+            self.connection,
+            {
+                "object_type": "unit",
+                "object_id": 1,
+                "label": "Wasserzähler Küche",
+                "meter_type": "water",
+                "unit": "m3",
+                "serial_number": "ALT-1",
+            },
+        )
+
+        updated = update_meter(
+            self.connection,
+            meter["id"],
+            {
+                "object_type": "unit",
+                "object_id": 1,
+                "label": "Wasserzähler Bad",
+                "meter_type": "Kaltwasser",
+                "unit": "m3",
+                "serial_number": "NEU-2",
+            },
+        )
+
+        self.assertEqual(updated["label"], "Wasserzähler Bad")
+        self.assertEqual(updated["meter_type"], "Kaltwasser")
+        self.assertEqual(updated["serial_number"], "NEU-2")
+
+    def test_update_meter_rejects_unit_change_with_existing_readings(self) -> None:
+        meter = create_meter(
+            self.connection,
+            {
+                "object_type": "unit",
+                "object_id": 1,
+                "label": "Wasserzähler Küche",
+                "unit": "m3",
+            },
+        )
+        create_meter_reading(
+            self.connection,
+            {
+                "meter_id": meter["id"],
+                "reading_date": "2025-03-31",
+                "reading_value": "125.4",
+            },
+        )
+
+        with self.assertRaisesRegex(ValueError, "unit cannot be changed"):
+            update_meter(
+                self.connection,
+                meter["id"],
+                {
+                    "object_type": "unit",
+                    "object_id": 1,
+                    "label": "Wasserzähler Küche",
+                    "unit": "l",
+                },
+            )
 
     def test_create_meter_reading_rejects_non_increasing_later_value(self) -> None:
         meter = create_meter(

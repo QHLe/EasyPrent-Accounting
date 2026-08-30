@@ -1015,6 +1015,37 @@ def build_openapi_document() -> dict:
                     },
                 }
             },
+            "/api/meters/{id}": {
+                "put": {
+                    "summary": "Aktualisiert einen Zähler",
+                    "parameters": [
+                        {
+                            "name": "id",
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "integer"},
+                        }
+                    ],
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {"$ref": "#/components/schemas/MeterCreateRequest"}
+                            }
+                        },
+                    },
+                    "responses": {
+                        "200": {
+                            "description": "Aktualisierter Zähler",
+                            "content": {
+                                "application/json": {
+                                    "schema": {"$ref": "#/components/schemas/MeterResponse"}
+                                }
+                            },
+                        }
+                    },
+                }
+            },
             "/api/meter-readings": {
                 "post": {
                     "summary": "Erfasst einen Zählerstand",

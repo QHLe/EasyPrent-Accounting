@@ -2242,6 +2242,69 @@ def create_meter(connection: sqlite3.Connection, payload: dict) -> dict:
     }
 
 
+def update_meter(connection: sqlite3.Connection, meter_id: int, payload: dict) -> dict:
+    row = connection.execute(
+        """
+        SELECT id, property_id, object_type, object_id, label, meter_type, unit,
+               serial_number, is_archived
+        FROM meters
+        WHERE id = ?
+        """,
+        (meter_id,),
+    ).fetchone()
+    if row is None:
+        raise ValueError("meter not found")
+    if row["is_archived"]:
+        raise ValueError("archived meter cannot be edited")
+
+    object_type, object_id, property_id = _normalize_meter_target(connection, payload)
+    label = _require_payload_value(payload, "label")
+    unit = _require_payload_value(payload, "unit")
+    target_changed = object_type != row["object_type"] or object_id != row["object_id"]
+    unit_changed = unit != row["unit"]
+    if target_changed or unit_changed:
+        reading_count = connection.execute(
+            "SELECT COUNT(*) FROM meter_readings WHERE meter_id = ?", (meter_id,)
+        ).fetchone()[0]
+        expense_count = connection.execute(
+            "SELECT COUNT(*) FROM expense_items WHERE meter_id = ?", (meter_id,)
+        ).fetchone()[0]
+        if reading_count or expense_count:
+            raise ValueError(
+                "object assignment or unit cannot be changed while meter has readings or dependent expenses"
+            )
+
+    connection.execute(
+        """
+        UPDATE meters
+        SET property_id = ?, object_type = ?, object_id = ?, label = ?,
+            meter_type = ?, unit = ?, serial_number = ?
+        WHERE id = ?
+        """,
+        (
+            property_id,
+            object_type,
+            object_id,
+            label,
+            payload.get("meter_type"),
+            unit,
+            payload.get("serial_number"),
+            meter_id,
+        ),
+    )
+    connection.commit()
+    return {
+        "id": meter_id,
+        "property_id": property_id,
+        "object_type": object_type,
+        "object_id": object_id,
+        "label": label,
+        "meter_type": payload.get("meter_type"),
+        "unit": unit,
+        "serial_number": payload.get("serial_number"),
+    }
+
+
 def create_meter_reading(connection: sqlite3.Connection, payload: dict) -> dict:
     meter_id = _parse_int(payload.get("meter_id"), "meter_id")
     meter_row = _lookup_meter(connection, meter_id)
