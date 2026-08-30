@@ -79,11 +79,13 @@ class ExpenseServiceTests(unittest.TestCase):
         )
 
         row = self.connection.execute(
-            "SELECT expense_category, beneficiary_name FROM expense_items WHERE id = ?",
+            "SELECT label, expense_category, beneficiary_name FROM expense_items WHERE id = ?",
             (created["id"],),
         ).fetchone()
+        self.assertEqual(created["label"], "Treppenhausreinigung Maerz")
         self.assertEqual(created["expense_category"], "Hausreinigung")
         self.assertEqual(created["beneficiary_name"], "Firma Sauber GmbH")
+        self.assertEqual(row["label"], "Treppenhausreinigung Maerz")
         self.assertEqual(row["expense_category"], "Hausreinigung")
         self.assertEqual(row["beneficiary_name"], "Firma Sauber GmbH")
 

@@ -153,6 +153,7 @@
       object_type: "property",
       object_id: "",
       expense_category: "",
+      label: "",
       beneficiary_name: "",
       amount: "",
       allocation_method: "area",
@@ -184,6 +185,7 @@
           ? ""
           : String(expense.object_id),
       expense_category: expense.expense_category || expense.label || "",
+      label: expense.label || expense.expense_category || "",
       beneficiary_name: expense.beneficiary_name || "",
       amount: expense.amount == null ? "" : String(expense.amount),
       allocation_method: expense.allocation_method || formState.allocation_method,
@@ -222,6 +224,7 @@
       object_type: formState.object_type,
       object_id: Number(formState.object_id),
       expense_category: formState.expense_category,
+      label: formState.label,
       beneficiary_name: formState.beneficiary_name,
       amount: formState.amount,
       allocation_method: formState.allocation_method,

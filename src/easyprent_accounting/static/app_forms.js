@@ -271,6 +271,18 @@
         e(
           "label",
           null,
+          "Bezeichnung",
+          e("input", {
+            value: formState.label,
+            onChange: function (event) {
+              props.setField("label", event.target.value);
+            },
+            required: true,
+          })
+        ),
+        e(
+          "label",
+          null,
           "Empfänger",
           e("input", {
             value: formState.beneficiary_name,

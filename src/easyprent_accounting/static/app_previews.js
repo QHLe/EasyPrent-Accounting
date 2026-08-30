@@ -1016,6 +1016,7 @@
       });
       previewHeaders = [
         "Kostenart",
+        "Bezeichnung",
         "Empfänger",
         "Zielobjekt",
         "Abrechnungsart",
@@ -1047,6 +1048,7 @@
                 : null,
             },
             e("td", null, formatExpenseCategoryLabel(expense)),
+            e("td", null, expense.label || "-"),
             e("td", null, expense.beneficiary_name || "Nicht gepflegt"),
             e("td", null, formatExpenseTargetLabel(expense)),
             e("td", null, formatExpenseBillingType(expense)),
