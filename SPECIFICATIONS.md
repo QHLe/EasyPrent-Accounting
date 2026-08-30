@@ -154,6 +154,8 @@ Mietverträgen, Nebenkosten und abschreibungsrelevanten Objektdaten.
   Die Kostenentwicklung muss mindestens konfigurierbar nach Zeitraum, Granularität und Diagrammtyp sein sowie Filter nach Zielobjekt und Kostenart unterstützen.
 - `REQ-WEB-064`
   Im Säulendiagramm der Kostenentwicklung muss die Zusammensetzung farblich nach Kostenarten hervorgehoben werden, sodass Beitragsanteile pro Zeitraum visuell unterscheidbar sind.
+- `REQ-WEB-064a`
+  Zählergebundene verbrauchsbezogene Kosten müssen in der Kostenentwicklung für jeden angezeigten Zeitraum aus den tatsächlichen oder linear interpolierten Zählerständen berechnet werden; eine zeitanteilige Verteilung ihres Gesamtbetrags ist dafür nicht zulässig.
 - `REQ-WEB-065`
   In der Kostenübersicht der Hauptansicht müssen Kostenpositionen standardmäßig nach Enddatum absteigend sortiert sein (neueste zuerst, älteste zuletzt).
 - `REQ-WEB-066`

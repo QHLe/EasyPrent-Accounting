@@ -458,7 +458,28 @@
       endDate.getUTCMonth() - startDate.getUTCMonth() + 1;
   }
 
-  function amountForExpenseOverlap(expense, expenseRange, overlapStart, overlapEnd) {
+  function amountForExpenseOverlap(expense, expenseRange, overlapStart, overlapEnd, meterReadings) {
+    if (expense.charge_type === "consumption" && expense.meter_id) {
+      const consumptionEnd =
+        overlapEnd < expenseRange.end ? addUtcDays(overlapEnd, 1) : overlapEnd;
+      const meterConsumption = calculateMeterConsumptionValue(
+        expense.meter_id,
+        formatIsoDate(overlapStart),
+        formatIsoDate(consumptionEnd),
+        { meter_readings: meterReadings || [] }
+      );
+      const conversionFactor = Number(expense.conversion_factor || "1");
+      const unitPrice = Number(expense.amount);
+      if (
+        meterConsumption !== null &&
+        Number.isFinite(conversionFactor) &&
+        Number.isFinite(unitPrice)
+      ) {
+        return unitPrice * meterConsumption * conversionFactor;
+      }
+      return null;
+    }
+
     if (expense.is_open_ended) {
       const amount = Number(expense.amount);
       if (!Number.isFinite(amount)) {
@@ -520,7 +541,7 @@
     return periods;
   }
 
-  function buildExpenseDevelopmentSeries(expenses, granularity, rangeStart, rangeEnd) {
+  function buildExpenseDevelopmentSeries(expenses, meterReadings, granularity, rangeStart, rangeEnd) {
     const periods = buildExpenseDevelopmentPeriods(granularity, rangeStart, rangeEnd);
     if (!periods.length) {
       return [];
@@ -544,7 +565,13 @@
         if (overlapStart > overlapEnd) {
           return;
         }
-        const overlapAmount = amountForExpenseOverlap(expense, expenseRange, overlapStart, overlapEnd);
+        const overlapAmount = amountForExpenseOverlap(
+          expense,
+          expenseRange,
+          overlapStart,
+          overlapEnd,
+          meterReadings
+        );
         if (overlapAmount !== null) {
           series[index].value += overlapAmount;
         }
@@ -559,7 +586,13 @@
     });
   }
 
-  function buildExpenseDevelopmentCompositionSeries(expenses, granularity, rangeStart, rangeEnd) {
+  function buildExpenseDevelopmentCompositionSeries(
+    expenses,
+    meterReadings,
+    granularity,
+    rangeStart,
+    rangeEnd
+  ) {
     const periods = buildExpenseDevelopmentPeriods(granularity, rangeStart, rangeEnd);
     if (!periods.length) {
       return [];
@@ -584,7 +617,13 @@
         if (overlapStart > overlapEnd) {
           return;
         }
-        const overlapAmount = amountForExpenseOverlap(expense, expenseRange, overlapStart, overlapEnd);
+        const overlapAmount = amountForExpenseOverlap(
+          expense,
+          expenseRange,
+          overlapStart,
+          overlapEnd,
+          meterReadings
+        );
         if (overlapAmount !== null) {
           valuesByCategory[categoryName][index] += overlapAmount;
         }
@@ -605,7 +644,7 @@
       });
   }
 
-  function buildExpenseCategoryPeriodTotals(expenses, rangeStart, rangeEnd) {
+  function buildExpenseCategoryPeriodTotals(expenses, meterReadings, rangeStart, rangeEnd) {
     if (!rangeStart || !rangeEnd) {
       return [];
     }
@@ -634,7 +673,13 @@
       if (!totalsByCategory[category]) {
         totalsByCategory[category] = { total: 0, hasUncalculatedExpense: false };
       }
-      const overlapAmount = amountForExpenseOverlap(expense, expenseRange, overlapStart, overlapEnd);
+      const overlapAmount = amountForExpenseOverlap(
+        expense,
+        expenseRange,
+        overlapStart,
+        overlapEnd,
+        meterReadings
+      );
       if (overlapAmount === null) {
         totalsByCategory[category].hasUncalculatedExpense = true;
         return;
@@ -2873,6 +2918,7 @@
     const filteredExpenses = buildFilteredExpenses(overview.expenses || [], expenseListFilters);
     const expenseCategoryPeriodTotals = buildExpenseCategoryPeriodTotals(
       filteredExpenses,
+      overview.meter_readings || [],
       expenseChartConfig.from,
       expenseChartConfig.to
     );
@@ -2881,18 +2927,21 @@
     });
     const expenseDevelopmentSeries = buildExpenseDevelopmentSeries(
       expenseDevelopmentExpenses,
+      overview.meter_readings || [],
       expenseChartConfig.granularity,
       expenseChartConfig.from,
       expenseChartConfig.to
     );
     const expenseDevelopmentCompositionSeries = buildExpenseDevelopmentCompositionSeries(
       expenseDevelopmentExpenses,
+      overview.meter_readings || [],
       expenseChartConfig.granularity,
       expenseChartConfig.from,
       expenseChartConfig.to
     );
     const expenseDevelopmentMonthlySeries = buildExpenseDevelopmentSeries(
       expenseDevelopmentExpenses,
+      overview.meter_readings || [],
       "months",
       expenseChartConfig.from,
       expenseChartConfig.to

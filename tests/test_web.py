@@ -245,6 +245,8 @@ class WebApiAndUiTests(unittest.TestCase):
         self.assertIn("Kostenentwicklung", content)
         self.assertIn("buildExpenseDevelopmentSeries", content)
         self.assertIn("buildExpenseDevelopmentCompositionSeries", content)
+        self.assertIn("calculateMeterConsumptionValue(", content)
+        self.assertIn("expense.conversion_factor", content)
         self.assertIn("sortExpensesByEndDateDesc", content)
         self.assertIn("filteredExpenses.slice().sort(sortExpensesByEndDateDesc)", content)
         self.assertIn('stack: "expense-composition"', content)
