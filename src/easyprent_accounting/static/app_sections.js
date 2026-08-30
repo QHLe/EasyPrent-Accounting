@@ -316,7 +316,7 @@
           props.selectedMeter
             ? "Vollständige Historie für " +
                 formatDisplayName(props.selectedMeter) +
-                " mit streng steigenden Zählerständen."
+                " mit gleichbleibenden oder steigenden Zählerständen."
             : "Kein Zähler ausgewählt: Es werden alle vorhandenen Zählerstände angezeigt."
         ),
         props.selectedMeter

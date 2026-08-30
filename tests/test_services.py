@@ -417,6 +417,46 @@ class ExpenseServiceTests(unittest.TestCase):
 
         self.assertIn("previous", str(error.exception))
 
+    def test_create_meter_reading_accepts_equal_values(self) -> None:
+        meter = create_meter(
+            self.connection,
+            {
+                "object_type": "unit",
+                "object_id": 1,
+                "label": "Stromzähler A-02",
+                "meter_type": "power",
+                "unit": "kWh",
+            },
+        )
+        create_meter_reading(
+            self.connection,
+            {
+                "meter_id": meter["id"],
+                "reading_date": "2025-03-01",
+                "reading_value": "100",
+            },
+        )
+
+        equal_later = create_meter_reading(
+            self.connection,
+            {
+                "meter_id": meter["id"],
+                "reading_date": "2025-05-01",
+                "reading_value": "100",
+            },
+        )
+        equal_between = create_meter_reading(
+            self.connection,
+            {
+                "meter_id": meter["id"],
+                "reading_date": "2025-04-01",
+                "reading_value": "100",
+            },
+        )
+
+        self.assertEqual(equal_later["reading_value"], "100")
+        self.assertEqual(equal_between["reading_value"], "100")
+
     def test_create_meter_reading_rejects_value_above_later_reading(self) -> None:
         meter = create_meter(
             self.connection,

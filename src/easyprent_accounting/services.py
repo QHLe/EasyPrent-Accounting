@@ -2278,8 +2278,8 @@ def create_meter_reading(connection: sqlite3.Connection, payload: dict) -> dict:
         """,
         (meter_id, reading_date),
     ).fetchone()
-    if previous_row is not None and reading_value <= Decimal(str(previous_row["reading_value"])):
-        raise ValueError("reading_value must be greater than previous reading")
+    if previous_row is not None and reading_value < Decimal(str(previous_row["reading_value"])):
+        raise ValueError("reading_value must not be lower than previous reading")
 
     next_row = connection.execute(
         """
@@ -2291,8 +2291,8 @@ def create_meter_reading(connection: sqlite3.Connection, payload: dict) -> dict:
         """,
         (meter_id, reading_date),
     ).fetchone()
-    if next_row is not None and reading_value >= Decimal(str(next_row["reading_value"])):
-        raise ValueError("reading_value must be lower than later reading")
+    if next_row is not None and reading_value > Decimal(str(next_row["reading_value"])):
+        raise ValueError("reading_value must not be higher than later reading")
 
     cursor = connection.execute(
         """

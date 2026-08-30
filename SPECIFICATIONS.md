@@ -286,9 +286,9 @@ Mietverträgen, Nebenkosten und abschreibungsrelevanten Objektdaten.
 - `REQ-PROP-022`
   Zähler müssen archiviert werden können und dürfen nur nach vorheriger Archivierung gelöscht werden.
 - `REQ-PROP-023`
-  Zählerstände eines Zählers müssen mit der Zeit streng monoton steigen.
+  Zählerstände eines Zählers müssen mit der Zeit gleichbleibend oder steigen.
 - `REQ-PROP-024`
-  Beim Erfassen eines Zählerstands muss der Wert größer als jeder frühere und kleiner als jeder spätere Zählerstand desselben Zählers sein.
+  Beim Erfassen eines Zählerstands muss der Wert mindestens so groß wie jeder frühere und höchstens so groß wie jeder spätere Zählerstand desselben Zählers sein.
 - `REQ-PROP-025`
   Pro Zähler und Ablesedatum darf höchstens ein Zählerstand gespeichert werden.
 - `REQ-PROP-026`
@@ -495,7 +495,7 @@ Mietverträgen, Nebenkosten und abschreibungsrelevanten Objektdaten.
 ## Abnahmeorientierte Prüfpunkte
 
 - `ACC-001`
-  Die Anforderungen `REQ-PROP-001` bis `REQ-PROP-027` sind erfüllt, wenn Immobilien, Gebäude, Wohnungen, Zimmer und Zähler konsistent angelegt, mit den erforderlichen Adress- und Stammdaten einschließlich eigener Zimmer-Wohnflächen gespeichert, gemäß ihrer erlaubten Pflicht- und Optionalbeziehungen verknüpft, in ihrer maximal zulässigen Zimmeranzahl pro Wohnung begrenzt, Zählerstände erfassbar, pro Datum eindeutig und über die Zeit streng steigend gespeichert, bei Bedarf gezielt wieder gelöscht, archiviert und erst nach der Archivierung gelöscht sowie über die Web-Oberfläche angelegt werden können.
+  Die Anforderungen `REQ-PROP-001` bis `REQ-PROP-027` sind erfüllt, wenn Immobilien, Gebäude, Wohnungen, Zimmer und Zähler konsistent angelegt, mit den erforderlichen Adress- und Stammdaten einschließlich eigener Zimmer-Wohnflächen gespeichert, gemäß ihrer erlaubten Pflicht- und Optionalbeziehungen verknüpft, in ihrer maximal zulässigen Zimmeranzahl pro Wohnung begrenzt, Zählerstände erfassbar, pro Datum eindeutig und über die Zeit gleichbleibend oder steigend gespeichert, bei Bedarf gezielt wieder gelöscht, archiviert und erst nach der Archivierung gelöscht sowie über die Web-Oberfläche angelegt werden können.
 - `ACC-002`
   Die Anforderungen `REQ-LEASE-001` bis `REQ-LEASE-010` sind erfüllt, wenn Mieter und Mietverträge Wohnungen eindeutig zugeordnet werden können, Mietverträge optional zusätzlich einem Zimmer innerhalb der Wohnung zugeordnet werden können, Mieter ohne referenzierende Mietverträge gezielt gelöscht werden können, Mietverträge selbst ebenfalls gezielt gelöscht werden können und sowohl Mieter als auch Mietverträge mit einem oder mehreren Dokumenten einschließlich referenzierter Paperless-Dokumente verknüpft werden können.
 - `ACC-003`
