@@ -331,6 +331,10 @@ td {
   padding-top: 0.85rem;
 }
 
+.expense-detail-row td:first-child {
+  padding-left: 3.5rem;
+}
+
 .echarts-host {
   width: 100%;
   min-height: 320px;

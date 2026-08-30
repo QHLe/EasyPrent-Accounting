@@ -100,7 +100,7 @@
     };
   }
 
-  function interpolateReadingValue(readings, targetDateString) {
+  function interpolateReading(readings, targetDateString) {
     if (!readings.length) {
       return null;
     }
@@ -111,7 +111,7 @@
       const currentTime = parseIsoDate(reading.reading_date).getTime();
       const currentValue = Number(reading.reading_value);
       if (currentTime === targetTime) {
-        return currentValue;
+        return { value: currentValue, isInterpolated: false };
       }
       if (currentTime > targetTime) {
         if (!previous) {
@@ -121,17 +121,30 @@
         const previousValue = Number(previous.reading_value);
         const totalDistance = currentTime - previousTime;
         if (totalDistance <= 0) {
-          return previousValue;
+          return { value: previousValue, isInterpolated: true };
         }
         const factor = (targetTime - previousTime) / totalDistance;
-        return previousValue + (currentValue - previousValue) * factor;
+        return {
+          value: previousValue + (currentValue - previousValue) * factor,
+          isInterpolated: true,
+        };
       }
       previous = reading;
     }
     return null;
   }
 
+  function interpolateReadingValue(readings, targetDateString) {
+    const reading = interpolateReading(readings, targetDateString);
+    return reading ? reading.value : null;
+  }
+
   function calculateMeterConsumptionValue(meterId, periodStart, periodEnd, overviewPayload) {
+    const calculation = calculateMeterConsumption(meterId, periodStart, periodEnd, overviewPayload);
+    return calculation ? calculation.value : null;
+  }
+
+  function calculateMeterConsumption(meterId, periodStart, periodEnd, overviewPayload) {
     if (!meterId || !periodStart || !periodEnd) {
       return null;
     }
@@ -141,13 +154,20 @@
     if (readings.length < 2) {
       return null;
     }
-    const startValue = interpolateReadingValue(readings, periodStart);
+    const startReading = interpolateReading(readings, periodStart);
     const inclusiveEnd = formatIsoDate(addUtcDays(parseIsoDate(periodEnd), 1));
-    const endValue = interpolateReadingValue(readings, inclusiveEnd);
-    if (startValue === null || endValue === null || endValue < startValue) {
+    const endReading = interpolateReading(readings, inclusiveEnd);
+    if (
+      startReading === null ||
+      endReading === null ||
+      endReading.value < startReading.value
+    ) {
       return null;
     }
-    return endValue - startValue;
+    return {
+      value: endReading.value - startReading.value,
+      isInterpolated: startReading.isInterpolated || endReading.isInterpolated,
+    };
   }
 
   function formatMonthLabel(date) {
@@ -477,8 +497,19 @@
   }
 
   function amountForExpenseOverlap(expense, expenseRange, overlapStart, overlapEnd, meterReadings) {
+    const calculation = calculateExpenseOverlap(
+      expense,
+      expenseRange,
+      overlapStart,
+      overlapEnd,
+      meterReadings
+    );
+    return calculation ? calculation.amount : null;
+  }
+
+  function calculateExpenseOverlap(expense, expenseRange, overlapStart, overlapEnd, meterReadings) {
     if (expense.charge_type === "consumption" && expense.meter_id) {
-      const meterConsumption = calculateMeterConsumptionValue(
+      const meterConsumption = calculateMeterConsumption(
         expense.meter_id,
         formatIsoDate(overlapStart),
         formatIsoDate(overlapEnd),
@@ -491,7 +522,10 @@
         Number.isFinite(conversionFactor) &&
         Number.isFinite(unitPrice)
       ) {
-        return unitPrice * meterConsumption * conversionFactor;
+        return {
+          amount: unitPrice * meterConsumption.value * conversionFactor,
+          isInterpolated: meterConsumption.isInterpolated,
+        };
       }
       return null;
     }
@@ -502,7 +536,7 @@
         return null;
       }
       if (expense.charge_type === "monthly") {
-        return amount * countCoveredMonths(overlapStart, overlapEnd);
+        return { amount: amount * countCoveredMonths(overlapStart, overlapEnd), isInterpolated: false };
       }
       if (expense.charge_type === "yearly") {
         let occurrences = 0;
@@ -516,7 +550,7 @@
             occurrences += 1;
           }
         }
-        return amount * occurrences;
+        return { amount: amount * occurrences, isInterpolated: false };
       }
     }
 
@@ -526,7 +560,7 @@
     }
     const expenseDays = Math.floor((expenseRange.end - expenseRange.start) / 86400000) + 1;
     const overlapDays = Math.floor((overlapEnd - overlapStart) / 86400000) + 1;
-    return totalAmount * overlapDays / expenseDays;
+    return { amount: totalAmount * overlapDays / expenseDays, isInterpolated: false };
   }
 
   function buildExpenseDevelopmentPeriods(granularity, rangeStart, rangeEnd) {
@@ -687,20 +721,41 @@
 
       const category = String(expense.expense_category || expense.label || "Nicht kategorisiert");
       if (!totalsByCategory[category]) {
-        totalsByCategory[category] = { total: 0, hasUncalculatedExpense: false };
+        totalsByCategory[category] = {
+          total: 0,
+          hasUncalculatedExpense: false,
+          hasInterpolatedExpense: false,
+          items: [],
+        };
       }
-      const overlapAmount = amountForExpenseOverlap(
+      const calculation = calculateExpenseOverlap(
         expense,
         expenseRange,
         overlapStart,
         overlapEnd,
         meterReadings
       );
-      if (overlapAmount === null) {
+      if (calculation === null) {
         totalsByCategory[category].hasUncalculatedExpense = true;
+        totalsByCategory[category].items.push({
+          id: expense.id,
+          label: expense.label || expense.expense_category || "Kostenposten",
+          beneficiary_name: expense.beneficiary_name,
+          amount: null,
+          isInterpolated: false,
+        });
         return;
       }
-      totalsByCategory[category].total += overlapAmount;
+      totalsByCategory[category].total += calculation.amount;
+      totalsByCategory[category].hasInterpolatedExpense =
+        totalsByCategory[category].hasInterpolatedExpense || calculation.isInterpolated;
+      totalsByCategory[category].items.push({
+        id: expense.id,
+        label: expense.label || expense.expense_category || "Kostenposten",
+        beneficiary_name: expense.beneficiary_name,
+        amount: Number(calculation.amount.toFixed(2)),
+        isInterpolated: calculation.isInterpolated,
+      });
     });
 
     return Object.keys(totalsByCategory)
@@ -712,6 +767,8 @@
           category: category,
           total: Number(totalsByCategory[category].total.toFixed(2)),
           hasUncalculatedExpense: totalsByCategory[category].hasUncalculatedExpense,
+          hasInterpolatedExpense: totalsByCategory[category].hasInterpolatedExpense,
+          items: totalsByCategory[category].items,
         };
       });
   }

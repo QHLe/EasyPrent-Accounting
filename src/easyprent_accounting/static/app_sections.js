@@ -5,6 +5,7 @@
 
   const e = React.createElement;
   const Fragment = React.Fragment;
+  const useState = React.useState;
   const domain = window.EasyPrentAppDomain || {};
   const charts = window.EasyPrentAppCharts || {};
   const summaryCards = domain.summaryCards;
@@ -471,30 +472,115 @@
   }
 
   function ExpenseDevelopmentPanel(props) {
+    const [expandedCategories, setExpandedCategories] = useState({});
     const monthlySeries = props.expenseDevelopmentMonthlySeries || [];
     const monthCount = monthlySeries.length;
-    const categoryTotalRows = (props.expenseCategoryPeriodTotals || []).map(function (categoryTotal) {
+    const categoryPeriodTotals = props.expenseCategoryPeriodTotals || [];
+    const hasUncalculatedExpense = categoryPeriodTotals.some(function (categoryTotal) {
+      return categoryTotal.hasUncalculatedExpense;
+    });
+    const totalCategoryCosts = categoryPeriodTotals.reduce(function (total, categoryTotal) {
+      return total + Number(categoryTotal.total || 0);
+    }, 0);
+    function formatCalculationAmount(amount, isInterpolated) {
+      return amount == null
+        ? "–"
+        : formatMoneyValue(amount) + " EUR" + (isInterpolated ? " (2)" : "");
+    }
+
+    const categoryTotalRows = [];
+    categoryPeriodTotals.forEach(function (categoryTotal) {
       const isCalculable = !categoryTotal.hasUncalculatedExpense;
-      return e(
+      const isExpanded = !!expandedCategories[categoryTotal.category];
+      categoryTotalRows.push(e(
         "tr",
         { key: "expense-category-period-total-" + categoryTotal.category },
-        e("td", null, categoryTotal.category),
+        e(
+          "td",
+          null,
+          e(
+            "button",
+            {
+              type: "button",
+              className: "panel-toggle",
+              title: isExpanded ? "Kostenposten einklappen" : "Kostenposten ausklappen",
+              "aria-label": isExpanded ? "Kostenposten einklappen" : "Kostenposten ausklappen",
+              "aria-expanded": isExpanded,
+              onClick: function () {
+                setExpandedCategories(function (current) {
+                  return Object.assign({}, current, {
+                    [categoryTotal.category]: !current[categoryTotal.category],
+                  });
+                });
+              },
+            },
+            isExpanded ? "-" : "+"
+          ),
+          categoryTotal.category
+        ),
         e(
           "td",
           null,
           !isCalculable
             ? "–"
-            : formatMoneyValue(categoryTotal.total) + " EUR"
+            : formatCalculationAmount(categoryTotal.total, categoryTotal.hasInterpolatedExpense)
         ),
         e(
           "td",
           null,
           !isCalculable || monthCount === 0
             ? "–"
-            : formatMoneyValue(categoryTotal.total / monthCount) + " EUR"
+            : formatCalculationAmount(
+                categoryTotal.total / monthCount,
+                categoryTotal.hasInterpolatedExpense
+              )
         )
-      );
+      ));
+      if (isExpanded) {
+        (categoryTotal.items || []).forEach(function (item) {
+          categoryTotalRows.push(
+            e(
+              "tr",
+              { className: "expense-detail-row", key: "expense-category-item-" + categoryTotal.category + "-" + item.id },
+              e("td", null, item.label + (item.beneficiary_name ? " (" + item.beneficiary_name + ")" : "")),
+              e("td", null, formatCalculationAmount(item.amount, item.isInterpolated)),
+              e("td", null, "–")
+            )
+          );
+        });
+      }
     });
+    categoryTotalRows.push(
+      e(
+        "tr",
+        { className: "table-total", key: "expense-category-period-total" },
+        e("th", { scope: "row" }, "Total"),
+        e(
+          "th",
+          null,
+          hasUncalculatedExpense
+            ? "–"
+            : formatCalculationAmount(
+                totalCategoryCosts,
+                categoryPeriodTotals.some(function (categoryTotal) {
+                  return categoryTotal.hasInterpolatedExpense;
+                })
+              )
+        ),
+        e(
+          "th",
+          null,
+          hasUncalculatedExpense || monthCount === 0
+            ? "–"
+            : formatCalculationAmount(
+                totalCategoryCosts / monthCount,
+                categoryPeriodTotals.some(function (categoryTotal) {
+                  return categoryTotal.hasInterpolatedExpense;
+                })
+              )
+        )
+      )
+    );
 
     return e(
       "section",
@@ -558,16 +644,6 @@
           )
         ),
         e(
-          "p",
-          { className: "hint" },
-          "Der Graph nutzt die aktuelle Kostenlisten-Filterung (Zielobjekt und Kostenart), skaliert die Y-Achse automatisch auf die tatsächlichen EUR-Werte und zeigt im Säulendiagramm farbige Kostenanteile je Kostenart."
-        ),
-        e(ExpenseDevelopmentChart, {
-          series: props.expenseDevelopmentSeries,
-          compositionSeries: props.expenseDevelopmentCompositionSeries,
-          chartMode: props.expenseChartConfig.mode,
-        }),
-        e(
           "div",
           { className: "expense-development-table" },
           e("h3", null, "Gesamtkosten je Kostenart"),
@@ -607,8 +683,23 @@
           table(
             ["Kostenart", "Gesamtkosten (EUR)", "Durchschnitt pro Monat (EUR)"],
             categoryTotalRows
+          ),
+          e(
+            "p",
+            { className: "hint" },
+            "Legende: (2) interpoliert."
           )
-        )
+        ),
+        e(
+          "p",
+          { className: "hint" },
+          "Der Graph nutzt die aktuelle Kostenlisten-Filterung (Zielobjekt und Kostenart), skaliert die Y-Achse automatisch auf die tatsächlichen EUR-Werte und zeigt im Säulendiagramm farbige Kostenanteile je Kostenart."
+        ),
+        e(ExpenseDevelopmentChart, {
+          series: props.expenseDevelopmentSeries,
+          compositionSeries: props.expenseDevelopmentCompositionSeries,
+          chartMode: props.expenseChartConfig.mode,
+        })
       )
     );
   }
