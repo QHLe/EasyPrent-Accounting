@@ -699,7 +699,7 @@ class ExpenseServiceTests(unittest.TestCase):
             self.connection,
             {
                 "meter_id": meter["id"],
-                "reading_date": "2025-12-31",
+                "reading_date": "2026-01-01",
                 "reading_value": "130",
             },
         )
@@ -781,8 +781,8 @@ class ExpenseServiceTests(unittest.TestCase):
             },
         )
 
-        self.assertEqual(Decimal(created["effective_consumption_value"]), Decimal("10"))
-        self.assertEqual(created["total_amount"], "10.00")
+        self.assertEqual(Decimal(created["effective_consumption_value"]), Decimal("11"))
+        self.assertEqual(created["total_amount"], "11.00")
 
     def test_consumption_expense_without_end_date_uses_latest_meter_reading(self) -> None:
         meter = create_meter(
@@ -819,7 +819,7 @@ class ExpenseServiceTests(unittest.TestCase):
             },
         )
 
-        self.assertEqual(created["period_end"], "2025-02-15")
+        self.assertEqual(created["period_end"], "2025-02-14")
         self.assertEqual(Decimal(created["effective_consumption_value"]), Decimal("30"))
         self.assertEqual(created["total_amount"], "45.00")
 
@@ -922,7 +922,7 @@ class ExpenseServiceTests(unittest.TestCase):
             self.connection,
             {
                 "meter_id": meter["id"],
-                "reading_date": "2025-12-31",
+                "reading_date": "2026-01-01",
                 "reading_value": "125",
             },
         )

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from calendar import monthrange
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 from .calculations import parse_date, quantize_money
@@ -61,7 +61,7 @@ def meter_consumption_for_period(
         return None
 
     start_value = interpolate_meter_reading(reading_points, start_date)
-    end_value = interpolate_meter_reading(reading_points, end_date)
+    end_value = interpolate_meter_reading(reading_points, end_date + timedelta(days=1))
     if start_value is None or end_value is None or end_value < start_value:
         return None
     return end_value - start_value

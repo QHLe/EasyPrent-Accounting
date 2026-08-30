@@ -142,7 +142,8 @@
       return null;
     }
     const startValue = interpolateReadingValue(readings, periodStart);
-    const endValue = interpolateReadingValue(readings, periodEnd);
+    const inclusiveEnd = formatIsoDate(addUtcDays(parseIsoDate(periodEnd), 1));
+    const endValue = interpolateReadingValue(readings, inclusiveEnd);
     if (startValue === null || endValue === null || endValue < startValue) {
       return null;
     }
@@ -477,12 +478,10 @@
 
   function amountForExpenseOverlap(expense, expenseRange, overlapStart, overlapEnd, meterReadings) {
     if (expense.charge_type === "consumption" && expense.meter_id) {
-      const consumptionEnd =
-        overlapEnd < expenseRange.end ? addUtcDays(overlapEnd, 1) : overlapEnd;
       const meterConsumption = calculateMeterConsumptionValue(
         expense.meter_id,
         formatIsoDate(overlapStart),
-        formatIsoDate(consumptionEnd),
+        formatIsoDate(overlapEnd),
         { meter_readings: meterReadings || [] }
       );
       const conversionFactor = Number(expense.conversion_factor || "1");

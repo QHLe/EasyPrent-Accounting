@@ -8,7 +8,7 @@ import urllib.error
 import urllib.request
 import uuid
 from socket import timeout as socket_timeout
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 from .calculations import (
@@ -813,9 +813,10 @@ def _normalize_expense_dates(
             return None, str(period_start), OPEN_ENDED_PERIOD_END, True
         if charge_type != "consumption" or meter_id is None:
             raise ValueError("period_end is required for recurring expenses")
-        period_end = _latest_meter_reading_date(connection, meter_id)
-        if period_end is None:
+        latest_reading_date = _latest_meter_reading_date(connection, meter_id)
+        if latest_reading_date is None:
             raise ValueError("period_end requires at least one meter reading when omitted")
+        period_end = (parse_date(latest_reading_date) - timedelta(days=1)).isoformat()
     start_date = parse_date(str(period_start))
     end_date = parse_date(str(period_end))
     if start_date > end_date:

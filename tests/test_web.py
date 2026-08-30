@@ -2172,7 +2172,7 @@ class WebApiAndUiTests(unittest.TestCase):
             json.dumps(
                 {
                     "meter_id": meter_payload["id"],
-                    "reading_date": "2025-12-31",
+                    "reading_date": "2026-01-01",
                     "reading_value": "130",
                 }
             ).encode("utf-8"),

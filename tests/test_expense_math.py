@@ -49,7 +49,7 @@ class ExpenseMathTests(unittest.TestCase):
             "2025-01-03",
             "2025-01-08",
         )
-        self.assertEqual(consumption, Decimal("10"))
+        self.assertEqual(consumption, Decimal("12"))
 
     def test_meter_consumption_for_period_returns_none_outside_known_range(self) -> None:
         reading_points = [
