@@ -45,7 +45,7 @@ def interpolate_meter_reading(
             )
         previous_point = current_point
 
-    return None
+    return previous_point[1] if previous_point is not None else None
 
 
 def meter_consumption_for_period(

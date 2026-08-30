@@ -63,6 +63,18 @@ class ExpenseMathTests(unittest.TestCase):
         )
         self.assertIsNone(consumption)
 
+    def test_meter_consumption_for_period_uses_latest_reading_when_period_ends_later(self) -> None:
+        reading_points = [
+            (date(2025, 1, 1), Decimal("100")),
+            (date(2025, 1, 11), Decimal("120")),
+        ]
+        consumption = meter_consumption_for_period(
+            reading_points,
+            "2025-01-01",
+            "2025-01-31",
+        )
+        self.assertEqual(consumption, Decimal("20"))
+
 
 if __name__ == "__main__":
     unittest.main()

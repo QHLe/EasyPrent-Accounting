@@ -131,7 +131,7 @@
       }
       previous = reading;
     }
-    return null;
+    return previous ? { value: Number(previous.reading_value), isInterpolated: false } : null;
   }
 
   function interpolateReadingValue(readings, targetDateString) {
@@ -525,6 +525,8 @@
         return {
           amount: unitPrice * meterConsumption.value * conversionFactor,
           isInterpolated: meterConsumption.isInterpolated,
+          consumptionValue: meterConsumption.value * conversionFactor,
+          consumptionUnit: expense.consumption_unit || expense.meter_unit || "",
         };
       }
       return null;
@@ -536,7 +538,12 @@
         return null;
       }
       if (expense.charge_type === "monthly") {
-        return { amount: amount * countCoveredMonths(overlapStart, overlapEnd), isInterpolated: false };
+        return {
+          amount: amount * countCoveredMonths(overlapStart, overlapEnd),
+          isInterpolated: false,
+          consumptionValue: null,
+          consumptionUnit: "",
+        };
       }
       if (expense.charge_type === "yearly") {
         let occurrences = 0;
@@ -550,7 +557,12 @@
             occurrences += 1;
           }
         }
-        return { amount: amount * occurrences, isInterpolated: false };
+        return {
+          amount: amount * occurrences,
+          isInterpolated: false,
+          consumptionValue: null,
+          consumptionUnit: "",
+        };
       }
     }
 
@@ -560,7 +572,17 @@
     }
     const expenseDays = Math.floor((expenseRange.end - expenseRange.start) / 86400000) + 1;
     const overlapDays = Math.floor((overlapEnd - overlapStart) / 86400000) + 1;
-    return { amount: totalAmount * overlapDays / expenseDays, isInterpolated: false };
+    return {
+      amount: totalAmount * overlapDays / expenseDays,
+      isInterpolated:
+        overlapStart.getTime() !== expenseRange.start.getTime() ||
+        overlapEnd.getTime() !== expenseRange.end.getTime(),
+      consumptionValue:
+        expense.charge_type === "consumption"
+          ? Number(expense.effective_consumption_value || expense.consumption_value || 0)
+          : null,
+      consumptionUnit: expense.charge_type === "consumption" ? expense.consumption_unit || "" : "",
+    };
   }
 
   function buildExpenseDevelopmentPeriods(granularity, rangeStart, rangeEnd) {
@@ -743,6 +765,8 @@
           beneficiary_name: expense.beneficiary_name,
           amount: null,
           isInterpolated: false,
+          consumptionValue: null,
+          consumptionUnit: "",
         });
         return;
       }
@@ -755,6 +779,8 @@
         beneficiary_name: expense.beneficiary_name,
         amount: Number(calculation.amount.toFixed(2)),
         isInterpolated: calculation.isInterpolated,
+        consumptionValue: calculation.consumptionValue,
+        consumptionUnit: calculation.consumptionUnit,
       });
     });
 

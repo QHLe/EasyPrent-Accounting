@@ -488,36 +488,58 @@
         : formatMoneyValue(amount) + " EUR" + (isInterpolated ? " (2)" : "");
     }
 
+    function formatCalculationAverage(amount, isInterpolated) {
+      return amount == null || monthCount === 0
+        ? "–"
+        : formatCalculationAmount(amount / monthCount, isInterpolated);
+    }
+
+    function formatConsumption(value, unit) {
+      return value == null ? "–" : formatNumericLabel(value) + (unit ? " " + unit : "");
+    }
+
     const categoryTotalRows = [];
     categoryPeriodTotals.forEach(function (categoryTotal) {
       const isCalculable = !categoryTotal.hasUncalculatedExpense;
       const isExpanded = !!expandedCategories[categoryTotal.category];
+      const items = categoryTotal.items || [];
+      if (items.length === 1) {
+        const item = items[0];
+        categoryTotalRows.push(
+          e(
+            "tr",
+            { key: "expense-category-item-" + categoryTotal.category + "-" + item.id },
+            e("td", null, item.label + (item.beneficiary_name ? " (" + item.beneficiary_name + ")" : "")),
+            e("td", null, formatCalculationAmount(item.amount, item.isInterpolated)),
+            e("td", null, formatCalculationAverage(item.amount, item.isInterpolated)),
+            e("td", null, formatConsumption(item.consumptionValue, item.consumptionUnit))
+          )
+        );
+        return;
+      }
       categoryTotalRows.push(e(
         "tr",
-        { key: "expense-category-period-total-" + categoryTotal.category },
-        e(
-          "td",
-          null,
-          e(
-            "button",
-            {
-              type: "button",
-              className: "panel-toggle",
-              title: isExpanded ? "Kostenposten einklappen" : "Kostenposten ausklappen",
-              "aria-label": isExpanded ? "Kostenposten einklappen" : "Kostenposten ausklappen",
-              "aria-expanded": isExpanded,
-              onClick: function () {
-                setExpandedCategories(function (current) {
-                  return Object.assign({}, current, {
-                    [categoryTotal.category]: !current[categoryTotal.category],
-                  });
-                });
-              },
-            },
-            isExpanded ? "-" : "+"
-          ),
-          categoryTotal.category
-        ),
+        {
+          className: "selectable-row",
+          key: "expense-category-period-total-" + categoryTotal.category,
+          role: "button",
+          tabIndex: 0,
+          "aria-expanded": isExpanded,
+          onClick: function () {
+            setExpandedCategories(function (current) {
+              return Object.assign({}, current, {
+                [categoryTotal.category]: !current[categoryTotal.category],
+              });
+            });
+          },
+          onKeyDown: function (event) {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              event.currentTarget.click();
+            }
+          },
+        },
+        e("td", null, categoryTotal.category),
         e(
           "td",
           null,
@@ -534,17 +556,19 @@
                 categoryTotal.total / monthCount,
                 categoryTotal.hasInterpolatedExpense
               )
-        )
+        ),
+        e("td", null, "–")
       ));
       if (isExpanded) {
-        (categoryTotal.items || []).forEach(function (item) {
+        items.forEach(function (item) {
           categoryTotalRows.push(
             e(
               "tr",
               { className: "expense-detail-row", key: "expense-category-item-" + categoryTotal.category + "-" + item.id },
               e("td", null, item.label + (item.beneficiary_name ? " (" + item.beneficiary_name + ")" : "")),
               e("td", null, formatCalculationAmount(item.amount, item.isInterpolated)),
-              e("td", null, "–")
+              e("td", null, formatCalculationAverage(item.amount, item.isInterpolated)),
+              e("td", null, formatConsumption(item.consumptionValue, item.consumptionUnit))
             )
           );
         });
@@ -578,7 +602,8 @@
                   return categoryTotal.hasInterpolatedExpense;
                 })
               )
-        )
+        ),
+        e("th", null, "–")
       )
     );
 
@@ -681,13 +706,13 @@
             "Aktive Kosten gemäß den gesetzten Filtern, anteilig für den gewählten Zeitraum. Ein Strich bedeutet, dass mindestens eine Kostenposition noch nicht berechnet werden kann."
           ),
           table(
-            ["Kostenart", "Gesamtkosten (EUR)", "Durchschnitt pro Monat (EUR)"],
+            ["Kostenart", "Gesamtkosten (EUR)", "Durchschnitt pro Monat (EUR)", "Verbrauch"],
             categoryTotalRows
           ),
           e(
             "p",
             { className: "hint" },
-            "Legende: (2) interpoliert."
+            "Legende: (2) interpoliert, etwa bei zeitanteilig verteilten Gesamtkosten oder zwischen zwei Zählerständen."
           )
         ),
         e(
