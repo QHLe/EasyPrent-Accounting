@@ -1689,7 +1689,7 @@ def build_openapi_document() -> dict:
                         },
                         "charge_type": {
                             "type": "string",
-                            "enum": ["one_time", "monthly", "yearly", "consumption"],
+                            "enum": ["one_time", "monthly", "quarterly", "yearly", "consumption"],
                         },
                         "recurrence": {
                             "type": "string",
@@ -1697,7 +1697,7 @@ def build_openapi_document() -> dict:
                         },
                         "interval": {
                             "type": "string",
-                            "enum": ["monthly", "yearly"],
+                            "enum": ["monthly", "quarterly", "yearly"],
                         },
                         "meter_id": {"type": ["integer", "null"]},
                         "consumption_unit": {"type": "string"},

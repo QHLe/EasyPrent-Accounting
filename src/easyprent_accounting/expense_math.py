@@ -67,6 +67,13 @@ def meter_consumption_for_period(
     return end_value - start_value
 
 
+def _add_months(source_date: date, month_delta: int) -> date:
+    target_month_index = source_date.year * 12 + source_date.month - 1 + month_delta
+    target_year, target_month_zero_based = divmod(target_month_index, 12)
+    target_month = target_month_zero_based + 1
+    return date(target_year, target_month, min(source_date.day, monthrange(target_year, target_month)[1]))
+
+
 def day_accurate_recurring_amount(
     amount: Decimal,
     charge_type: str,
@@ -112,6 +119,27 @@ def day_accurate_recurring_amount(
         current_day = overlap_start
         while current_day <= overlap_end:
             next_cycle_start = _next_year(cycle_start)
+            cycle_end = date.fromordinal(next_cycle_start.toordinal() - 1)
+            segment_end = min(cycle_end, overlap_end)
+            active_days = (segment_end - current_day).days + 1
+            cycle_days = (cycle_end - cycle_start).days + 1
+            total += amount * Decimal(active_days) / Decimal(cycle_days)
+            current_day = date.fromordinal(segment_end.toordinal() + 1)
+            cycle_start = next_cycle_start
+        return quantize_money(total)
+
+    if charge_type == "quarterly":
+        if anchor_start is None:
+            anchor_start = overlap_start
+
+        cycle_start = anchor_start
+        while _add_months(cycle_start, 3) <= overlap_start:
+            cycle_start = _add_months(cycle_start, 3)
+
+        total = Decimal("0")
+        current_day = overlap_start
+        while current_day <= overlap_end:
+            next_cycle_start = _add_months(cycle_start, 3)
             cycle_end = date.fromordinal(next_cycle_start.toordinal() - 1)
             segment_end = min(cycle_end, overlap_end)
             active_days = (segment_end - current_day).days + 1

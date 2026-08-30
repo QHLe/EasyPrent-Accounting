@@ -70,10 +70,12 @@ def _derive_charge_fields(payload: dict) -> tuple[str, str, str | None]:
     if recurrence == "recurring":
         if interval_name == "yearly":
             return "yearly", "recurring", "yearly"
+        if interval_name == "quarterly":
+            return "quarterly", "recurring", "quarterly"
         return "monthly", "recurring", "monthly"
 
     charge_type = explicit_charge_type or "one_time"
-    if charge_type in {"monthly", "yearly"}:
+    if charge_type in {"monthly", "quarterly", "yearly"}:
         return charge_type, "recurring", charge_type
     return "one_time", "one_time", None
 
@@ -808,7 +810,7 @@ def _normalize_expense_dates(
     if period_start in (None, ""):
         raise ValueError("period_start is required for recurring expenses")
     if period_end in (None, ""):
-        if charge_type in {"monthly", "yearly"}:
+        if charge_type in {"monthly", "quarterly", "yearly"}:
             parse_date(str(period_start))
             return None, str(period_start), OPEN_ENDED_PERIOD_END, True
         if charge_type != "consumption" or meter_id is None:

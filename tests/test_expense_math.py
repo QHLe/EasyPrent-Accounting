@@ -39,6 +39,16 @@ class ExpenseMathTests(unittest.TestCase):
         )
         self.assertEqual(amount, Decimal("29.00"))
 
+    def test_day_accurate_quarterly_amount_uses_anchor_cycle(self) -> None:
+        amount = day_accurate_recurring_amount(
+            Decimal("300"),
+            "quarterly",
+            date(2025, 2, 1),
+            date(2025, 3, 31),
+            date(2025, 1, 1),
+        )
+        self.assertEqual(amount, Decimal("196.67"))
+
     def test_meter_consumption_for_period_uses_linear_interpolation(self) -> None:
         reading_points = [
             (date(2025, 1, 1), Decimal("100")),

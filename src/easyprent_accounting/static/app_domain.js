@@ -307,6 +307,9 @@
     if (expense.charge_type === "yearly") {
       return "jährlich";
     }
+    if (expense.charge_type === "quarterly") {
+      return "vierteljährlich";
+    }
     if (expense.charge_type === "monthly") {
       return "monatlich";
     }

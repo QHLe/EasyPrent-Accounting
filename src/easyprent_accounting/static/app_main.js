@@ -454,6 +454,16 @@
     );
   }
 
+  function addUtcMonths(sourceDate, monthDelta) {
+    const targetMonthIndex = sourceDate.getUTCFullYear() * 12 + sourceDate.getUTCMonth() + monthDelta;
+    const targetYear = Math.floor(targetMonthIndex / 12);
+    const targetMonth = targetMonthIndex % 12;
+    const daysInTargetMonth = new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate();
+    return new Date(
+      Date.UTC(targetYear, targetMonth, Math.min(sourceDate.getUTCDate(), daysInTargetMonth))
+    );
+  }
+
   function resolveExpenseDateRange(expense, openEndedFallbackEnd) {
     if (!expense) {
       return null;
@@ -556,6 +566,22 @@
           if (occurrence >= overlapStart && occurrence <= overlapEnd) {
             occurrences += 1;
           }
+        }
+        return {
+          amount: amount * occurrences,
+          isInterpolated: false,
+          consumptionValue: null,
+          consumptionUnit: "",
+        };
+      }
+      if (expense.charge_type === "quarterly") {
+        let occurrences = 0;
+        let occurrence = expenseRange.start;
+        while (occurrence <= expenseRange.end && occurrence <= overlapEnd) {
+          if (occurrence >= overlapStart) {
+            occurrences += 1;
+          }
+          occurrence = addUtcMonths(occurrence, 3);
         }
         return {
           amount: amount * occurrences,

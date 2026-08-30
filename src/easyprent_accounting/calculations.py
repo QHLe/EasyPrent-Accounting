@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from calendar import monthrange
 from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -50,6 +51,28 @@ def yearly_occurrences(start_a: date, end_a: date, start_b: date, end_b: date) -
     return occurrences
 
 
+def quarterly_occurrences(start_a: date, end_a: date, start_b: date, end_b: date) -> int:
+    overlap_start = max(start_a, start_b)
+    overlap_end = min(end_a, end_b)
+    if overlap_start > overlap_end:
+        return 0
+
+    occurrences = 0
+    occurrence = start_a
+    while occurrence <= end_a and occurrence <= overlap_end:
+        if occurrence >= overlap_start:
+            occurrences += 1
+        target_month_index = occurrence.year * 12 + occurrence.month - 1 + 3
+        target_year, target_month_zero_based = divmod(target_month_index, 12)
+        target_month = target_month_zero_based + 1
+        occurrence = date(
+            target_year,
+            target_month,
+            min(occurrence.day, monthrange(target_year, target_month)[1]),
+        )
+    return occurrences
+
+
 @dataclass(slots=True)
 class SettlementLease:
     lease_id: int
@@ -91,6 +114,9 @@ def expense_amount_for_period(expense: SettlementExpense, period_start: date, pe
         return quantize_money(expense.amount * Decimal(active_months))
     if expense.charge_type == "yearly":
         occurrences = yearly_occurrences(expense_start, expense_end, period_start, period_end)
+        return quantize_money(expense.amount * Decimal(occurrences))
+    if expense.charge_type == "quarterly":
+        occurrences = quarterly_occurrences(expense_start, expense_end, period_start, period_end)
         return quantize_money(expense.amount * Decimal(occurrences))
 
     return quantize_money(expense.amount)

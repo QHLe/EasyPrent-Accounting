@@ -233,6 +233,7 @@ class WebApiAndUiTests(unittest.TestCase):
         self.assertIn("Interpolation", content)
         self.assertIn("Linear", content)
         self.assertIn("Quadratisch", content)
+        self.assertIn("Vierteljährlich", content)
         self.assertIn("window.echarts", content)
         self.assertIn("echarts.init", content)
         self.assertIn("tooltip", content)

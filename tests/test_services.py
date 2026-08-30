@@ -61,6 +61,24 @@ class ExpenseServiceTests(unittest.TestCase):
         self.assertEqual(row["object_type"], "building")
         self.assertEqual(row["object_id"], 1)
 
+    def test_create_expense_stores_quarterly_charge_type(self) -> None:
+        created = create_expense(
+            self.connection,
+            {
+                "object_type": "building",
+                "object_id": 1,
+                "label": "Aufzugswartung",
+                "amount": "300.00",
+                "allocation_method": "unit_count",
+                "recurrence": "recurring",
+                "interval": "quarterly",
+                "period_start": "2025-01-01",
+                "period_end": "2025-03-31",
+            },
+        )
+        self.assertEqual(created["charge_type"], "quarterly")
+        self.assertEqual(created["total_amount"], "300.00")
+
     def test_create_expense_stores_category_and_beneficiary(self) -> None:
         created = create_expense(
             self.connection,

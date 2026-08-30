@@ -182,6 +182,36 @@ class SettlementTests(unittest.TestCase):
         )
         self.assertEqual(result["totals"]["costs"], "500.00")
 
+    def test_settlement_counts_quarterly_expense_four_times_per_year(self) -> None:
+        lease = SettlementLease(
+            lease_id=1,
+            tenant_name="Anna",
+            unit_label="A-01",
+            unit_area_sqm=Decimal("80"),
+            occupant_count=2,
+            additional_charges_advance=Decimal("0"),
+            lease_start=date(2025, 1, 1),
+            lease_end=None,
+        )
+        result = calculate_settlement(
+            [lease],
+            [
+                SettlementExpense(
+                    label="Aufzugswartung",
+                    amount=Decimal("300"),
+                    allocation_method="unit_count",
+                    charge_type="quarterly",
+                    recurrence="recurring",
+                    interval_name="quarterly",
+                    expense_start=date(2025, 1, 1),
+                    expense_end=date(2025, 12, 31),
+                )
+            ],
+            date(2025, 1, 1),
+            date(2025, 12, 31),
+        )
+        self.assertEqual(result["totals"]["costs"], "1200.00")
+
     def test_single_date_expense_only_counts_on_matching_day(self) -> None:
         expense = SettlementExpense(
             label="Einmalige Reparatur",

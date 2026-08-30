@@ -358,6 +358,7 @@
                   },
                 },
                 e("option", { value: "monthly" }, "Monatlich"),
+                e("option", { value: "quarterly" }, "Vierteljährlich"),
                 e("option", { value: "yearly" }, "Jährlich")
               )
             )
