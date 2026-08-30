@@ -220,6 +220,8 @@ class WebApiAndUiTests(unittest.TestCase):
         self.assertIn("Zählerstand", content)
         self.assertIn("Zählerstandhistorie", content)
         self.assertIn("Zählerentwicklung", content)
+        self.assertIn("Verbrauch im Zeitraum", content)
+        self.assertIn("meterConsumptionSummary", content)
         self.assertIn("Zähler anklicken", content)
         self.assertIn("Ansicht", content)
         self.assertIn("Letzte Monate", content)

@@ -381,6 +381,23 @@
     return withRangeStartSeries;
   }
 
+  function buildMeterConsumptionSummary(
+    readings,
+    granularity,
+    interpolationMode,
+    rangeStart,
+    rangeEnd
+  ) {
+    return buildMeterChartSeries(
+      readings,
+      granularity,
+      "bars",
+      interpolationMode,
+      rangeStart,
+      rangeEnd
+    );
+  }
+
   function buildActualMeterReadings(readings, rangeStart, rangeEnd) {
     const rangeStartTime = parseIsoDate(rangeStart).getTime();
     const rangeEndTime = parseIsoDate(rangeEnd).getTime();
@@ -2910,6 +2927,13 @@
       meterChartRange.from,
       meterChartRange.to
     );
+    const meterConsumptionSummary = buildMeterConsumptionSummary(
+      selectedMeterReadings,
+      meterChartGranularity,
+      meterInterpolationMode,
+      meterChartRange.from,
+      meterChartRange.to
+    );
     const actualMeterReadings = buildActualMeterReadings(
       selectedMeterReadings,
       meterChartRange.from,
@@ -3203,6 +3227,7 @@
             onMeterInterpolationModeChange: setMeterInterpolationMode,
             meterChartSeries: meterChartSeries,
             actualMeterReadings: actualMeterReadings,
+            meterConsumptionSummary: meterConsumptionSummary,
           })
         : mainTab === "cost_management" && activeTab === "costs"
           ? e(ExpenseDevelopmentPanel, {

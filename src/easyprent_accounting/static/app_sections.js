@@ -11,6 +11,7 @@
   const table = domain.table;
   const formatMoneyValue = domain.formatMoneyValue;
   const formatDisplayName = domain.formatDisplayName;
+  const formatNumericLabel = domain.formatNumericLabel;
   const MeterChart = charts.MeterChart;
   const ExpenseDevelopmentChart = charts.ExpenseDevelopmentChart;
 
@@ -303,6 +304,28 @@
   }
 
   function MeterSupplementalPanels(props) {
+    const consumptionRows = (props.meterConsumptionSummary || []).map(function (period) {
+      return e(
+        "tr",
+        { key: "meter-consumption-" + period.timestamp },
+        e("td", null, period.label),
+        e("td", null, formatNumericLabel(period.value))
+      );
+    });
+    const totalConsumption = (props.meterConsumptionSummary || []).reduce(function (total, period) {
+      return total + (period.value || 0);
+    }, 0);
+    if (consumptionRows.length) {
+      consumptionRows.push(
+        e(
+          "tr",
+          { key: "meter-consumption-total" },
+          e("th", { scope: "row" }, "Gesamt"),
+          e("th", null, formatNumericLabel(totalConsumption))
+        )
+      );
+    }
+
     return e(
       Fragment,
       null,
@@ -435,7 +458,12 @@
                 series: props.meterChartSeries,
                 actualReadings: props.actualMeterReadings,
                 chartMode: props.meterChartMode,
-              })
+              }),
+              e("h3", null, "Verbrauch im Zeitraum"),
+              table(
+                ["Zeitraum", "Verbrauch" + (props.selectedMeter.unit ? " (" + props.selectedMeter.unit + ")" : "")],
+                consumptionRows
+              )
             )
           : e("p", { className: "hint" }, "Zähler anklicken, um ein Diagramm zu sehen.")
       )
