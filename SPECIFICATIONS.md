@@ -406,9 +406,9 @@ Mietverträgen, Nebenkosten und abschreibungsrelevanten Objektdaten.
 - `REQ-NKA-040`
   Die berechnete Gesamtsumme einer Kostenposition muss für wiederholende Kosten tagesgenau anhand der tatsächlichen Überlappungstage innerhalb des Kostenzeitraums ermittelt werden.
 - `REQ-NKA-041`
-  Kostenwerte müssen als EUR-Beträge verarbeitet werden; für nicht verbrauchsbezogene Kosten sind höchstens zwei Nachkommastellen zulässig.
+  Kostenwerte müssen als EUR-Beträge verarbeitet werden; Kostenbeträge dürfen mit bis zu zehn Nachkommastellen erfasst werden.
 - `REQ-NKA-042`
-  Bei verbrauchsbezogenen Kosten muss der Preis je Einheit mit bis zu vier Nachkommastellen erfassbar und berechenbar sein.
+  Bei verbrauchsbezogenen Kosten muss der Preis je Einheit mit bis zu zehn Nachkommastellen erfassbar und berechenbar sein.
 - `REQ-NKA-043`
   Wenn beim Anlegen oder Bearbeiten einer Kostenposition keine explizite Kostenbezeichnung übergeben wird, muss automatisch die Kostenart als Bezeichnung gespeichert werden.
 - `REQ-NKA-044`

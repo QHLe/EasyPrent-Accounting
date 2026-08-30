@@ -201,7 +201,7 @@ class ExpenseServiceTests(unittest.TestCase):
         self.assertEqual(Decimal(str(row["consumption_value"])), Decimal("120"))
         self.assertEqual(Decimal(str(row["conversion_factor"])), Decimal("1"))
 
-    def test_create_consumption_expense_accepts_four_decimal_unit_price(self) -> None:
+    def test_create_expense_accepts_ten_decimal_amount(self) -> None:
         created = create_expense(
             self.connection,
             {
@@ -210,7 +210,7 @@ class ExpenseServiceTests(unittest.TestCase):
                 "expense_category": "Gas",
                 "beneficiary_name": "Stadtwerke",
                 "label": "Gaspreis genau",
-                "amount": "0.1234",
+                "amount": "0.1234567891",
                 "allocation_method": "occupants",
                 "charge_type": "consumption",
                 "consumption_unit": "kWh",
@@ -220,10 +220,10 @@ class ExpenseServiceTests(unittest.TestCase):
             },
         )
 
-        self.assertEqual(created["amount"], "0.1234")
-        self.assertEqual(created["total_amount"], "12.34")
+        self.assertEqual(created["amount"], "0.1234567891")
+        self.assertEqual(created["total_amount"], "12.35")
 
-    def test_create_consumption_expense_rejects_more_than_four_decimal_unit_price(self) -> None:
+    def test_create_expense_rejects_more_than_ten_decimal_places(self) -> None:
         with self.assertRaises(ValueError) as error:
             create_expense(
                 self.connection,
@@ -233,7 +233,7 @@ class ExpenseServiceTests(unittest.TestCase):
                     "expense_category": "Gas",
                     "beneficiary_name": "Stadtwerke",
                     "label": "Gaspreis zu fein",
-                    "amount": "0.12345",
+                    "amount": "0.12345678901",
                     "allocation_method": "occupants",
                     "charge_type": "consumption",
                     "consumption_unit": "kWh",
@@ -244,27 +244,25 @@ class ExpenseServiceTests(unittest.TestCase):
             )
 
         self.assertIn("amount", str(error.exception))
-        self.assertIn("4", str(error.exception))
+        self.assertIn("10", str(error.exception))
 
-    def test_create_non_consumption_expense_rejects_more_than_two_decimal_places(self) -> None:
-        with self.assertRaises(ValueError) as error:
-            create_expense(
-                self.connection,
-                {
-                    "object_type": "unit",
-                    "object_id": 1,
-                    "expense_category": "Hausmeister",
-                    "beneficiary_name": "Service Team",
-                    "label": "Hausmeisterkosten",
-                    "amount": "12.345",
-                    "allocation_method": "unit_count",
-                    "recurrence": "one_time",
-                    "booking_date": "2025-05-01",
-                },
-            )
+    def test_create_non_consumption_expense_accepts_ten_decimal_places(self) -> None:
+        created = create_expense(
+            self.connection,
+            {
+                "object_type": "unit",
+                "object_id": 1,
+                "expense_category": "Hausmeister",
+                "beneficiary_name": "Service Team",
+                "label": "Hausmeisterkosten",
+                "amount": "12.3456789012",
+                "allocation_method": "unit_count",
+                "recurrence": "one_time",
+                "booking_date": "2025-05-01",
+            },
+        )
 
-        self.assertIn("amount", str(error.exception))
-        self.assertIn("2", str(error.exception))
+        self.assertEqual(created["amount"], "12.3456789012")
 
     def test_create_expense_calculates_recurring_total_day_accurate(self) -> None:
         created = create_expense(

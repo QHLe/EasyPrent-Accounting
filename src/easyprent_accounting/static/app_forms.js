@@ -286,7 +286,7 @@
           "Wert (EUR)",
           e("input", {
             type: "number",
-            step: formState.charge_type === "consumption" ? "0.0001" : "0.01",
+            step: "0.0000000001",
             min: "0",
             value: formState.amount,
             onChange: function (event) {

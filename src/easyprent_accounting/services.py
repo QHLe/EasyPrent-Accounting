@@ -111,9 +111,9 @@ def _decimal_places(value: Decimal) -> int:
 
 def _normalize_expense_amount(raw_value: object, charge_type: str) -> Decimal:
     amount = _parse_decimal(raw_value, "amount")
-    max_places = 4 if charge_type == "consumption" else 2
+    max_places = 10
     if _decimal_places(amount) > max_places:
-        raise ValueError(f"amount supports max {max_places} decimal places for this charge_type")
+        raise ValueError(f"amount supports max {max_places} decimal places")
     return amount
 
 

@@ -322,14 +322,9 @@
   }
 
   function formatExpenseAmountValue(expense) {
-    const numericValue = Number(expense.amount);
-    if (Number.isNaN(numericValue)) {
-      return String(expense.amount || "-");
-    }
-    if (expense.charge_type === "consumption") {
-      return numericValue.toFixed(4);
-    }
-    return numericValue.toFixed(2);
+    return expense.amount == null || expense.amount === ""
+      ? "-"
+      : String(expense.amount);
   }
 
   function formatNumericLabel(value) {

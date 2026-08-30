@@ -2203,7 +2203,7 @@ class WebApiAndUiTests(unittest.TestCase):
         self.assertEqual(payload["total_amount"], "37.80")
         self.assertIsNone(payload["consumption_value"])
 
-    def test_api_consumption_expense_rejects_more_than_four_decimal_unit_price(self) -> None:
+    def test_api_consumption_expense_rejects_more_than_ten_decimal_amount(self) -> None:
         status, _, body = self._call_app(
             "POST",
             "/api/expenses",
@@ -2212,7 +2212,7 @@ class WebApiAndUiTests(unittest.TestCase):
                     "object_type": "unit",
                     "object_id": 1,
                     "label": "Gaspreis zu fein",
-                    "amount": "0.12345",
+                    "amount": "0.12345678901",
                     "allocation_method": "occupants",
                     "charge_type": "consumption",
                     "consumption_unit": "kWh",
@@ -2226,7 +2226,7 @@ class WebApiAndUiTests(unittest.TestCase):
         payload = json.loads(body.decode("utf-8"))
         self.assertTrue(status.startswith("400"))
         self.assertIn("amount", payload["error"])
-        self.assertIn("4", payload["error"])
+        self.assertIn("10", payload["error"])
 
     def test_api_settlement_includes_unit_target_expense(self) -> None:
         create_status, _, _ = self._call_app(
