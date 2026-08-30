@@ -34,7 +34,7 @@ def interpolate_meter_reading(
             return current_value
         if current_date > target_date:
             if previous_point is None:
-                return None
+                return current_value
             previous_date, previous_value = previous_point
             total_days = (current_date - previous_date).days
             if total_days <= 0:

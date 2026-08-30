@@ -115,7 +115,7 @@
       }
       if (currentTime > targetTime) {
         if (!previous) {
-          return null;
+          return { value: currentValue, isInterpolated: false };
         }
         const previousTime = parseIsoDate(previous.reading_date).getTime();
         const previousValue = Number(previous.reading_value);
