@@ -274,6 +274,7 @@ class WebApiAndUiTests(unittest.TestCase):
         self.assertIn("Zähler optional", content)
         self.assertIn("Umrechnungsfaktor", content)
         self.assertIn('formState.charge_type === "consumption" && !formState.meter_id', content)
+        self.assertIn("meterOptions: props.meterOptions", content)
         self.assertIn("Gesamtsumme", content)
         self.assertIn("Zeitraum von", content)
         self.assertIn("Zeitraum bis", content)

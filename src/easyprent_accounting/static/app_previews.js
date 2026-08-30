@@ -624,7 +624,7 @@
                 overview: props.overview,
                 expenseTargetOptions: props.expenseTargetOptions,
                 expenseCategorySuggestions: props.expenseCategorySuggestions,
-                meterOptions: props.expenseEditMeterOptions,
+                meterOptions: props.meterOptions,
                 calculateMeterConsumptionValue: props.calculateMeterConsumptionValue,
                 saving: props.saving,
                 loading: props.loading,
