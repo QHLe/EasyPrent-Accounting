@@ -616,15 +616,11 @@ def _normalize_meter_link(
     if meter_row["is_archived"]:
         raise ValueError("meter_id must reference an active meter")
 
-    meter_property_id = meter_row["property_id"]
-    if expense_property_id != meter_property_id:
-        if expense_property_id is not None or meter_property_id is not None:
-            raise ValueError("meter_id must belong to the same property context")
-        if (
-            meter_row["object_type"] != expense_object_type
-            or meter_row["object_id"] != expense_object_id
-        ):
-            raise ValueError("meter_id must belong to the same standalone object")
+    if (
+        meter_row["object_type"] != expense_object_type
+        or meter_row["object_id"] != expense_object_id
+    ):
+        raise ValueError("meter_id must belong to the same target object")
 
     meter_unit = str(meter_row["unit"])
     consumption_unit = str(payload.get("consumption_unit") or meter_unit)

@@ -1197,11 +1197,20 @@
       if (!parsedTarget) {
         return;
       }
+      const currentMeter = ((overview && overview.meters) || []).find(function (meter) {
+        return String(meter.id) === String(forms.expense.meter_id);
+      });
       setForms(function (current) {
         return Object.assign({}, current, {
           expense: Object.assign({}, current.expense, {
             object_type: parsedTarget.object_type,
             object_id: parsedTarget.object_id,
+            meter_id:
+              currentMeter &&
+              String(currentMeter.object_type) === String(parsedTarget.object_type) &&
+              String(currentMeter.object_id) === String(parsedTarget.object_id)
+                ? current.expense.meter_id
+                : "",
           }),
         });
       });
@@ -1274,10 +1283,19 @@
       if (!parsedTarget) {
         return;
       }
+      const currentMeter = ((overview && overview.meters) || []).find(function (meter) {
+        return String(meter.id) === String(expenseEditForm.meter_id);
+      });
       setExpenseEditForm(function (current) {
         return Object.assign({}, current, {
           object_type: parsedTarget.object_type,
           object_id: parsedTarget.object_id,
+          meter_id:
+            currentMeter &&
+            String(currentMeter.object_type) === String(parsedTarget.object_type) &&
+            String(currentMeter.object_id) === String(parsedTarget.object_id)
+              ? current.meter_id
+              : "",
         });
       });
     }
@@ -2684,13 +2702,32 @@
         tenant.full_name
       );
     });
-    const meterOptions = activeMeters.map(function (meter) {
-      return e(
-        "option",
-        { key: meter.id, value: String(meter.id) },
-        meter.label + " (" + meter.unit + ")"
-      );
-    });
+    function buildMeterOptions(meters) {
+      return meters.map(function (meter) {
+        return e(
+          "option",
+          { key: meter.id, value: String(meter.id) },
+          meter.label + " (" + meter.unit + ")"
+        );
+      });
+    }
+    const meterOptions = buildMeterOptions(activeMeters);
+    const expenseMeterOptions = buildMeterOptions(
+      activeMeters.filter(function (meter) {
+        return (
+          String(meter.object_type) === String(forms.expense.object_type) &&
+          String(meter.object_id) === String(forms.expense.object_id)
+        );
+      })
+    );
+    const expenseEditMeterOptions = buildMeterOptions(
+      activeMeters.filter(function (meter) {
+        return (
+          String(meter.object_type) === String(expenseEditForm.object_type) &&
+          String(meter.object_id) === String(expenseEditForm.object_id)
+        );
+      })
+    );
     const expenseTargetGroups = [
       {
         label: "Anlagen",
@@ -2944,6 +2981,7 @@
       leaseRoomOptions: leaseRoomOptions,
       tenantOptions: tenantOptions,
       meterOptions: meterOptions,
+      expenseMeterOptions: expenseMeterOptions,
       meterTargetOptions: meterTargetOptions,
       expenseTargetOptions: expenseTargetOptions,
       expenseCategorySuggestions: expenseCategorySuggestions,
@@ -3014,6 +3052,7 @@
       expenseTargetOptions: expenseTargetOptions,
       expenseCategorySuggestions: expenseCategorySuggestions,
       meterOptions: meterOptions,
+      expenseEditMeterOptions: expenseEditMeterOptions,
       calculateMeterConsumptionValue: calculateMeterConsumptionValue,
       saving: saving,
       loading: loading,

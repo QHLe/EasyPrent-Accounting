@@ -646,6 +646,36 @@ class ExpenseServiceTests(unittest.TestCase):
 
         self.assertIn("conversion_factor", str(error.exception))
 
+    def test_create_expense_rejects_meter_from_different_target_object(self) -> None:
+        meter = create_meter(
+            self.connection,
+            {
+                "object_type": "unit",
+                "object_id": 2,
+                "label": "Wasserzähler A-02",
+                "meter_type": "water",
+                "unit": "m3",
+            },
+        )
+
+        with self.assertRaises(ValueError) as error:
+            create_expense(
+                self.connection,
+                {
+                    "object_type": "unit",
+                    "object_id": 1,
+                    "label": "Wasserkosten A-01",
+                    "amount": "320.00",
+                    "allocation_method": "occupants",
+                    "charge_type": "consumption",
+                    "meter_id": meter["id"],
+                    "period_start": "2025-01-01",
+                    "period_end": "2025-12-31",
+                },
+            )
+
+        self.assertIn("same target object", str(error.exception))
+
     def test_create_expense_with_meter_and_conversion_calculates_total_amount(self) -> None:
         meter = create_meter(
             self.connection,
