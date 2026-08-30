@@ -501,9 +501,46 @@
     };
   }
 
-  function countCoveredMonths(startDate, endDate) {
-    return (endDate.getUTCFullYear() - startDate.getUTCFullYear()) * 12 +
-      endDate.getUTCMonth() - startDate.getUTCMonth() + 1;
+  function calculateOpenEndedRecurringAmount(amount, chargeType, overlapStart, overlapEnd, anchorStart) {
+    if (chargeType === "monthly") {
+      let total = 0;
+      let isInterpolated = false;
+      let currentDay = overlapStart;
+      while (currentDay <= overlapEnd) {
+        const monthEnd = new Date(
+          Date.UTC(currentDay.getUTCFullYear(), currentDay.getUTCMonth() + 1, 0)
+        );
+        const segmentEnd = monthEnd < overlapEnd ? monthEnd : overlapEnd;
+        const daysInMonth = monthEnd.getUTCDate();
+        const activeDays = Math.floor((segmentEnd - currentDay) / 86400000) + 1;
+        total += amount * activeDays / daysInMonth;
+        isInterpolated = isInterpolated || activeDays !== daysInMonth;
+        currentDay = addUtcDays(segmentEnd, 1);
+      }
+      return { amount: total, isInterpolated: isInterpolated };
+    }
+
+    const cycleMonths = chargeType === "quarterly" ? 3 : 12;
+    let cycleStart = anchorStart;
+    while (addUtcMonths(cycleStart, cycleMonths) <= overlapStart) {
+      cycleStart = addUtcMonths(cycleStart, cycleMonths);
+    }
+
+    let total = 0;
+    let isInterpolated = false;
+    let currentDay = overlapStart;
+    while (currentDay <= overlapEnd) {
+      const nextCycleStart = addUtcMonths(cycleStart, cycleMonths);
+      const cycleEnd = addUtcDays(nextCycleStart, -1);
+      const segmentEnd = cycleEnd < overlapEnd ? cycleEnd : overlapEnd;
+      const activeDays = Math.floor((segmentEnd - currentDay) / 86400000) + 1;
+      const cycleDays = Math.floor((cycleEnd - cycleStart) / 86400000) + 1;
+      total += amount * activeDays / cycleDays;
+      isInterpolated = isInterpolated || activeDays !== cycleDays;
+      currentDay = addUtcDays(segmentEnd, 1);
+      cycleStart = nextCycleStart;
+    }
+    return { amount: total, isInterpolated: isInterpolated };
   }
 
   function amountForExpenseOverlap(expense, expenseRange, overlapStart, overlapEnd, meterReadings) {
@@ -547,45 +584,17 @@
       if (!Number.isFinite(amount)) {
         return null;
       }
-      if (expense.charge_type === "monthly") {
+      if (["monthly", "quarterly", "yearly"].indexOf(expense.charge_type) >= 0) {
+        const recurringAmount = calculateOpenEndedRecurringAmount(
+          amount,
+          expense.charge_type,
+          overlapStart,
+          overlapEnd,
+          expenseRange.start
+        );
         return {
-          amount: amount * countCoveredMonths(overlapStart, overlapEnd),
-          isInterpolated: false,
-          consumptionValue: null,
-          consumptionUnit: "",
-        };
-      }
-      if (expense.charge_type === "yearly") {
-        let occurrences = 0;
-        for (let year = expenseRange.start.getUTCFullYear(); year <= overlapEnd.getUTCFullYear(); year += 1) {
-          const occurrence = new Date(Date.UTC(
-            year,
-            expenseRange.start.getUTCMonth(),
-            expenseRange.start.getUTCDate()
-          ));
-          if (occurrence >= overlapStart && occurrence <= overlapEnd) {
-            occurrences += 1;
-          }
-        }
-        return {
-          amount: amount * occurrences,
-          isInterpolated: false,
-          consumptionValue: null,
-          consumptionUnit: "",
-        };
-      }
-      if (expense.charge_type === "quarterly") {
-        let occurrences = 0;
-        let occurrence = expenseRange.start;
-        while (occurrence <= expenseRange.end && occurrence <= overlapEnd) {
-          if (occurrence >= overlapStart) {
-            occurrences += 1;
-          }
-          occurrence = addUtcMonths(occurrence, 3);
-        }
-        return {
-          amount: amount * occurrences,
-          isInterpolated: false,
+          amount: recurringAmount.amount,
+          isInterpolated: recurringAmount.isInterpolated,
           consumptionValue: null,
           consumptionUnit: "",
         };

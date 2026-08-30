@@ -977,7 +977,7 @@ class ExpenseServiceTests(unittest.TestCase):
         settlement = settlement_for_period(self.connection, 1, "2025-01-01", "2025-03-31")
         self.assertEqual(
             Decimal(settlement["totals"]["costs"]) - Decimal(baseline["totals"]["costs"]),
-            Decimal("240.00"),
+            Decimal("203.87"),
         )
 
     def test_settlement_uses_meter_based_consumption_total(self) -> None:

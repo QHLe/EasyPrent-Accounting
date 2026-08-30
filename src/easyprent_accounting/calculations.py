@@ -73,6 +73,54 @@ def quarterly_occurrences(start_a: date, end_a: date, start_b: date, end_b: date
     return occurrences
 
 
+def _add_months(source_date: date, month_delta: int) -> date:
+    target_month_index = source_date.year * 12 + source_date.month - 1 + month_delta
+    target_year, target_month_zero_based = divmod(target_month_index, 12)
+    target_month = target_month_zero_based + 1
+    return date(target_year, target_month, min(source_date.day, monthrange(target_year, target_month)[1]))
+
+
+def _day_accurate_open_ended_recurring_amount(
+    amount: Decimal,
+    charge_type: str,
+    overlap_start: date,
+    overlap_end: date,
+    anchor_start: date,
+) -> Decimal:
+    if charge_type == "monthly":
+        total = Decimal("0")
+        current_day = overlap_start
+        while current_day <= overlap_end:
+            month_end = date(
+                current_day.year,
+                current_day.month,
+                monthrange(current_day.year, current_day.month)[1],
+            )
+            segment_end = min(month_end, overlap_end)
+            active_days = (segment_end - current_day).days + 1
+            total += amount * Decimal(active_days) / Decimal(month_end.day)
+            current_day = date.fromordinal(segment_end.toordinal() + 1)
+        return quantize_money(total)
+
+    cycle_months = 3 if charge_type == "quarterly" else 12
+    cycle_start = anchor_start
+    while _add_months(cycle_start, cycle_months) <= overlap_start:
+        cycle_start = _add_months(cycle_start, cycle_months)
+
+    total = Decimal("0")
+    current_day = overlap_start
+    while current_day <= overlap_end:
+        next_cycle_start = _add_months(cycle_start, cycle_months)
+        cycle_end = date.fromordinal(next_cycle_start.toordinal() - 1)
+        segment_end = min(cycle_end, overlap_end)
+        active_days = (segment_end - current_day).days + 1
+        cycle_days = (cycle_end - cycle_start).days + 1
+        total += amount * Decimal(active_days) / Decimal(cycle_days)
+        current_day = date.fromordinal(segment_end.toordinal() + 1)
+        cycle_start = next_cycle_start
+    return quantize_money(total)
+
+
 @dataclass(slots=True)
 class SettlementLease:
     lease_id: int
@@ -109,6 +157,16 @@ def expense_amount_for_period(expense: SettlementExpense, period_start: date, pe
         if expense.consumption_value is None:
             return Decimal("0")
         return quantize_money(expense.amount * expense.consumption_value)
+    if expense_end.year == 9999 and expense.charge_type in {"monthly", "quarterly", "yearly"}:
+        overlap_start = max(expense_start, period_start)
+        overlap_end = min(expense_end, period_end)
+        return _day_accurate_open_ended_recurring_amount(
+            expense.amount,
+            expense.charge_type,
+            overlap_start,
+            overlap_end,
+            expense_start,
+        )
     if expense.charge_type == "monthly":
         active_months = overlap_months(expense_start, expense_end, period_start, period_end)
         return quantize_money(expense.amount * Decimal(active_months))
