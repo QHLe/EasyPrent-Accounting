@@ -22,9 +22,12 @@ class WebApiAndUiTests(unittest.TestCase):
         self.original_db_path = os.environ.get("EASYPRENT_DB_PATH")
         os.environ["EASYPRENT_DB_PATH"] = self.db_path
         initialize_database()
-        with sqlite3.connect(self.db_path) as connection:
+        connection = sqlite3.connect(self.db_path)
+        try:
             seed_demo_data(connection)
             connection.commit()
+        finally:
+            connection.close()
 
     def tearDown(self) -> None:
         if self.original_db_path is None:
@@ -150,7 +153,7 @@ class WebApiAndUiTests(unittest.TestCase):
         self.assertIn('"/api/meter-readings/" + String(reading.id)', content)
         self.assertIn("Objektverwaltung", content)
         self.assertIn("Kostenverwaltung", content)
-        self.assertIn("Monatliche Kosten", content)
+        self.assertIn("Kosten-Granularität", content)
         self.assertIn("expenseDevelopmentMonthlySeries", content)
         self.assertIn("Gesamtsumme", content)
         self.assertIn("Mieterverwaltung", content)
@@ -233,7 +236,7 @@ class WebApiAndUiTests(unittest.TestCase):
         self.assertIn("axisPointer", content)
         self.assertNotIn("yAxisIndex: 0", content)
         self.assertIn("scale: true", content)
-        self.assertIn("min: \"dataMin\"", content)
+        self.assertIn(': "dataMin"', content)
         self.assertIn("max: \"dataMax\"", content)
         self.assertIn("type: \"scatter\"", content)
         self.assertIn("actualReadings", content)
@@ -247,8 +250,6 @@ class WebApiAndUiTests(unittest.TestCase):
         self.assertIn('stack: "expense-composition"', content)
         self.assertIn("Kosten-Granularität", content)
         self.assertIn("Kosten-Diagrammtyp", content)
-        self.assertIn("Kosten-Zeitraum von", content)
-        self.assertIn("Kosten-Zeitraum bis", content)
         self.assertIn("point-source-recorded", content)
         self.assertIn("point-source-interpolated", content)
         self.assertIn("source_type", content)

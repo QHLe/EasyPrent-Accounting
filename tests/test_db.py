@@ -16,10 +16,13 @@ class DatabaseInitializationTests(unittest.TestCase):
             os.environ["EASYPRENT_DB_PATH"] = database_path
             try:
                 initialize_database()
-                with sqlite3.connect(database_path) as connection:
+                connection = sqlite3.connect(database_path)
+                try:
                     organization_count = connection.execute(
                         "SELECT COUNT(*) FROM organizations"
                     ).fetchone()[0]
+                finally:
+                    connection.close()
             finally:
                 if original_database_path is None:
                     os.environ.pop("EASYPRENT_DB_PATH", None)

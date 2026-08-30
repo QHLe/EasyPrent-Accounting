@@ -76,7 +76,7 @@ class EasyPrentCliTests(unittest.TestCase):
         (self.project_root / "package-lock.json").write_text("{}", encoding="utf-8")
 
         completed = mock.Mock(returncode=0)
-        with mock.patch.object(cli, "running_pid", return_value=False), mock.patch.object(
+        with mock.patch.object(cli, "running_pid", return_value=None), mock.patch.object(
             cli, "run_command", return_value=0
         ) as run_command_mock, mock.patch("shutil.which", return_value=None), mock.patch.object(
             cli.subprocess, "run", return_value=completed

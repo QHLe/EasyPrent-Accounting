@@ -136,23 +136,23 @@ class ExpenseServiceTests(unittest.TestCase):
         self.assertEqual(row["period_start"], "2025-06-15")
         self.assertEqual(row["period_end"], "2025-06-15")
 
-    def test_create_expense_requires_period_for_recurring_costs(self) -> None:
-        with self.assertRaises(ValueError) as error:
-            create_expense(
-                self.connection,
-                {
-                    "object_type": "property",
-                    "object_id": 1,
-                    "label": "Hausmeister",
-                    "amount": "50.00",
-                    "allocation_method": "unit_count",
-                    "recurrence": "recurring",
-                    "interval": "monthly",
-                    "period_start": "2025-01-01",
-                },
-            )
+    def test_create_expense_allows_open_ended_recurring_costs(self) -> None:
+        created = create_expense(
+            self.connection,
+            {
+                "object_type": "property",
+                "object_id": 1,
+                "label": "Hausmeister",
+                "amount": "50.00",
+                "allocation_method": "unit_count",
+                "recurrence": "recurring",
+                "interval": "monthly",
+                "period_start": "2025-01-01",
+            },
+        )
 
-        self.assertIn("period", str(error.exception))
+        self.assertTrue(created["is_open_ended"])
+        self.assertIsNone(created["period_end"])
 
     def test_create_expense_requires_consumption_unit_for_consumption_costs(self) -> None:
         with self.assertRaises(ValueError) as error:

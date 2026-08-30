@@ -354,7 +354,7 @@ Mietverträgen, Nebenkosten und abschreibungsrelevanten Objektdaten.
 - `REQ-NKA-014`
   Wiederholende Kosten müssen mindestens mit den Intervallen `monthly` und `yearly` erfassbar sein.
 - `REQ-NKA-015`
-  Der Kosten-Erfassungsbereich muss mindestens die Felder Kostenart, Wert, Wiederholungsart, Intervall, Von-Datum und Bis-Datum bereitstellen.
+  Der Kosten-Erfassungsbereich muss mindestens die Felder Kostenart, Wert, Wiederholungsart, Intervall, Von-Datum und ein optionales Bis-Datum für wiederholende Kosten bereitstellen.
 - `REQ-NKA-016`
   Kostenpositionen müssen archiviert werden können.
 - `REQ-NKA-017`
@@ -366,7 +366,7 @@ Mietverträgen, Nebenkosten und abschreibungsrelevanten Objektdaten.
 - `REQ-NKA-020`
   `Gesamtkosten` müssen einen Zeitraum mit `period_start` und `period_end` speichern.
 - `REQ-NKA-021`
-  Wiederholende Kosten müssen einen Zeitraum mit `period_start` und `period_end` speichern.
+  Wiederholende Kosten müssen mindestens `period_start` speichern und können optional mit `period_end` begrenzt werden.
 - `REQ-NKA-022`
   Verbrauchsbezogene Kosten müssen mindestens eine Verbrauchseinheit speichern können.
 - `REQ-NKA-023`
@@ -499,7 +499,7 @@ Mietverträgen, Nebenkosten und abschreibungsrelevanten Objektdaten.
 - `ACC-002`
   Die Anforderungen `REQ-LEASE-001` bis `REQ-LEASE-010` sind erfüllt, wenn Mieter und Mietverträge Wohnungen eindeutig zugeordnet werden können, Mietverträge optional zusätzlich einem Zimmer innerhalb der Wohnung zugeordnet werden können, Mieter ohne referenzierende Mietverträge gezielt gelöscht werden können, Mietverträge selbst ebenfalls gezielt gelöscht werden können und sowohl Mieter als auch Mietverträge mit einem oder mehreren Dokumenten einschließlich referenzierter Paperless-Dokumente verknüpft werden können.
 - `ACC-003`
-  Die Anforderungen `REQ-NKA-001` bis `REQ-NKA-045` sind erfüllt, wenn für einen definierten Zeitraum eine nachvollziehbare Nebenkostenabrechnung mit Vorauszahlungen, Saldo und den Kostentypen `total`, `monthly`, `yearly` und `consumption` erzeugt werden kann, Kostenpositionen Objekten der unterstützten Objektarten zugeordnet, gemäß ihrer Typlogik mit verpflichtendem Zeitraum bei Gesamtkosten, Zeitraum bei wiederholenden Kosten, Verbrauchseinheit oder Zählerbezug erfasst, um Kostenart, Empfänger und Bezeichnung fachlich ergänzt, aus vorhandenen Kombinationen wiederverwendbar vorgeschlagen, nachträglich mit denselben fachlichen Regeln bearbeitet sowie archiviert und erst nach der Archivierung gelöscht werden können, die berechnete Gesamtsumme wiederholender Kosten tagesgenau über die tatsächliche Zeitüberlappung ermittelt wird, jährlich wiederholende Kosten einen am Startdatum verankerten Jahreszyklus für die tagesgenaue Verteilung nutzen, EUR-Präzisionsregeln für Beträge und Verbrauchspreise eingehalten werden und fehlende Bezeichnungen automatisch aus der Kostenart abgeleitet werden.
+  Die Anforderungen `REQ-NKA-001` bis `REQ-NKA-045` sind erfüllt, wenn für einen definierten Zeitraum eine nachvollziehbare Nebenkostenabrechnung mit Vorauszahlungen, Saldo und den Kostentypen `total`, `monthly`, `yearly` und `consumption` erzeugt werden kann, Kostenpositionen Objekten der unterstützten Objektarten zugeordnet, gemäß ihrer Typlogik mit verpflichtendem Zeitraum bei Gesamtkosten, offenem oder begrenztem Zeitraum bei wiederholenden Kosten, Verbrauchseinheit oder Zählerbezug erfasst, um Kostenart, Empfänger und Bezeichnung fachlich ergänzt, aus vorhandenen Kombinationen wiederverwendbar vorgeschlagen, nachträglich mit denselben fachlichen Regeln bearbeitet sowie archiviert und erst nach der Archivierung gelöscht werden können, die berechnete Gesamtsumme wiederholender Kosten tagesgenau über die tatsächliche Zeitüberlappung ermittelt wird, jährlich wiederholende Kosten einen am Startdatum verankerten Jahreszyklus für die tagesgenaue Verteilung nutzen, EUR-Präzisionsregeln für Beträge und Verbrauchspreise eingehalten werden und fehlende Bezeichnungen automatisch aus der Kostenart abgeleitet werden.
 - `ACC-004`
   Die Anforderungen `REQ-DEPR-001` bis `REQ-DEPR-006` sind erfüllt, wenn Abschreibungsdaten vollständig erfasst und Jahreswerte berechnet werden können.
 - `ACC-005`
