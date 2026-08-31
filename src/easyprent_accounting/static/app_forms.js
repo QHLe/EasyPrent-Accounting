@@ -1251,9 +1251,7 @@
       activeForm = e(
         "div",
         { className: "stack" },
-        isEditing
-          ? null
-          : e(
+        e(
           "form",
           { onSubmit: props.handleMeterSubmit },
           e(

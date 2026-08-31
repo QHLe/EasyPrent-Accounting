@@ -219,6 +219,8 @@ class WebApiAndUiTests(unittest.TestCase):
         self.assertIn("Zimmer", content)
         self.assertIn("Zähler", content)
         self.assertIn("Zählerstand", content)
+        self.assertIn("Zähler bearbeiten", content)
+        self.assertIn("Zähler aktualisieren", content)
         self.assertIn("Zählerstandhistorie", content)
         self.assertIn("Zählerentwicklung", content)
         self.assertIn("Verbrauch im Zeitraum", content)
