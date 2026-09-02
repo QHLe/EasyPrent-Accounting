@@ -847,6 +847,7 @@
     const [editingExpenseId, setEditingExpenseId] = useState("");
     const [expenseEditForm, setExpenseEditForm] = useState(createExpenseFormState());
     const [expenseListFilters, setExpenseListFilters] = useState({
+      year: String(new Date().getFullYear()),
       target: "",
       expense_category: "",
     });
@@ -3161,7 +3162,14 @@
       meterChartRange.from,
       meterChartRange.to
     );
-    const filteredExpenses = buildFilteredExpenses(overview.expenses || [], expenseListFilters);
+    const expenseListFilteredExpenses = buildFilteredExpenses(
+      overview.expenses || [],
+      expenseListFilters
+    );
+    const filteredExpenses = buildFilteredExpenses(
+      overview.expenses || [],
+      Object.assign({}, expenseListFilters, { year: "" })
+    );
     const expenseCategoryPeriodTotals = buildExpenseCategoryPeriodTotals(
       filteredExpenses,
       overview.meter_readings || [],
@@ -3329,7 +3337,7 @@
       },
       expenseListTargetOptions: expenseListTargetOptions,
       expenseCategoryFilterOptions: expenseCategoryFilterOptions,
-      filteredExpenses: filteredExpenses,
+      filteredExpenses: expenseListFilteredExpenses,
       editingExpenseId: editingExpenseId,
       onExpenseEdit: startExpenseEdit,
       expenseEditForm: expenseEditForm,

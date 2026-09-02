@@ -214,6 +214,7 @@ class WebApiAndUiTests(unittest.TestCase):
         self.assertIn("Turnus", content)
         self.assertIn("Kostenliste filtern", content)
         self.assertIn("expenseListFilters", content)
+        self.assertIn('Object.assign({}, expenseListFilters, { year: "" })', content)
         self.assertIn("filteredExpenses", content)
         self.assertIn("startExpenseEdit(expense)", content)
         self.assertIn('String(editingExpenseId) === String(expense.id) && !expense.is_archived', content)
@@ -324,6 +325,45 @@ class WebApiAndUiTests(unittest.TestCase):
                 check=False,
             )
             self.assertEqual(result.returncode, 0, f"{script_path}: {result.stderr}")
+
+    def test_expense_list_year_filter_includes_overlapping_and_open_ended_costs(self) -> None:
+        if shutil.which("node") is None:
+            self.skipTest("node is required for JavaScript component validation")
+
+        repo_root = os.path.dirname(os.path.dirname(__file__))
+        previews_path = os.path.join(
+            repo_root, "src", "easyprent_accounting", "static", "app_previews.js"
+        )
+        script = r'''
+const fs = require("fs");
+global.React = { createElement: function () {} };
+global.window = {
+  React: global.React,
+  EasyPrentAppDomain: {},
+  EasyPrentAppForms: {},
+};
+eval(fs.readFileSync(process.argv[1], "utf8"));
+const expenses = [
+  { id: 1, period_start: "2024-12-15", period_end: "2025-01-15" },
+  { id: 2, period_start: "2025-06-01", period_end: "2025-06-30" },
+  { id: 3, period_start: "2025-12-31", is_open_ended: true },
+  { id: 4, period_start: "2026-01-01", period_end: "2026-12-31" },
+  { id: 5, booking_date: "2025-04-01", charge_type: "one_time" },
+  { id: 6, period_start: "2024-01-01", charge_type: "consumption" },
+];
+const result = window.EasyPrentAppPreviews
+  .buildFilteredExpenses(expenses, { target: "", expense_category: "", year: "2025" })
+  .map(function (expense) { return expense.id; });
+process.stdout.write(JSON.stringify(result));
+'''
+        result = subprocess.run(
+            ["node", "-e", script, previews_path],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout), [1, 2, 3, 5, 6])
 
     def test_settlement_target_selector_lists_property_and_standalone_unit(self) -> None:
         if shutil.which("node") is None:

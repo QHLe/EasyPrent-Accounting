@@ -75,6 +75,21 @@
         e(
           "label",
           null,
+          "Jahr",
+          e("input", {
+            type: "number",
+            min: "1900",
+            max: "9999",
+            step: "1",
+            value: config.filters.year,
+            onChange: function (event) {
+              config.onChange("year", event.target.value);
+            },
+          })
+        ),
+        e(
+          "label",
+          null,
           "Zielobjekt-Filter",
           e(
             "select",
@@ -331,6 +346,21 @@
     };
   }
 
+  function expenseOverlapsYear(expense, year) {
+    if (!/^\d{4}$/.test(String(year || ""))) {
+      return true;
+    }
+
+    const yearStart = String(year) + "-01-01";
+    const yearEnd = String(year) + "-12-31";
+    const startDate = expense.period_start || expense.booking_date;
+    const endDate = expense.is_open_ended
+      ? ""
+      : expense.period_end || (expense.charge_type === "one_time" ? expense.booking_date : "");
+
+    return !!startDate && startDate <= yearEnd && (!endDate || endDate >= yearStart);
+  }
+
   function buildFilteredExpenses(expenses, expenseListFilters) {
     const filters = expenseListFilters || {};
     const normalizedExpenseCategoryFilter = normalizedFilterText(filters.expense_category);
@@ -343,7 +373,7 @@
         normalizedExpenseCategoryFilter === "" ||
         normalizedFilterText(expense.expense_category || expense.label || "") ===
           normalizedExpenseCategoryFilter;
-      return targetMatch && categoryMatch;
+      return targetMatch && categoryMatch && expenseOverlapsYear(expense, filters.year);
     });
   }
 
@@ -1141,6 +1171,7 @@
 
   window.EasyPrentAppPreviews = {
     buildFilteredExpenses: buildFilteredExpenses,
+    expenseOverlapsYear: expenseOverlapsYear,
     buildManagementPreview: buildManagementPreview,
     buildMeterData: buildMeterData,
     buildOverviewRows: buildOverviewRows,
