@@ -52,7 +52,43 @@ python3 -m unittest discover -s tests
 - `POST /api/expenses` Nebenkostenposition anlegen
 - `POST /api/depreciation-assets` Abschreibungsobjekt anlegen
 - `GET /api/settlements?property_id=...&period_start=...&period_end=...`
+- `GET /api/settlements/document.ods?property_id=...&lease_id=...&period_start=...&period_end=...`
+  befüllt die ODS-Vorlage und lädt die editierbare Abrechnung herunter. Für eine
+  einzelne Wohnung ohne Objekt wird stattdessen `unit_id=...` übergeben.
 - `GET /api/depreciation-schedule?year=...`
+
+## ODS-Vorlage für Nebenkostenabrechnungen
+
+Die bearbeitbare Master-Vorlage liegt unter
+`templates/utility_settlement.ods`. Gestaltung, Spaltenbreiten und
+zusammengeführte Zellen können dort mit LibreOffice angepasst werden. Die
+Platzhalter in doppelten geschweiften Klammern müssen erhalten bleiben. Die
+Zeile mit `{{KOSTENART}}` formatiert Kostenarten beziehungsweise deren
+Summenzeilen; die direkt folgende Zeile mit `{{POSITION}}` formatiert
+eingerückte Unterpositionen. Zu dieser Zeile gehören außerdem die Marker
+`{{POSITION_JAHRESKOSTEN}}`, `{{POSITION_MIETERANTEIL}}` und
+`{{POSITION_VERBRAUCH}}`. Gibt es zu einer Kostenart mehrere Positionen oder
+weicht der Positionsname von der Kostenart ab, erzeugt der Export die
+Unterteilung automatisch. Die Gesamtsumme berücksichtigt nur die
+Kostenarten-Summenzeilen und zählt Unterpositionen daher nicht doppelt.
+Der angezeigte Abrechnungszeitraum wird auf die Überschneidung mit dem
+Mietvertrag begrenzt. Vertrags-Vorauszahlungen werden nicht als tatsächlich
+geleistete Zahlungen behandelt und deshalb weder verrechnet noch als
+Guthaben oder Nachzahlung ausgewiesen.
+
+Nach dem Austausch durch eine noch unvorbereitete ODS-Datei werden die Marker
+einmalig eingefügt und die Installationskopie aktualisiert:
+
+```bash
+.venv/bin/python scripts/prepare_settlement_template.py /pfad/zur/vorlage.ods
+```
+
+Der Server verwendet im Checkout automatisch die Master-Vorlage. Alternativ
+kann über `EASYPRENT_SETTLEMENT_TEMPLATE` ein anderer Vorlagenpfad angegeben
+werden. Absenderdaten können optional über `EASYPRENT_SENDER_NAME`,
+`EASYPRENT_SENDER_STREET` und `EASYPRENT_SENDER_CITY` gesetzt werden. Ohne
+eigene Absenderkonfiguration wird nur der gespeicherte Organisationsname
+eingetragen, da das Datenmodell derzeit keine Organisationsanschrift enthält.
 
 ## Annahmen im MVP
 

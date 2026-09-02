@@ -8,6 +8,9 @@ import sqlite3
 import subprocess
 import tempfile
 import unittest
+import xml.etree.ElementTree as ET
+from importlib import resources
+from zipfile import ZIP_STORED, ZipFile
 from io import BytesIO
 from unittest import mock
 
@@ -171,6 +174,9 @@ class WebApiAndUiTests(unittest.TestCase):
         self.assertIn("Einstellungen", content)
         self.assertIn("Mieter erfassen", content)
         self.assertIn("Mietvertrag erfassen", content)
+        self.assertIn("Nebenkostenvorauszahlung pro Monat", content)
+        self.assertIn("Abgerechneter Zeitraum", content)
+        self.assertIn("Vorauszahlungen und Saldo werden nicht automatisch", content)
         self.assertIn("Zimmer optional", content)
         self.assertIn("Zimmerfläche in m²", content)
         self.assertIn("Mieterliste", content)
@@ -319,6 +325,118 @@ class WebApiAndUiTests(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 0, f"{script_path}: {result.stderr}")
 
+    def test_settlement_target_selector_lists_property_and_standalone_unit(self) -> None:
+        if shutil.which("node") is None:
+            self.skipTest("node is required for JavaScript component validation")
+
+        repo_root = os.path.dirname(os.path.dirname(__file__))
+        sections_path = os.path.join(
+            repo_root, "src", "easyprent_accounting", "static", "app_sections.js"
+        )
+        script = r"""
+const fs = require("fs");
+const vm = require("vm");
+global.window = {};
+global.React = window.React = {
+  Fragment: "fragment",
+  useState: function () {},
+  createElement: function (type, props) {
+    return {
+      type: type,
+      props: props || {},
+      children: Array.prototype.slice.call(arguments, 2),
+    };
+  },
+};
+window.EasyPrentAppDomain = {
+  summaryCards: function () { return []; },
+  table: function () { return null; },
+  formatMoneyValue: function (value) { return value; },
+  formatDisplayName: function (value) { return value; },
+  formatNumericLabel: function (value) { return value; },
+};
+window.EasyPrentAppCharts = {};
+vm.runInThisContext(fs.readFileSync(process.argv[1], "utf8"));
+
+const emptyRows = [];
+const tree = window.EasyPrentAppSections.OverviewContent({
+  summary: {},
+  roleItems: emptyRows,
+  propertyRows: emptyRows,
+  buildingRows: emptyRows,
+  unitRows: emptyRows,
+  roomRows: emptyRows,
+  meterRows: emptyRows,
+  leaseRows: emptyRows,
+  settlementRows: emptyRows,
+  expenseRows: emptyRows,
+  depreciationRows: emptyRows,
+  properties: [{ id: 1, name: "Haus", is_archived: 0 }],
+  units: [{ id: 77, label: "Solo", property_id: null, is_archived: 0 }],
+  settlementFilters: {
+    property_id: "1",
+    unit_id: "",
+    period_start: "2025-01-01",
+    period_end: "2025-12-31",
+  },
+  onSettlementFilterChange: function () {},
+  onSettlementFilterSubmit: function () {},
+  settlement: null,
+  depreciation: null,
+  depreciationYear: 2025,
+});
+
+const nodes = [];
+function visit(node) {
+  if (Array.isArray(node)) {
+    node.forEach(visit);
+    return;
+  }
+  if (!node || typeof node !== "object") {
+    return;
+  }
+  nodes.push(node);
+  visit(node.children);
+}
+function text(node) {
+  if (Array.isArray(node)) {
+    return node.map(text).join("");
+  }
+  if (node == null) {
+    return "";
+  }
+  if (typeof node !== "object") {
+    return String(node);
+  }
+  return text(node.children);
+}
+visit(tree);
+const target = nodes.find(function (node) {
+  return node.type === "select" && node.props.name === "settlement_target";
+});
+const options = target
+  ? nodes.filter(function (node) { return node.type === "option"; }).map(function (node) {
+      return { value: String(node.props.value), label: text(node) };
+    })
+  : [];
+process.stdout.write(JSON.stringify({ target: !!target, options: options }));
+"""
+        result = subprocess.run(
+            ["node", "-e", script, sections_path],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertTrue(payload["target"])
+        self.assertIn(
+            {"value": "property:1", "label": "Immobilie: Haus"}, payload["options"]
+        )
+        self.assertIn(
+            {"value": "unit:77", "label": "Wohnung: Solo"}, payload["options"]
+        )
+
     def test_local_react_vendor_files_are_served(self) -> None:
         react_status, react_headers, react_body = self._call_app("GET", "/static/vendor/react.production.min.js")
         dom_status, dom_headers, dom_body = self._call_app("GET", "/static/vendor/react-dom.production.min.js")
@@ -341,6 +459,7 @@ class WebApiAndUiTests(unittest.TestCase):
         self.assertEqual(payload["openapi"], "3.1.0")
         self.assertIn("/api/overview", payload["paths"])
         self.assertIn("/api/settlements", payload["paths"])
+        self.assertIn("/api/settlements/document.ods", payload["paths"])
         self.assertIn("/api/depreciation-schedule", payload["paths"])
         self.assertIn("/api/expenses", payload["paths"])
         self.assertIn("/api/buildings", payload["paths"])
@@ -2311,6 +2430,434 @@ class WebApiAndUiTests(unittest.TestCase):
         self.assertTrue(create_status.startswith("201"))
         self.assertTrue(settlement_status.startswith("200"))
         self.assertIn("Wohnungswartung", labels)
+
+    def test_api_settlement_without_target_returns_empty_result(self) -> None:
+        status, _, body = self._call_app(
+            "GET",
+            "/api/settlements",
+            query_string=(
+                "property_id=&unit_id="
+                "&period_start=2025-01-01&period_end=2025-12-31"
+            ),
+        )
+
+        payload = json.loads(body.decode("utf-8"))
+        self.assertTrue(status.startswith("200"))
+        self.assertIsNone(payload["property_id"])
+        self.assertIsNone(payload["unit_id"])
+        self.assertEqual(payload["results"], [])
+
+    def test_api_settlement_ignores_null_and_undefined_target_ids(self) -> None:
+        for query_string in (
+            "property_id=null",
+            "unit_id=undefined",
+            "property_id=undefined&unit_id=null",
+        ):
+            with self.subTest(query_string=query_string):
+                status, _, body = self._call_app(
+                    "GET",
+                    "/api/settlements",
+                    query_string=(
+                        query_string
+                        + "&period_start=2025-01-01&period_end=2025-12-31"
+                    ),
+                )
+
+                payload = json.loads(body.decode("utf-8"))
+                self.assertTrue(status.startswith("200"))
+                self.assertIsNone(payload["property_id"])
+                self.assertIsNone(payload["unit_id"])
+                self.assertEqual(payload["results"], [])
+
+    def test_api_settlement_rejects_non_numeric_target_id(self) -> None:
+        status, _, body = self._call_app(
+            "GET",
+            "/api/settlements",
+            query_string=(
+                "property_id=keine-zahl"
+                "&period_start=2025-01-01&period_end=2025-12-31"
+            ),
+        )
+
+        payload = json.loads(body.decode("utf-8"))
+        self.assertTrue(status.startswith("400"))
+        self.assertEqual(payload["error"], "property_id must be an integer")
+
+    def test_settlement_document_download_is_an_ods(self) -> None:
+        status, headers, body = self._call_app(
+            "GET",
+            "/api/settlements/document.ods",
+            query_string=(
+                "property_id=1&lease_id=1&period_start=2025-01-01&period_end=2025-12-31"
+            ),
+        )
+
+        self.assertTrue(status.startswith("200"))
+        self.assertEqual(headers["Content-Type"], "application/vnd.oasis.opendocument.spreadsheet")
+        self.assertTrue(body.startswith(b"PK"))
+        self.assertIn("attachment; filename=", headers["Content-Disposition"])
+        with ZipFile(BytesIO(body)) as archive:
+            self.assertEqual(archive.infolist()[0].filename, "mimetype")
+            self.assertEqual(archive.infolist()[0].compress_type, ZIP_STORED)
+            self.assertIsNone(archive.testzip())
+            content_bytes = archive.read("content.xml")
+        content = content_bytes.decode("utf-8")
+        self.assertIn("Anna Schulz", content)
+        self.assertIn("Heizung", content)
+        self.assertIn("Nebenkostenabrechnung", content)
+        self.assertIn("01.01.2025 – 31.12.2025", content)
+        self.assertIn("EasyPrent Demo Verwaltung", content)
+        self.assertIn("A-01", content)
+        self.assertIn("Lindenweg 12", content)
+        self.assertIn("10439 Berlin", content)
+        self.assertIn("4.200,00 €", content)
+        self.assertNotIn("↳", content)
+        self.assertNotIn("Geleistete Vorauszahlungen", content)
+        self.assertNotIn("Guthaben", content)
+        self.assertNotIn("{{", content)
+        self.assertNotIn("Tiefgarage", content)
+        self.assertNotIn("Solarstr.", content)
+        self.assertIn('xmlns:of="urn:oasis:names:tc:opendocument:xmlns:of:1.2"', content)
+
+        table_ns = "urn:oasis:names:tc:opendocument:xmlns:table:1.0"
+        text_ns = "urn:oasis:names:tc:opendocument:xmlns:text:1.0"
+        office_ns = "urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+        root = ET.fromstring(content_bytes)
+        sheets = root.findall(f".//{{{table_ns}}}table")
+        self.assertEqual(len(sheets), 1)
+        rows = sheets[0].findall(f"{{{table_ns}}}table-row")
+        self.assertFalse(any(row.get(f"{{{table_ns}}}number-rows-repeated") for row in rows))
+        cost_rows = []
+        for row in rows:
+            row_text = " ".join(
+                "".join(paragraph.itertext())
+                for paragraph in row.findall(f".//{{{text_ns}}}p")
+            )
+            if row_text.startswith(
+                ("Heizung", "Wasser", "Hausreinigung", "Treppenhausreinigung")
+            ):
+                cost_rows.append(row)
+        self.assertEqual(len(cost_rows), 4)
+        for row in cost_rows[:3]:
+            cells = [
+                cell
+                for cell in row
+                if cell.tag
+                in {
+                    f"{{{table_ns}}}table-cell",
+                    f"{{{table_ns}}}covered-table-cell",
+                }
+            ]
+            for column in (0, 2, 4):
+                self.assertEqual(cells[column].get(f"{{{table_ns}}}number-columns-spanned"), "2")
+            self.assertEqual(cells[2].get(f"{{{office_ns}}}value-type"), "currency")
+            self.assertEqual(cells[4].get(f"{{{office_ns}}}value-type"), "currency")
+        formulas = {
+            cell.get(f"{{{table_ns}}}formula")
+            for cell in root.findall(f".//{{{table_ns}}}table-cell")
+            if cell.get(f"{{{table_ns}}}formula")
+        }
+        self.assertIn("of:=SUM([.C20:.C22])", formulas)
+        self.assertIn("of:=SUM([.E20:.E22])", formulas)
+        self.assertIn("of:=SUM([.D23:.D23])", formulas)
+        self.assertIn("of:=SUM([.F23:.F23])", formulas)
+        self.assertFalse(any(formula.startswith("of:=ABS(") for formula in formulas))
+
+    def test_settlement_document_uses_tenant_billing_period(self) -> None:
+        status, _, body = self._call_app(
+            "GET",
+            "/api/settlements/document.ods",
+            query_string=(
+                "property_id=1&lease_id=2&period_start=2025-01-01&period_end=2025-12-31"
+            ),
+        )
+
+        self.assertTrue(status.startswith("200"))
+        with ZipFile(BytesIO(body)) as archive:
+            content = archive.read("content.xml").decode("utf-8")
+        self.assertIn("01.04.2025 – 31.12.2025", content)
+        self.assertNotIn("01.01.2025 – 31.12.2025", content)
+        self.assertNotIn("Geleistete Vorauszahlungen", content)
+        self.assertNotIn("1.710,00 €", content)
+
+    def test_settlement_document_uses_complete_alternate_tenant_address(self) -> None:
+        connection = sqlite3.connect(self.db_path)
+        try:
+            connection.execute(
+                """
+                UPDATE tenants
+                SET alternate_street = ?, alternate_postal_code = ?, alternate_city = ?
+                WHERE id = 1
+                """,
+                ("Neue Straße 7", "88045", "Friedrichshafen"),
+            )
+            connection.commit()
+        finally:
+            connection.close()
+
+        status, _, body = self._call_app(
+            "GET",
+            "/api/settlements/document.ods",
+            query_string=(
+                "property_id=1&lease_id=1&period_start=2025-01-01&period_end=2025-12-31"
+            ),
+        )
+
+        self.assertTrue(status.startswith("200"))
+        with ZipFile(BytesIO(body)) as archive:
+            content = archive.read("content.xml").decode("utf-8")
+        self.assertIn("Neue Straße 7", content)
+        self.assertIn("88045 Friedrichshafen", content)
+
+    def test_settlement_document_uses_exact_meter_values_for_lease_period(self) -> None:
+        meter_status, _, meter_body = self._call_app(
+            "POST",
+            "/api/meters",
+            json.dumps(
+                {
+                    "object_type": "unit",
+                    "object_id": 2,
+                    "label": "Teiljahreszähler A-02",
+                    "meter_type": "heating",
+                    "unit": "kWh",
+                }
+            ).encode("utf-8"),
+        )
+        meter_id = json.loads(meter_body.decode("utf-8"))["id"]
+        for reading_date, reading_value in (
+            ("2025-01-01", "100"),
+            ("2025-04-01", "110"),
+            ("2025-12-31", "150"),
+        ):
+            reading_status, _, _ = self._call_app(
+                "POST",
+                "/api/meter-readings",
+                json.dumps(
+                    {
+                        "meter_id": meter_id,
+                        "reading_date": reading_date,
+                        "reading_value": reading_value,
+                    }
+                ).encode("utf-8"),
+            )
+            self.assertTrue(reading_status.startswith("201"))
+        expense_status, _, _ = self._call_app(
+            "POST",
+            "/api/expenses",
+            json.dumps(
+                {
+                    "object_type": "unit",
+                    "object_id": 2,
+                    "label": "Messkosten Teiljahr",
+                    "amount": "2.00",
+                    "allocation_method": "unit_count",
+                    "charge_type": "consumption",
+                    "meter_id": meter_id,
+                    "period_start": "2025-01-01",
+                    "period_end": "2025-12-31",
+                }
+            ).encode("utf-8"),
+        )
+
+        status, _, body = self._call_app(
+            "GET",
+            "/api/settlements/document.ods",
+            query_string=(
+                "property_id=1&lease_id=2&period_start=2025-01-01&period_end=2025-12-31"
+            ),
+        )
+
+        self.assertTrue(meter_status.startswith("201"))
+        self.assertTrue(expense_status.startswith("201"))
+        self.assertTrue(status.startswith("200"))
+        with ZipFile(BytesIO(body)) as archive:
+            root = ET.fromstring(archive.read("content.xml"))
+        table_ns = "urn:oasis:names:tc:opendocument:xmlns:table:1.0"
+        text_ns = "urn:oasis:names:tc:opendocument:xmlns:text:1.0"
+        matching_row = next(
+            row
+            for row in root.findall(f".//{{{table_ns}}}table-row")
+            if "Messkosten Teiljahr"
+            in " ".join(
+                "".join(paragraph.itertext())
+                for paragraph in row.findall(f".//{{{text_ns}}}p")
+            )
+        )
+        row_values = [
+            " ".join("".join(paragraph.itertext()) for paragraph in cell.findall(f"{{{text_ns}}}p"))
+            for cell in matching_row
+            if cell.tag
+            in {
+                f"{{{table_ns}}}table-cell",
+                f"{{{table_ns}}}covered-table-cell",
+            }
+        ]
+        self.assertEqual(row_values[2], "100,00 €")
+        self.assertEqual(row_values[4], "80,00 €")
+        self.assertEqual(row_values[6], "40 kWh")
+
+    def test_settlement_document_ignores_incomplete_alternate_address(self) -> None:
+        connection = sqlite3.connect(self.db_path)
+        try:
+            connection.execute(
+                """
+                UPDATE tenants
+                SET alternate_street = ?, alternate_postal_code = NULL, alternate_city = NULL
+                WHERE id = 1
+                """,
+                ("Unvollständiger Weg 9",),
+            )
+            connection.commit()
+        finally:
+            connection.close()
+
+        status, _, body = self._call_app(
+            "GET",
+            "/api/settlements/document.ods",
+            query_string=(
+                "property_id=1&lease_id=1&period_start=2025-01-01&period_end=2025-12-31"
+            ),
+        )
+
+        self.assertTrue(status.startswith("200"))
+        with ZipFile(BytesIO(body)) as archive:
+            content = archive.read("content.xml").decode("utf-8")
+        self.assertNotIn("Unvollständiger Weg 9", content)
+        self.assertIn("Lindenweg 12", content)
+        self.assertIn("10439 Berlin", content)
+
+    def test_settlement_document_supports_standalone_unit(self) -> None:
+        connection = sqlite3.connect(self.db_path)
+        try:
+            unit_cursor = connection.execute(
+                """
+                INSERT INTO units (
+                    building_id, label, area_sqm, room_count, street, city, postal_code
+                ) VALUES (NULL, ?, ?, ?, ?, ?, ?)
+                """,
+                ("Solo-7", "55.0", 2, "Uferweg 8", "Konstanz", "78462"),
+            )
+            unit_id = unit_cursor.lastrowid
+            tenant_cursor = connection.execute(
+                "INSERT INTO tenants (full_name) VALUES (?)", ("Lena Beispiel",)
+            )
+            lease_cursor = connection.execute(
+                """
+                INSERT INTO leases (
+                    unit_id, tenant_id, rent_cold, additional_charges_advance,
+                    occupant_count, start_date, end_date, status
+                ) VALUES (?, ?, ?, ?, ?, ?, NULL, ?)
+                """,
+                (unit_id, tenant_cursor.lastrowid, "800.00", "100.00", 1, "2025-01-01", "active"),
+            )
+            connection.execute(
+                """
+                INSERT INTO expense_items (
+                    property_id, object_type, object_id, expense_category,
+                    beneficiary_name, label, amount, allocation_method,
+                    charge_type, recurrence, booking_date, period_start, period_end
+                ) VALUES (NULL, 'unit', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    unit_id,
+                    "Versicherung",
+                    "Versicherer",
+                    "Versicherung Solo",
+                    "120.00",
+                    "unit_count",
+                    "one_time",
+                    "one_time",
+                    "2025-01-01",
+                    "2025-01-01",
+                    "2025-12-31",
+                ),
+            )
+            connection.commit()
+            lease_id = lease_cursor.lastrowid
+        finally:
+            connection.close()
+
+        status, _, body = self._call_app(
+            "GET",
+            "/api/settlements/document.ods",
+            query_string=(
+                f"unit_id={unit_id}&lease_id={lease_id}"
+                "&period_start=2025-01-01&period_end=2025-12-31"
+            ),
+        )
+
+        self.assertTrue(status.startswith("200"), body.decode("utf-8", errors="replace"))
+        with ZipFile(BytesIO(body)) as archive:
+            content = archive.read("content.xml").decode("utf-8")
+        self.assertIn("Lena Beispiel", content)
+        self.assertIn("Solo-7", content)
+        self.assertIn("Uferweg 8", content)
+        self.assertIn("78462 Konstanz", content)
+        self.assertIn("Versicherung Solo", content)
+
+    def test_packaged_settlement_template_exists(self) -> None:
+        packaged_template = (
+            resources.files("src.easyprent_accounting")
+            .joinpath("templates")
+            .joinpath("utility_settlement.ods")
+        )
+        self.assertTrue(packaged_template.is_file())
+
+    def test_settlement_document_has_no_fixed_cost_row_limit(self) -> None:
+        connection = sqlite3.connect(self.db_path)
+        try:
+            connection.executemany(
+                """
+                INSERT INTO expense_items (
+                    property_id, object_type, object_id, expense_category,
+                    beneficiary_name, label, amount, allocation_method,
+                    charge_type, recurrence, booking_date, period_start, period_end
+                ) VALUES (1, 'property', 1, ?, ?, ?, ?, 'unit_count',
+                          'one_time', 'one_time', '2025-01-01', '2025-01-01', '2025-12-31')
+                """,
+                [
+                    (
+                        "Zusatzkosten",
+                        "Dienstleister",
+                        f"Dynamische Position {number:02d}",
+                        "12.00",
+                    )
+                    for number in range(1, 26)
+                ],
+            )
+            connection.commit()
+        finally:
+            connection.close()
+
+        status, _, body = self._call_app(
+            "GET",
+            "/api/settlements/document.ods",
+            query_string=(
+                "property_id=1&lease_id=1&period_start=2025-01-01&period_end=2025-12-31"
+            ),
+        )
+
+        self.assertTrue(status.startswith("200"))
+        with ZipFile(BytesIO(body)) as archive:
+            content = archive.read("content.xml").decode("utf-8")
+        self.assertIn("Dynamische Position 25", content)
+        self.assertIn("<text:p>Zusatzkosten</text:p>", content)
+        self.assertIn("of:=SUM([.D25:.D49])", content)
+        self.assertIn("of:=SUM([.F25:.F49])", content)
+        self.assertIn("of:=SUM([.C20];[.C21];[.C22];[.C24])", content)
+        self.assertIn("of:=SUM([.E20];[.E21];[.E22];[.E24])", content)
+
+    def test_settlement_document_rejects_lease_outside_period(self) -> None:
+        status, _, body = self._call_app(
+            "GET",
+            "/api/settlements/document.ods",
+            query_string=(
+                "property_id=1&lease_id=9999&period_start=2025-01-01&period_end=2025-12-31"
+            ),
+        )
+
+        self.assertTrue(status.startswith("400"))
+        self.assertIn("lease is not part", body.decode("utf-8"))
 
     def test_api_can_create_building_unit_and_room(self) -> None:
         building_status, _, building_body = self._call_app(

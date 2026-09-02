@@ -60,11 +60,15 @@ class SettlementTests(unittest.TestCase):
 
         result = calculate_settlement(leases, expenses, date(2025, 1, 1), date(2025, 12, 31))
         self.assertEqual(result["totals"]["costs"], "1740.00")
-        self.assertEqual(result["totals"]["advances"], "4200.00")
+        self.assertIsNone(result["totals"]["advances"])
         self.assertEqual(result["results"][0]["allocated_costs"], "1120.00")
-        self.assertEqual(result["results"][0]["balance"], "-1280.00")
+        self.assertIsNone(result["results"][0]["balance"])
         self.assertEqual(result["results"][1]["allocated_costs"], "620.00")
-        self.assertEqual(result["results"][1]["balance"], "-1180.00")
+        self.assertIsNone(result["results"][1]["balance"])
+        heating = result["results"][0]["line_items"][0]
+        self.assertEqual(heating["period_amount"], "1200.00")
+        self.assertEqual(heating["basis_value"], "80")
+        self.assertEqual(heating["basis_total"], "120")
 
     def test_settlement_respects_partial_year_contract(self) -> None:
         lease = SettlementLease(
@@ -90,7 +94,10 @@ class SettlementTests(unittest.TestCase):
             date(2025, 1, 1),
             date(2025, 12, 31),
         )
-        self.assertEqual(result["results"][0]["advances_paid"], "600.00")
+        self.assertIsNone(result["results"][0]["advances_paid"])
+        self.assertEqual(result["results"][0]["allocated_costs"], "279.45")
+        self.assertEqual(result["results"][0]["billing_period_start"], "2025-07-15")
+        self.assertEqual(result["results"][0]["billing_period_end"], "2025-12-31")
 
     def test_settlement_multiplies_monthly_expense_by_overlap_months(self) -> None:
         lease = SettlementLease(

@@ -837,6 +837,7 @@
   function App() {
     const [overview, setOverview] = useState(null);
     const [settlement, setSettlement] = useState(null);
+    const [settlementFilters, setSettlementFilters] = useState({ property_id: "", unit_id: "", period_start: bootstrap.settlementPeriodStart, period_end: bootstrap.settlementPeriodEnd });
     const [depreciation, setDepreciation] = useState(null);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -981,6 +982,9 @@
         full_name: "",
         email: "",
         phone: "",
+        alternate_street: "",
+        alternate_postal_code: "",
+        alternate_city: "",
       },
       lease: {
         unit_id: "",
@@ -1120,6 +1124,9 @@
             full_name: current.tenant.full_name,
             email: current.tenant.email,
             phone: current.tenant.phone,
+            alternate_street: current.tenant.alternate_street,
+            alternate_postal_code: current.tenant.alternate_postal_code,
+            alternate_city: current.tenant.alternate_city,
           },
           lease: {
             unit_id: normalizedLeaseUnitId,
@@ -1200,10 +1207,11 @@
           const fallbackPropertyId =
             (requestedProperty && String(requestedProperty.id)) ||
             (activeProperty && String(activeProperty.id)) ||
-            (overviewPayload.properties &&
-              overviewPayload.properties.length &&
-              String(overviewPayload.properties[0].id)) ||
-            "1";
+            "";
+          const fallbackUnit = (overviewPayload.units || []).find(function (unit) {
+            return !unit.is_archived && !unit.property_id;
+          });
+          const fallbackUnitId = fallbackPropertyId === "" && fallbackUnit ? String(fallbackUnit.id) : "";
 
           return Promise.all([
             Promise.resolve(overviewPayload),
@@ -1211,6 +1219,7 @@
               "/api/settlements?" +
                 new URLSearchParams({
                   property_id: fallbackPropertyId,
+                  unit_id: fallbackUnitId,
                   period_start: bootstrap.settlementPeriodStart,
                   period_end: bootstrap.settlementPeriodEnd,
                 }).toString()
@@ -1229,6 +1238,12 @@
         .then(function (results) {
           setOverview(results[0]);
           setSettlement(results[1]);
+          setSettlementFilters({
+            property_id: results[1].property_id == null ? "" : String(results[1].property_id),
+            unit_id: results[1].unit_id == null ? "" : String(results[1].unit_id),
+            period_start: bootstrap.settlementPeriodStart,
+            period_end: bootstrap.settlementPeriodEnd,
+          });
           setDepreciation(results[2]);
           setPaperlessSettings(results[3]);
           setPaperlessStatus(results[4]);
@@ -1256,6 +1271,33 @@
         .finally(function () {
           setLoading(false);
         });
+    }
+
+    function handleSettlementFilterChange(event) {
+      const field = event.target.name || "property_id";
+      const value = event.target.value;
+      setSettlementFilters(function (current) {
+        if (field === "settlement_target") {
+          const separator = value.indexOf(":");
+          const targetType = separator < 0 ? "" : value.slice(0, separator);
+          const targetId = separator < 0 ? "" : value.slice(separator + 1);
+          return Object.assign({}, current, {
+            property_id: targetType === "property" ? targetId : "",
+            unit_id: targetType === "unit" ? targetId : "",
+          });
+        }
+        return Object.assign({}, current, { [field]: value });
+      });
+    }
+
+    function handleSettlementFilterSubmit(event) {
+      event.preventDefault();
+      setLoading(true);
+      setError("");
+      fetchJson("/api/settlements?" + new URLSearchParams(settlementFilters).toString())
+        .then(setSettlement)
+        .catch(function (loadError) { setError(loadError.message || "Abrechnung konnte nicht geladen werden."); })
+        .finally(function () { setLoading(false); });
     }
 
     useEffect(function () {
@@ -2358,6 +2400,9 @@
         full_name: forms.tenant.full_name,
         email: forms.tenant.email || null,
         phone: forms.tenant.phone || null,
+        alternate_street: forms.tenant.alternate_street || null,
+        alternate_postal_code: forms.tenant.alternate_postal_code || null,
+        alternate_city: forms.tenant.alternate_city || null,
       };
       submitToApi(
         isEditing ? "/api/tenants/" + editingId : "/api/tenants",
@@ -2536,6 +2581,9 @@
             full_name: tenant.full_name || "",
             email: tenant.email || "",
             phone: tenant.phone || "",
+            alternate_street: tenant.alternate_street || "",
+            alternate_postal_code: tenant.alternate_postal_code || "",
+            alternate_city: tenant.alternate_city || "",
           },
         });
       });
@@ -3444,6 +3492,11 @@
             expenseRows: expenseRows,
             depreciationRows: depreciationRows,
             settlement: settlement,
+            properties: overview.properties,
+            units: overview.units,
+            settlementFilters: settlementFilters,
+            onSettlementFilterChange: handleSettlementFilterChange,
+            onSettlementFilterSubmit: handleSettlementFilterSubmit,
             depreciation: depreciation,
             depreciationYear: bootstrap.depreciationYear,
           })

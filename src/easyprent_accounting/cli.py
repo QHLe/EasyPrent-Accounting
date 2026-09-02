@@ -205,10 +205,9 @@ def update_project() -> int:
         elif run_command(["npm", "install"]) != 0:
             return 1
 
-    requirements = project_root() / "requirements.txt"
     venv_pip = project_root() / ".venv" / "bin" / "pip"
-    if requirements.exists() and venv_pip.exists():
-        if run_command([str(venv_pip), "install", "-r", str(requirements)]) != 0:
+    if venv_pip.exists():
+        if run_command([str(venv_pip), "install", "--upgrade", "."]) != 0:
             return 1
 
     if systemd_service_was_running:

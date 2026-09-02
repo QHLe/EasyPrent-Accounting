@@ -42,6 +42,8 @@ from .services import (
     import_application_data,
     restore_object,
     settlement_for_period,
+    settlement_pdf_for_period,
+    settlement_ods_for_period,
     health_status,
     upload_lease_documents,
     upload_expense_documents,
@@ -116,6 +118,16 @@ def read_form(environ) -> dict:
     raw = environ["wsgi.input"].read(size).decode("utf-8") if size else ""
     parsed = parse_qs(raw)
     return {key: values[0] for key, values in parsed.items()}
+
+
+def _optional_query_int(params: dict[str, list[str]], name: str) -> int | None:
+    raw_value = params.get(name, [""])[0].strip()
+    if raw_value.lower() in {"", "null", "undefined"}:
+        return None
+    try:
+        return int(raw_value)
+    except ValueError as error:
+        raise ValueError(f"{name} must be an integer") from error
 
 
 def redirect_response(start_response, location: str) -> list[bytes]:
@@ -521,14 +533,49 @@ def application(environ, start_response):
 
         if method == "GET" and path == "/api/settlements":
             params = parse_qs(environ.get("QUERY_STRING", ""))
-            property_id = int(params.get("property_id", ["1"])[0])
-            period_start = params.get("period_start", ["2025-01-01"])[0]
-            period_end = params.get("period_end", ["2025-12-31"])[0]
-            return json_response(
-                start_response,
-                HTTPStatus.OK,
-                settlement_for_period(connection, property_id, period_start, period_end),
-            )
+            try:
+                unit_id = _optional_query_int(params, "unit_id")
+                property_id = _optional_query_int(params, "property_id")
+                period_start = params.get("period_start", ["2025-01-01"])[0]
+                period_end = params.get("period_end", ["2025-12-31"])[0]
+                settlement = settlement_for_period(
+                    connection, property_id, period_start, period_end, unit_id
+                )
+            except (TypeError, ValueError) as error:
+                return json_response(
+                    start_response, HTTPStatus.BAD_REQUEST, {"error": str(error)}
+                )
+            return json_response(start_response, HTTPStatus.OK, settlement)
+
+        if method == "GET" and path == "/api/settlements/document.pdf":
+            params = parse_qs(environ.get("QUERY_STRING", ""))
+            try:
+                unit_id = _optional_query_int(params, "unit_id")
+                property_id = _optional_query_int(params, "property_id")
+                lease_id = int(params.get("lease_id", [""])[0])
+                period_start = params.get("period_start", [""])[0]
+                period_end = params.get("period_end", [""])[0]
+                document, filename = settlement_pdf_for_period(
+                        connection, property_id, lease_id, period_start, period_end, unit_id
+                )
+                return bytes_response(
+                    start_response, HTTPStatus.OK, document, "application/pdf", filename, "attachment"
+                )
+            except (TypeError, ValueError) as error:
+                return text_response(start_response, HTTPStatus.BAD_REQUEST, str(error), "text/plain; charset=utf-8")
+
+        if method == "GET" and path == "/api/settlements/document.ods":
+            params = parse_qs(environ.get("QUERY_STRING", ""))
+            try:
+                unit_id = _optional_query_int(params, "unit_id")
+                property_id = _optional_query_int(params, "property_id")
+                lease_id = int(params.get("lease_id", [""])[0])
+                period_start = params.get("period_start", [""])[0]
+                period_end = params.get("period_end", [""])[0]
+                document, filename = settlement_ods_for_period(connection, property_id, lease_id, period_start, period_end, unit_id)
+                return bytes_response(start_response, HTTPStatus.OK, document, "application/vnd.oasis.opendocument.spreadsheet", filename, "attachment")
+            except (TypeError, ValueError) as error:
+                return text_response(start_response, HTTPStatus.BAD_REQUEST, str(error), "text/plain; charset=utf-8")
 
         if method == "GET" and path == "/api/depreciation-schedule":
             params = parse_qs(environ.get("QUERY_STRING", ""))

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from calendar import monthrange
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 
 
@@ -138,6 +138,7 @@ class SettlementExpense:
     label: str
     amount: Decimal
     allocation_method: str
+    source_id: int | None = None
     charge_type: str = "one_time"
     recurrence: str = "one_time"
     interval_name: str | None = None
@@ -145,6 +146,7 @@ class SettlementExpense:
     expense_end: date | None = None
     consumption_unit: str | None = None
     consumption_value: Decimal | None = None
+    eligible_lease_ids: tuple[int, ...] | None = None
 
 
 def expense_amount_for_period(expense: SettlementExpense, period_start: date, period_end: date) -> Decimal:
@@ -197,9 +199,15 @@ def calculate_settlement(
             "lease_id": lease.lease_id,
             "tenant_name": lease.tenant_name,
             "unit_label": lease.unit_label,
+            "billing_period_start": max(
+                lease.lease_start, period_start
+            ).isoformat(),
+            "billing_period_end": min(
+                lease.lease_end or period_end, period_end
+            ).isoformat(),
             "allocated_costs": Decimal("0"),
-            "advances_paid": Decimal("0"),
-            "balance": Decimal("0"),
+            "advances_paid": None,
+            "balance": None,
             "line_items": [],
         }
         for lease in active_leases
@@ -210,36 +218,53 @@ def calculate_settlement(
             "period_start": period_start.isoformat(),
             "period_end": period_end.isoformat(),
             "results": [],
-            "totals": {"costs": "0.00", "advances": "0.00", "balance": "0.00"},
+            "totals": {"costs": "0.00", "advances": None, "balance": None},
         }
-
-    totals_by_method = {
-        "area": sum((lease.unit_area_sqm for lease in active_leases), start=Decimal("0")),
-        "unit_count": Decimal(len(active_leases)),
-        "occupants": Decimal(sum(lease.occupant_count for lease in active_leases)),
-    }
 
     for expense in expenses:
         effective_amount = expense_amount_for_period(expense, period_start, period_end)
         if effective_amount <= 0:
             continue
-        basis_total = totals_by_method.get(expense.allocation_method, Decimal("0"))
-        if basis_total <= 0:
+        expense_leases = (
+            active_leases
+            if expense.eligible_lease_ids is None
+            else [
+                lease
+                for lease in active_leases
+                if lease.lease_id in expense.eligible_lease_ids
+            ]
+        )
+        if not expense_leases:
             continue
-        for lease in active_leases:
-            if expense.allocation_method == "area":
-                basis_value = lease.unit_area_sqm
-            elif expense.allocation_method == "occupants":
-                basis_value = Decimal(lease.occupant_count)
-            else:
-                basis_value = Decimal("1")
-
-            share = quantize_money(effective_amount * basis_value / basis_total)
+        coverage_start = max(expense.expense_start or period_start, period_start)
+        coverage_end = min(expense.expense_end or period_end, period_end)
+        coverage_days = Decimal((coverage_end - coverage_start).days + 1)
+        shares = {lease.lease_id: Decimal("0") for lease in expense_leases}
+        basis_values = {
+            lease.lease_id: lease.unit_area_sqm if expense.allocation_method == "area" else Decimal(lease.occupant_count) if expense.allocation_method == "occupants" else Decimal("1")
+            for lease in expense_leases
+        }
+        current_day = coverage_start
+        while current_day <= coverage_end:
+            daily_leases = [lease for lease in expense_leases if lease.lease_start <= current_day <= (lease.lease_end or period_end)]
+            basis_total = sum((basis_values[lease.lease_id] for lease in daily_leases), start=Decimal("0"))
+            if basis_total > 0:
+                for lease in daily_leases:
+                    shares[lease.lease_id] += effective_amount / coverage_days * basis_values[lease.lease_id] / basis_total
+            current_day += timedelta(days=1)
+        for lease in expense_leases:
+            share = quantize_money(shares[lease.lease_id])
+            basis_value = basis_values[lease.lease_id]
+            basis_total = sum(basis_values.values(), start=Decimal("0"))
             result = results[lease.lease_id]
             result["allocated_costs"] += share
             line_item = {
+                "source_id": expense.source_id,
                 "label": expense.label,
                 "allocation_method": expense.allocation_method,
+                "period_amount": f"{effective_amount:.2f}",
+                "basis_value": str(basis_value),
+                "basis_total": str(basis_total),
                 "charge_type": expense.charge_type,
                 "recurrence": expense.recurrence,
                 "interval_name": expense.interval_name,
@@ -252,29 +277,18 @@ def calculate_settlement(
             result["line_items"].append(line_item)
 
     for lease in active_leases:
-        lease_end = lease.lease_end or period_end
-        months = overlap_months(lease.lease_start, lease_end, period_start, period_end)
-        advances = quantize_money(lease.additional_charges_advance * Decimal(months))
         result = results[lease.lease_id]
         result["allocated_costs"] = quantize_money(result["allocated_costs"])
-        result["advances_paid"] = advances
-        result["balance"] = quantize_money(result["allocated_costs"] - advances)
 
     total_costs = Decimal("0")
-    total_advances = Decimal("0")
-    total_balance = Decimal("0")
     serialized = []
     for lease_id in sorted(results):
         item = results[lease_id]
         total_costs += item["allocated_costs"]
-        total_advances += item["advances_paid"]
-        total_balance += item["balance"]
         serialized.append(
             {
                 **item,
                 "allocated_costs": f"{item['allocated_costs']:.2f}",
-                "advances_paid": f"{item['advances_paid']:.2f}",
-                "balance": f"{item['balance']:.2f}",
             }
         )
 
@@ -284,8 +298,8 @@ def calculate_settlement(
         "results": serialized,
         "totals": {
             "costs": f"{quantize_money(total_costs):.2f}",
-            "advances": f"{quantize_money(total_advances):.2f}",
-            "balance": f"{quantize_money(total_balance):.2f}",
+            "advances": None,
+            "balance": None,
         },
     }
 

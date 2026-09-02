@@ -21,6 +21,7 @@ from src.easyprent_accounting.services import (
     update_meter,
     update_expense,
     update_unit,
+    _total_amount_for_expense_period,
 )
 
 
@@ -305,6 +306,33 @@ class ExpenseServiceTests(unittest.TestCase):
 
         self.assertEqual(created["charge_type"], "monthly")
         self.assertEqual(created["total_amount"], "110.00")
+
+    def test_total_cost_with_period_is_prorated_for_tenant_period(self) -> None:
+        _, amount = _total_amount_for_expense_period(
+            self.connection,
+            {"charge_type": "one_time", "amount": "365.00", "period_start": "2025-01-01", "period_end": "2025-12-31"},
+            "2025-07-01",
+            "2025-12-31",
+        )
+        self.assertEqual(amount, "184.00")
+
+    def test_manual_consumption_is_prorated_when_no_meter_curve_exists(self) -> None:
+        unit, amount = _total_amount_for_expense_period(
+            self.connection,
+            {
+                "charge_type": "consumption",
+                "amount": "2.00",
+                "consumption_unit": "kWh",
+                "consumption_value": "365",
+                "conversion_factor": "1",
+                "period_start": "2025-01-01",
+                "period_end": "2025-12-31",
+            },
+            "2025-07-01",
+            "2025-12-31",
+        )
+        self.assertEqual(unit, "kWh")
+        self.assertEqual(amount, "368.00")
 
     def test_create_expense_calculates_yearly_total_day_accurate_with_leap_year(self) -> None:
         created = create_expense(
@@ -1029,6 +1057,99 @@ class ExpenseServiceTests(unittest.TestCase):
             Decimal(settlement["totals"]["costs"]) - Decimal(baseline["totals"]["costs"]),
             Decimal("50.00"),
         )
+        created_line = next(
+            item
+            for result in settlement["results"]
+            for item in result["line_items"]
+            if item["label"] == "Heizstrom A-01"
+        )
+        self.assertEqual(created_line["expense_category"], "Heizstrom A-01")
+
+    def test_settlement_limits_tenant_consumption_to_expense_period(self) -> None:
+        meter = create_meter(
+            self.connection,
+            {
+                "object_type": "unit",
+                "object_id": 2,
+                "label": "Heizzähler A-02",
+                "meter_type": "heating",
+                "unit": "kWh",
+            },
+        )
+        for reading_date, reading_value in (
+            ("2025-01-01", "0"),
+            ("2025-07-01", "100"),
+            ("2026-01-01", "200"),
+        ):
+            create_meter_reading(
+                self.connection,
+                {
+                    "meter_id": meter["id"],
+                    "reading_date": reading_date,
+                    "reading_value": reading_value,
+                },
+            )
+        create_expense(
+            self.connection,
+            {
+                "object_type": "unit",
+                "object_id": 2,
+                "label": "Heizstrom zweites Halbjahr",
+                "amount": "2.00",
+                "allocation_method": "unit_count",
+                "charge_type": "consumption",
+                "meter_id": meter["id"],
+                "period_start": "2025-07-01",
+                "period_end": "2025-12-31",
+            },
+        )
+
+        settlement = settlement_for_period(
+            self.connection, 1, "2025-01-01", "2025-12-31"
+        )
+        tenant_result = next(
+            result for result in settlement["results"] if result["lease_id"] == 2
+        )
+        line_item = next(
+            item
+            for item in tenant_result["line_items"]
+            if item["label"] == "Heizstrom zweites Halbjahr"
+        )
+
+        self.assertEqual(line_item["period_amount"], "200.00")
+        self.assertEqual(line_item["share"], "200.00")
+        self.assertEqual(line_item["tenant_consumption_value"], "100")
+
+    def test_settlement_does_not_count_sequential_leases_as_two_units(self) -> None:
+        self.connection.execute("DELETE FROM expense_items")
+        self.connection.execute(
+            "UPDATE leases SET unit_id = 1, start_date = '2025-01-01', end_date = '2025-06-30' WHERE id = 1"
+        )
+        self.connection.execute(
+            "UPDATE leases SET unit_id = 1, start_date = '2025-07-01', end_date = '2025-12-31' WHERE id = 2"
+        )
+        self.connection.execute(
+            """
+            INSERT INTO expense_items (
+                property_id, object_type, object_id, expense_category,
+                beneficiary_name, label, amount, allocation_method,
+                charge_type, recurrence, period_start, period_end
+            ) VALUES (1, 'unit', 1, 'Jahreskosten', 'Dienstleister',
+                      'Jahreskosten Wohnung', '365.00', 'unit_count',
+                      'one_time', 'one_time', '2025-01-01', '2025-12-31')
+            """
+        )
+        self.connection.commit()
+
+        settlement = settlement_for_period(
+            self.connection, 1, "2025-01-01", "2025-12-31"
+        )
+
+        self.assertEqual(settlement["totals"]["costs"], "365.00")
+        self.assertEqual(
+            [result["allocated_costs"] for result in settlement["results"]],
+            ["181.00", "184.00"],
+        )
 
     def test_settlement_includes_monthly_and_consumption_expenses(self) -> None:
         create_expense(
@@ -1175,6 +1296,18 @@ class ExpenseServiceTests(unittest.TestCase):
         self.assertIn("Gebäudereinigung", labels)
         self.assertIn("Wohnungswartung", labels)
         self.assertIn("Zimmeranstrich", labels)
+        line_items_by_tenant = {
+            result["tenant_name"]: {
+                line_item["label"] for line_item in result["line_items"]
+            }
+            for result in settlement["results"]
+        }
+        self.assertIn("Gebäudereinigung", line_items_by_tenant["Anna Schulz"])
+        self.assertIn("Gebäudereinigung", line_items_by_tenant["Tim Wagner"])
+        self.assertIn("Wohnungswartung", line_items_by_tenant["Anna Schulz"])
+        self.assertNotIn("Wohnungswartung", line_items_by_tenant["Tim Wagner"])
+        self.assertIn("Zimmeranstrich", line_items_by_tenant["Anna Schulz"])
+        self.assertNotIn("Zimmeranstrich", line_items_by_tenant["Tim Wagner"])
 
     def test_list_overview_includes_meters_with_latest_reading(self) -> None:
         meter = create_meter(

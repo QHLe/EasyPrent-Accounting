@@ -794,6 +794,22 @@ def build_openapi_document() -> dict:
                     },
                 }
             },
+            "/api/settlements/document.ods": {
+                "get": {
+                    "summary": "Erzeugt eine bearbeitbare ODS-Nebenkostenabrechnung für ein Mietverhältnis",
+                    "parameters": [
+                        {"name": "property_id", "in": "query", "required": False, "schema": {"type": "integer"}, "description": "Objekt-ID; alternativ unit_id verwenden"},
+                        {"name": "unit_id", "in": "query", "required": False, "schema": {"type": "integer"}, "description": "ID einer einzelnen Wohnung ohne Objekt"},
+                        {"name": "lease_id", "in": "query", "required": True, "schema": {"type": "integer"}},
+                        {"name": "period_start", "in": "query", "required": True, "schema": {"type": "string", "format": "date"}},
+                        {"name": "period_end", "in": "query", "required": True, "schema": {"type": "string", "format": "date"}},
+                    ],
+                    "responses": {
+                        "200": {"description": "ODS-Abrechnung", "content": {"application/vnd.oasis.opendocument.spreadsheet": {"schema": {"type": "string", "format": "binary"}}}},
+                        "400": {"description": "Ungültige Eingabedaten", "content": {"text/plain": {"schema": {"type": "string"}}}},
+                    },
+                }
+            },
             "/api/depreciation-schedule": {
                 "get": {
                     "summary": "Lädt den Abschreibungsplan eines Jahres",
@@ -1554,6 +1570,9 @@ def build_openapi_document() -> dict:
                         "full_name": {"type": "string"},
                         "email": {"type": ["string", "null"]},
                         "phone": {"type": ["string", "null"]},
+                        "alternate_street": {"type": ["string", "null"]},
+                        "alternate_postal_code": {"type": ["string", "null"]},
+                        "alternate_city": {"type": ["string", "null"]},
                     },
                 },
                 "TenantResponse": {
@@ -1563,6 +1582,9 @@ def build_openapi_document() -> dict:
                         "full_name": {"type": "string"},
                         "email": {"type": ["string", "null"]},
                         "phone": {"type": ["string", "null"]},
+                        "alternate_street": {"type": ["string", "null"]},
+                        "alternate_postal_code": {"type": ["string", "null"]},
+                        "alternate_city": {"type": ["string", "null"]},
                     },
                 },
                 "LeaseCreateRequest": {

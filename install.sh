@@ -29,7 +29,8 @@ fi
 
 echo "Installiere EasyPrent Accounting …"
 .venv/bin/python -m pip install --upgrade pip
-.venv/bin/python -m pip install .
+.venv/bin/python -m pip install --upgrade .
+.venv/bin/python -c 'from importlib import resources; import odf, reportlab; assert resources.files("src.easyprent_accounting").joinpath("templates").joinpath("utility_settlement.ods").is_file(); print("ODS-Vorlage sowie ODS- und PDF-Abhängigkeiten verfügbar.")'
 
 echo "Richte Autostart ein …"
 SERVICE_FILE="/etc/systemd/system/easy-prent.service"

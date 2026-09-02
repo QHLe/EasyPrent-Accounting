@@ -959,6 +959,9 @@
                 },
               })
             ),
+            e("label", null, "Abweichende Straße optional", e("input", { value: forms.tenant.alternate_street, onChange: function (event) { props.setFormField("tenant", "alternate_street", event.target.value); } })),
+            e("label", null, "Abweichende PLZ optional", e("input", { value: forms.tenant.alternate_postal_code, onChange: function (event) { props.setFormField("tenant", "alternate_postal_code", event.target.value); } })),
+            e("label", null, "Abweichender Ort optional", e("input", { value: forms.tenant.alternate_city, onChange: function (event) { props.setFormField("tenant", "alternate_city", event.target.value); } })),
             e(
               "div",
               { className: "inline-actions" },
@@ -1111,7 +1114,7 @@
           e(
             "label",
             null,
-            "Nebenkostenvorauszahlung",
+            "Nebenkostenvorauszahlung pro Monat",
             e("input", {
               type: "number",
               step: "0.01",

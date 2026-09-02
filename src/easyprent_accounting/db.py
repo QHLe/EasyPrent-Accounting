@@ -102,7 +102,10 @@ CREATE TABLE IF NOT EXISTS tenants (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     full_name TEXT NOT NULL,
     email TEXT,
-    phone TEXT
+    phone TEXT,
+    alternate_street TEXT,
+    alternate_postal_code TEXT,
+    alternate_city TEXT
 );
 
 CREATE TABLE IF NOT EXISTS leases (
@@ -264,6 +267,14 @@ def ensure_schema_updates(connection: sqlite3.Connection) -> None:
     _ensure_expense_documents_table(connection)
     _ensure_tenant_documents_table(connection)
     _ensure_lease_documents_table(connection)
+    _ensure_tenant_alternate_address_columns(connection)
+
+
+def _ensure_tenant_alternate_address_columns(connection: sqlite3.Connection) -> None:
+    columns = {row["name"] for row in connection.execute("PRAGMA table_info(tenants)").fetchall()}
+    for column in ("alternate_street", "alternate_postal_code", "alternate_city"):
+        if column not in columns:
+            connection.execute(f"ALTER TABLE tenants ADD COLUMN {column} TEXT")
 
 
 def _ensure_expense_item_legacy_columns(connection: sqlite3.Connection) -> None:

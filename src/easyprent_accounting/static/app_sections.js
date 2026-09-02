@@ -43,6 +43,17 @@
   }
 
   function OverviewContent(props) {
+    const settlementProperties = (props.properties || []).filter(function (property) {
+      return !property.is_archived;
+    });
+    const standaloneSettlementUnits = (props.units || []).filter(function (unit) {
+      return !unit.is_archived && !unit.property_id;
+    });
+    const settlementTargetValue = props.settlementFilters.unit_id
+      ? "unit:" + String(props.settlementFilters.unit_id)
+      : props.settlementFilters.property_id
+        ? "property:" + String(props.settlementFilters.property_id)
+        : "";
     return e(
       "div",
       null,
@@ -90,23 +101,69 @@
           "section",
           { className: "panel" },
           e("h2", null, "Mietverträge"),
-          table(["Mieter", "Mietobjekt", "Start", "Kaltmiete", "Vorauszahlung"], props.leaseRows)
+          table(["Mieter", "Mietobjekt", "Start", "Kaltmiete", "NK-Vorauszahlung/Monat"], props.leaseRows)
         ),
         e(
           "section",
           { className: "panel" },
-          e("h2", null, "Nebenkostenabrechnung " + String(props.depreciationYear)),
-          table(["Mieter", "Mietobjekt", "Kostenanteil", "Vorauszahlungen", "Saldo"], props.settlementRows),
+          e("h2", null, "Nebenkostenabrechnung"),
+          e(
+            "form",
+            { className: "inline-form", onSubmit: props.onSettlementFilterSubmit },
+            e(
+              "label",
+              null,
+              "Objekt",
+              e(
+                "select",
+                {
+                  name: "settlement_target",
+                  value: settlementTargetValue,
+                  onChange: props.onSettlementFilterChange,
+                },
+                e("option", { value: "" }, "Objekt auswählen"),
+                settlementProperties.map(function (property) {
+                  return e(
+                    "option",
+                    { key: "property-" + property.id, value: "property:" + property.id },
+                    "Immobilie: " + property.name
+                  );
+                }),
+                standaloneSettlementUnits.map(function (unit) {
+                  return e(
+                    "option",
+                    { key: "unit-" + unit.id, value: "unit:" + unit.id },
+                    "Wohnung: " + unit.label
+                  );
+                })
+              )
+            ),
+            e("label", null, "Von", e("input", { type: "date", name: "period_start", value: props.settlementFilters.period_start, onChange: props.onSettlementFilterChange })),
+            e("label", null, "Bis", e("input", { type: "date", name: "period_end", value: props.settlementFilters.period_end, onChange: props.onSettlementFilterChange })),
+            e("button", { type: "submit", disabled: !settlementTargetValue }, "Abrechnung laden")
+          ),
+          table(
+            [
+              "Mieter",
+              "Mietobjekt",
+              "Abgerechneter Zeitraum",
+              "Kostenanteil",
+              "Dokument",
+            ],
+            props.settlementRows
+          ),
+          e(
+            "p",
+            { className: "hint" },
+            "Vorauszahlungen und Saldo werden nicht automatisch aus dem Mietvertrag " +
+              "abgeleitet und daher derzeit nicht ausgewiesen."
+          ),
           props.settlement
             ? e(
                 "p",
                 { className: "hint" },
                 "Gesamt: Kosten ",
-                props.settlement.totals.costs,
-                " | Vorauszahlungen ",
-                props.settlement.totals.advances,
-                " | Saldo ",
-                props.settlement.totals.balance
+                props.settlement.totals.costs
               )
             : null
         ),

@@ -212,14 +212,34 @@
         );
       });
     const settlementRows = ((props.settlement && props.settlement.results) || []).map(function (row) {
+      const documentParameters = {
+        lease_id: row.lease_id,
+        period_start: props.settlement.period_start,
+        period_end: props.settlement.period_end,
+      };
+      if (props.settlement.property_id != null) {
+        documentParameters.property_id = props.settlement.property_id;
+      }
+      if (props.settlement.unit_id != null) {
+        documentParameters.unit_id = props.settlement.unit_id;
+      }
+      const documentUrl =
+        "/api/settlements/document.ods?" +
+        new URLSearchParams(documentParameters).toString();
       return e(
         "tr",
         { key: row.lease_id },
         e("td", null, row.tenant_name),
         e("td", null, row.unit_label),
+        e(
+          "td",
+          null,
+          String(row.billing_period_start || "") +
+            " – " +
+            String(row.billing_period_end || "")
+        ),
         e("td", null, row.allocated_costs),
-        e("td", null, row.advances_paid),
-        e("td", null, row.balance)
+        e("td", null, e("a", { href: documentUrl }, "ODS-Abrechnung herunterladen"))
       );
     });
     const depreciationRows = ((props.depreciation && props.depreciation.rows) || []).map(function (row) {

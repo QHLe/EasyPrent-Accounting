@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import base64
 import binascii
+import html
+from io import BytesIO
 import json
+import os
 import sqlite3
 import urllib.error
 import urllib.request
@@ -11,6 +14,11 @@ from socket import timeout as socket_timeout
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.units import mm
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 from .calculations import (
     SettlementExpense,
     SettlementLease,
@@ -24,6 +32,7 @@ from .expense_math import (
     meter_consumption_for_period,
     overlap_period,
 )
+from .ods_template import render_settlement_template
 
 
 APP_DATA_EXPORT_TABLES = [
@@ -694,7 +703,7 @@ def _effective_consumption_quantity(
     if expense_payload["charge_type"] != "consumption":
         return expense_payload.get("meter_unit"), None
 
-    meter_unit = expense_payload.get("meter_unit")
+    meter_unit = expense_payload.get("meter_unit") or expense_payload.get("consumption_unit")
     meter_id = expense_payload.get("meter_id")
     if meter_id is not None:
         if meter_unit in (None, ""):
@@ -707,6 +716,22 @@ def _effective_consumption_quantity(
             if expense_payload.get("consumption_value") not in (None, "")
             else None
         )
+        expense_start = expense_payload.get("period_start")
+        expense_end = expense_payload.get("period_end")
+        if raw_quantity is not None and expense_start and expense_end:
+            overlap = overlap_period(
+                str(expense_start), str(expense_end), period_start, period_end
+            )
+            if overlap is None:
+                return meter_unit, None
+            overlap_start, overlap_end = overlap
+            total_days = Decimal(
+                (parse_date(str(expense_end)) - parse_date(str(expense_start))).days + 1
+            )
+            overlap_days = Decimal(
+                (parse_date(overlap_end) - parse_date(overlap_start)).days + 1
+            )
+            raw_quantity = raw_quantity * overlap_days / total_days
 
     if raw_quantity is None:
         return meter_unit, None
@@ -743,6 +768,10 @@ def _total_amount_for_expense_period(
         return meter_unit, "0.00"
 
     overlap_start, overlap_end = overlap
+    if charge_type == "one_time" and expense_start != expense_end:
+        total_days = Decimal((parse_date(expense_end) - parse_date(expense_start)).days + 1)
+        overlap_days = Decimal((parse_date(overlap_end) - parse_date(overlap_start)).days + 1)
+        return meter_unit, f"{quantize_money(Decimal(str(expense_payload['amount'])) * overlap_days / total_days):.2f}"
     total_amount = day_accurate_recurring_amount(
         Decimal(str(expense_payload["amount"])),
         charge_type,
@@ -2473,8 +2502,8 @@ def delete_object(connection: sqlite3.Connection, resource_name: str, object_id:
 
 def create_tenant(connection: sqlite3.Connection, payload: dict) -> dict:
     cursor = connection.execute(
-        "INSERT INTO tenants (full_name, email, phone) VALUES (?, ?, ?)",
-        (payload["full_name"], payload.get("email"), payload.get("phone")),
+        "INSERT INTO tenants (full_name, email, phone, alternate_street, alternate_postal_code, alternate_city) VALUES (?, ?, ?, ?, ?, ?)",
+        (payload["full_name"], payload.get("email"), payload.get("phone"), payload.get("alternate_street"), payload.get("alternate_postal_code"), payload.get("alternate_city")),
     )
     connection.commit()
     return {"id": cursor.lastrowid, **payload}
@@ -2741,10 +2770,10 @@ def update_tenant(connection: sqlite3.Connection, tenant_id: int, payload: dict)
     connection.execute(
         """
         UPDATE tenants
-        SET full_name = ?, email = ?, phone = ?
+        SET full_name = ?, email = ?, phone = ?, alternate_street = ?, alternate_postal_code = ?, alternate_city = ?
         WHERE id = ?
         """,
-        (payload["full_name"], payload.get("email"), payload.get("phone"), tenant_id),
+        (payload["full_name"], payload.get("email"), payload.get("phone"), payload.get("alternate_street"), payload.get("alternate_postal_code"), payload.get("alternate_city"), tenant_id),
     )
     connection.commit()
     return {"id": tenant_id, **payload}
@@ -2941,47 +2970,163 @@ def create_depreciation_asset(connection: sqlite3.Connection, payload: dict) -> 
     return {"id": cursor.lastrowid, **payload}
 
 
-def settlement_for_period(
+def _allocation_basis_for_lease(lease_row: sqlite3.Row, method: str) -> Decimal:
+    if method == "area":
+        return Decimal(str(lease_row["area_sqm"]))
+    if method == "occupants":
+        return Decimal(str(lease_row["occupant_count"]))
+    return Decimal("1")
+
+
+def _exact_expense_shares_for_period(
     connection: sqlite3.Connection,
-    property_id: int,
+    expense_row: sqlite3.Row,
+    eligible_leases: list[sqlite3.Row],
     period_start: str,
     period_end: str,
+) -> dict[int, Decimal]:
+    """Allocate exact cost-curve segments without counting sequential leases twice."""
+    shares = {lease_row["id"]: Decimal("0") for lease_row in eligible_leases}
+    coverage_start = max(parse_date(expense_row["period_start"]), parse_date(period_start))
+    coverage_end = min(parse_date(expense_row["period_end"]), parse_date(period_end))
+    if coverage_start > coverage_end:
+        return shares
+
+    boundaries = {coverage_start, coverage_end + timedelta(days=1)}
+    for lease_row in eligible_leases:
+        lease_start = max(parse_date(lease_row["start_date"]), coverage_start)
+        lease_end = min(
+            parse_date(lease_row["end_date"])
+            if lease_row["end_date"]
+            else coverage_end,
+            coverage_end,
+        )
+        if lease_start <= lease_end:
+            boundaries.add(lease_start)
+            boundaries.add(lease_end + timedelta(days=1))
+
+    sorted_boundaries = sorted(boundaries)
+    for segment_start, next_segment_start in zip(
+        sorted_boundaries, sorted_boundaries[1:]
+    ):
+        segment_end = next_segment_start - timedelta(days=1)
+        active_leases = [
+            lease_row
+            for lease_row in eligible_leases
+            if parse_date(lease_row["start_date"]) <= segment_start
+            and (
+                parse_date(lease_row["end_date"])
+                if lease_row["end_date"]
+                else coverage_end
+            )
+            >= segment_end
+        ]
+        if not active_leases:
+            continue
+        _, segment_amount_text = _total_amount_for_expense_period(
+            connection,
+            dict(expense_row),
+            segment_start.isoformat(),
+            segment_end.isoformat(),
+        )
+        segment_amount = Decimal(segment_amount_text or "0")
+        basis_values = {
+            lease_row["id"]: _allocation_basis_for_lease(
+                lease_row, expense_row["allocation_method"]
+            )
+            for lease_row in active_leases
+        }
+        basis_total = sum(basis_values.values(), start=Decimal("0"))
+        if basis_total <= 0:
+            continue
+        for lease_row in active_leases:
+            shares[lease_row["id"]] += (
+                segment_amount * basis_values[lease_row["id"]] / basis_total
+            )
+    return {lease_id: quantize_money(share) for lease_id, share in shares.items()}
+
+
+def settlement_for_period(
+    connection: sqlite3.Connection,
+    property_id: int | None,
+    period_start: str,
+    period_end: str,
+    unit_id: int | None = None,
 ) -> dict:
+    target_where = "b.property_id = ?" if unit_id is None else "u.id = ?"
+    target_value = property_id if unit_id is None else unit_id
     lease_rows = connection.execute(
         """
         SELECT
                l.id,
+               l.unit_id,
+               l.room_id,
                t.full_name AS tenant_name,
                CASE
                    WHEN l.room_id IS NOT NULL THEN r.label || ' (' || u.label || ')'
                    ELSE u.label
                END AS unit_label,
-               u.area_sqm,
+               u.area_sqm, u.building_id,
                l.occupant_count, l.additional_charges_advance, l.start_date, l.end_date
         FROM leases l
         JOIN tenants t ON t.id = l.tenant_id
         JOIN units u ON u.id = l.unit_id
         LEFT JOIN rooms r ON r.id = l.room_id
-        JOIN buildings b ON b.id = u.building_id
-        WHERE b.property_id = ?
+        LEFT JOIN buildings b ON b.id = u.building_id
+        WHERE """ + target_where + """
         ORDER BY l.id
         """,
-        (property_id,),
+        (target_value,),
     ).fetchall()
 
     expense_rows = connection.execute(
         """
-        SELECT label, amount, allocation_method, charge_type, recurrence, interval_name,
+        SELECT id, object_type, object_id, expense_category, label, amount,
+               allocation_method,
+               charge_type, recurrence, interval_name,
                meter_id, consumption_unit, consumption_value, conversion_factor,
-               booking_date, period_start, period_end
+               booking_date, period_start, period_end,
+               CASE
+                   WHEN object_type = 'room'
+                   THEN (SELECT unit_id FROM rooms WHERE rooms.id = expense_items.object_id)
+                   ELSE NULL
+               END AS target_room_unit_id
         FROM expense_items
-        WHERE property_id = ?
+        WHERE (
+              property_id = ?
+              OR (
+                  ? IS NOT NULL
+                  AND (
+                      (object_type = 'unit' AND object_id = ?)
+                      OR (
+                          object_type = 'room'
+                          AND EXISTS (
+                              SELECT 1 FROM rooms target_room
+                              WHERE target_room.id = expense_items.object_id
+                                AND target_room.unit_id = ?
+                          )
+                      )
+                      OR (
+                          object_type = 'building'
+                          AND object_id = (SELECT building_id FROM units WHERE id = ?)
+                      )
+                  )
+              )
+          )
           AND COALESCE(is_archived, 0) = 0
           AND period_end >= ?
           AND period_start <= ?
         ORDER BY id
         """,
-        (property_id, period_start, period_end),
+        (
+            property_id,
+            unit_id,
+            unit_id,
+            unit_id,
+            unit_id,
+            period_start,
+            period_end,
+        ),
     ).fetchall()
 
     leases = [
@@ -2998,8 +3143,36 @@ def settlement_for_period(
         for row in lease_rows
     ]
     expenses: list[SettlementExpense] = []
+    eligible_lease_ids_by_expense: dict[int, tuple[int, ...]] = {}
     for row in expense_rows:
-        overlap = overlap_period(row["period_start"], row["period_end"], period_start, period_end)
+        if row["object_type"] == "building":
+            eligible_lease_ids = tuple(
+                lease_row["id"]
+                for lease_row in lease_rows
+                if lease_row["building_id"] == row["object_id"]
+            )
+        elif row["object_type"] == "unit":
+            eligible_lease_ids = tuple(
+                lease_row["id"]
+                for lease_row in lease_rows
+                if lease_row["unit_id"] == row["object_id"]
+            )
+        elif row["object_type"] == "room":
+            eligible_lease_ids = tuple(
+                lease_row["id"]
+                for lease_row in lease_rows
+                if lease_row["room_id"] == row["object_id"]
+                or (
+                    lease_row["room_id"] is None
+                    and lease_row["unit_id"] == row["target_room_unit_id"]
+                )
+            )
+        else:
+            eligible_lease_ids = tuple(lease_row["id"] for lease_row in lease_rows)
+        eligible_lease_ids_by_expense[row["id"]] = eligible_lease_ids
+        overlap = overlap_period(
+            row["period_start"], row["period_end"], period_start, period_end
+        )
         overlap_start, overlap_end = overlap or (row["period_start"], row["period_end"])
         _, effective_consumption_value = _effective_consumption_quantity(
             connection,
@@ -3009,12 +3182,15 @@ def settlement_for_period(
                 "consumption_unit": row["consumption_unit"],
                 "consumption_value": row["consumption_value"],
                 "conversion_factor": row["conversion_factor"],
+                "period_start": row["period_start"],
+                "period_end": row["period_end"],
             },
             overlap_start,
             overlap_end,
         )
         expenses.append(
             SettlementExpense(
+                source_id=row["id"],
                 label=row["label"],
                 amount=Decimal(str(row["amount"])),
                 allocation_method=row["allocation_method"],
@@ -3025,6 +3201,7 @@ def settlement_for_period(
                 expense_end=parse_date(row["period_end"]),
                 consumption_unit=row["consumption_unit"],
                 consumption_value=effective_consumption_value,
+                eligible_lease_ids=eligible_lease_ids,
             )
         )
 
@@ -3034,8 +3211,344 @@ def settlement_for_period(
         period_start=parse_date(period_start),
         period_end=parse_date(period_end),
     )
+    expense_by_id = {row["id"]: row for row in expense_rows}
+    lease_by_id = {row["id"]: row for row in lease_rows}
+    exact_shares = {
+        (expense_row["id"], lease_id): share
+        for expense_row in expense_rows
+        for lease_id, share in _exact_expense_shares_for_period(
+            connection,
+            expense_row,
+            [
+                lease_by_id[eligible_lease_id]
+                for eligible_lease_id in eligible_lease_ids_by_expense[expense_row["id"]]
+            ],
+            period_start,
+            period_end,
+        ).items()
+    }
+    adjusted_total_costs = Decimal("0")
+    for lease_result in result["results"]:
+        lease_row = lease_by_id[lease_result["lease_id"]]
+        lease_start = max(parse_date(lease_row["start_date"]), parse_date(period_start))
+        lease_end = min(
+            parse_date(lease_row["end_date"])
+            if lease_row["end_date"]
+            else parse_date(period_end),
+            parse_date(period_end),
+        )
+        for line_item in lease_result["line_items"]:
+            row = expense_by_id[line_item["source_id"]]
+            line_item["expense_category"] = row["expense_category"] or row["label"]
+            tenant_expense_overlap = overlap_period(
+                row["period_start"],
+                row["period_end"],
+                lease_start.isoformat(),
+                lease_end.isoformat(),
+            )
+            tenant_consumption = None
+            if tenant_expense_overlap is not None:
+                tenant_period_start, tenant_period_end = tenant_expense_overlap
+                _, tenant_consumption = _effective_consumption_quantity(
+                    connection,
+                    dict(row),
+                    tenant_period_start,
+                    tenant_period_end,
+                )
+            tenant_share = exact_shares[(line_item["source_id"], lease_result["lease_id"])]
+            line_item["share"] = f"{tenant_share:.2f}"
+            line_item["tenant_consumption_value"] = _decimal_to_string(tenant_consumption)
+            adjusted_total_costs += tenant_share
+        lease_result["allocated_costs"] = (
+            f"{sum((Decimal(item['share']) for item in lease_result['line_items']), start=Decimal('0')):.2f}"
+        )
+    result["totals"] = {
+        "costs": f"{quantize_money(adjusted_total_costs):.2f}",
+        "advances": None,
+        "balance": None,
+    }
     result["property_id"] = property_id
+    result["unit_id"] = unit_id
     return result
+
+
+def _format_settlement_money(value: str) -> str:
+    return f"{Decimal(value):,.2f}".replace(",", "_").replace(".", ",").replace("_", ".") + " €"
+
+
+def settlement_document_for_period(
+    connection: sqlite3.Connection,
+    property_id: int,
+    lease_id: int,
+    period_start: str,
+    period_end: str,
+) -> str:
+    """Render a printable settlement document from the calculated source data.
+
+    The line items are deliberately taken from the settlement result, so newly
+    created expense categories and their allocation methods need no document
+    template changes.
+    """
+    settlement = settlement_for_period(connection, property_id, period_start, period_end)
+    result = next((item for item in settlement["results"] if item["lease_id"] == lease_id), None)
+    if result is None:
+        raise ValueError("lease is not part of the selected settlement period")
+
+    details = connection.execute(
+        """
+        SELECT p.name AS property_name, p.street AS property_street,
+               p.postal_code AS property_postal_code, p.city AS property_city,
+               o.name AS organization_name, t.full_name AS tenant_name,
+               u.label AS unit_label, u.street AS unit_street,
+               u.postal_code AS unit_postal_code, u.city AS unit_city,
+               r.label AS room_label
+        FROM leases l
+        JOIN tenants t ON t.id = l.tenant_id
+        JOIN units u ON u.id = l.unit_id
+        LEFT JOIN rooms r ON r.id = l.room_id
+        JOIN buildings b ON b.id = u.building_id
+        JOIN properties p ON p.id = b.property_id
+        JOIN organizations o ON o.id = p.organization_id
+        WHERE l.id = ? AND p.id = ?
+        """,
+        (lease_id, property_id),
+    ).fetchone()
+    if details is None:
+        raise ValueError("lease not found for property")
+
+    def esc(value: object) -> str:
+        return html.escape(str(value or ""))
+
+    allocation_labels = {
+        "area": "Wohnfläche",
+        "unit_count": "Einheiten",
+        "occupants": "Personen",
+    }
+    line_rows = "".join(
+        "<tr>"
+        f"<td>{esc(item['label'])}</td>"
+        f"<td>{esc(allocation_labels.get(item['allocation_method'], item['allocation_method']))}</td>"
+        f"<td class=\"amount\">{_format_settlement_money(item['share'])}</td>"
+        "</tr>"
+        for item in result["line_items"]
+    )
+    rental_object = details["room_label"] or details["unit_label"]
+    today = date.today().strftime("%d.%m.%Y")
+    return f"""<!doctype html>
+<html lang=\"de\"><head><meta charset=\"utf-8\"><title>Nebenkostenabrechnung {esc(details['tenant_name'])} {esc(period_start[:4])}</title>
+<style>
+@page {{ size: A4; margin: 20mm; }}
+body {{ font: 11pt Arial, sans-serif; color: #111; max-width: 170mm; margin: 0 auto; }}
+header {{ display: flex; justify-content: space-between; margin-bottom: 28mm; }}
+.muted {{ color: #555; }} .recipient {{ margin-bottom: 22mm; }}
+table {{ border-collapse: collapse; width: 100%; margin: 14px 0; }}
+th, td {{ border-bottom: 1px solid #bbb; padding: 8px 5px; text-align: left; }}
+th {{ border-top: 1px solid #555; }} .amount {{ text-align: right; white-space: nowrap; }}
+.total td {{ border-top: 2px solid #222; font-weight: bold; }}
+.notice {{ margin-top: 22px; }}
+@media print {{ .no-print {{ display: none; }} }}
+</style></head><body onload="window.print()">
+<button class=\"no-print\" onclick=\"window.print()\">Drucken / als PDF speichern</button>
+<header><div><strong>{esc(details['organization_name'])}</strong><br>{esc(details['property_street'])}<br>{esc(details['property_postal_code'])} {esc(details['property_city'])}</div>
+<div class=\"muted\">Erstellt am: {today}</div></header>
+<div class=\"recipient\"><strong>{esc(details['tenant_name'])}</strong><br>{esc(rental_object)}<br>{esc(details['unit_street'])}<br>{esc(details['unit_postal_code'])} {esc(details['unit_city'])}</div>
+<h1>Nebenkostenabrechnung</h1>
+<p>Abrechnungszeitraum: <strong>{esc(result['billing_period_start'])} bis {esc(result['billing_period_end'])}</strong><br>Mietobjekt: {esc(rental_object)} · {esc(details['property_name'])}</p>
+<table><thead><tr><th>Kostenart</th><th>Verteilerschlüssel</th><th class=\"amount\">Ihr Anteil</th></tr></thead>
+<tbody>{line_rows}</tbody>
+<tfoot><tr class=\"total\"><td colspan=\"2\">Umlagefähige Kosten</td><td class=\"amount\">{_format_settlement_money(result['allocated_costs'])}</td></tr></tfoot></table>
+</body></html>"""
+
+
+def settlement_pdf_for_period(
+    connection: sqlite3.Connection,
+    property_id: int | None,
+    lease_id: int,
+    period_start: str,
+    period_end: str,
+    unit_id: int | None = None,
+) -> tuple[bytes, str]:
+    """Create a downloadable PDF; each row comes from the stored cost item key."""
+    settlement = settlement_for_period(connection, property_id, period_start, period_end, unit_id)
+    result = next((item for item in settlement["results"] if item["lease_id"] == lease_id), None)
+    if result is None:
+        raise ValueError("lease is not part of the selected settlement period")
+    details = connection.execute(
+        """
+        SELECT p.name AS property_name, p.street, p.postal_code, p.city,
+               o.name AS organization_name, t.full_name AS tenant_name,
+               t.alternate_street, t.alternate_postal_code, t.alternate_city,
+               u.label AS unit_label, u.street AS unit_street, u.postal_code AS unit_postal_code, u.city AS unit_city, r.label AS room_label
+        FROM leases l JOIN tenants t ON t.id = l.tenant_id
+        JOIN units u ON u.id = l.unit_id LEFT JOIN rooms r ON r.id = l.room_id
+        LEFT JOIN buildings b ON b.id = u.building_id LEFT JOIN properties p ON p.id = b.property_id
+        LEFT JOIN organizations o ON o.id = p.organization_id
+        WHERE l.id = ? AND (p.id = ? OR (? IS NOT NULL AND u.id = ?))
+        """,
+        (lease_id, property_id, unit_id, unit_id),
+    ).fetchone()
+    if details is None:
+        raise ValueError("lease not found for property")
+
+    labels = {"area": "Wohnfläche", "unit_count": "Einheiten", "occupants": "Personen"}
+    has_alternate_address = all(
+        details[field] for field in ("alternate_street", "alternate_postal_code", "alternate_city")
+    )
+    recipient_street = details["alternate_street"] if has_alternate_address else details["unit_street"]
+    recipient_city_line = (
+        f"{details['alternate_postal_code']} {details['alternate_city']}"
+        if has_alternate_address
+        else f"{details['unit_postal_code']} {details['unit_city']}"
+    )
+    stream = BytesIO()
+    document = SimpleDocTemplate(stream, pagesize=A4, leftMargin=18 * mm, rightMargin=18 * mm, topMargin=18 * mm)
+    styles = getSampleStyleSheet()
+    story = [
+        Paragraph(html.escape(str(details["organization_name"])), styles["Normal"]),
+        Paragraph(html.escape(f"{details['street']}, {details['postal_code']} {details['city']}"), styles["Normal"]),
+        Spacer(1, 15 * mm),
+        Paragraph(html.escape(str(details["tenant_name"])), styles["Normal"]),
+        Paragraph(html.escape(str(recipient_street)), styles["Normal"]),
+        Paragraph(html.escape(recipient_city_line), styles["Normal"]),
+        Paragraph(html.escape(f"Mietobjekt: {details['room_label'] or details['unit_label']}"), styles["Normal"]),
+        Spacer(1, 10 * mm),
+        Paragraph("Nebenkostenabrechnung", styles["Title"]),
+        Paragraph(
+            f"Abrechnungszeitraum: {result['billing_period_start']} "
+            f"bis {result['billing_period_end']}",
+            styles["Normal"],
+        ),
+        Spacer(1, 5 * mm),
+    ]
+    rows = [["Kostenart", "Schlüssel", "Jahreskosten", "Mietzeitraum", "Ihr Anteil"]]
+    for item in result["line_items"]:
+        rows.append([
+            item["label"],
+            labels.get(item["allocation_method"], item["allocation_method"])
+            + f" ({item['basis_value']} / {item['basis_total']})",
+            _format_settlement_money(item["period_amount"]),
+            _format_settlement_money(item.get("tenant_period_amount", item["period_amount"])),
+            _format_settlement_money(item["share"]),
+        ])
+    rows.append(
+        [
+            "",
+            "Umlagefähige Kosten",
+            "",
+            "",
+            _format_settlement_money(result["allocated_costs"]),
+        ]
+    )
+    table = Table(rows, colWidths=[42 * mm, 41 * mm, 29 * mm, 29 * mm, 28 * mm], repeatRows=1)
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e8edf2")),
+        ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
+        ("ALIGN", (2, 1), (-1, -1), "RIGHT"),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("FONTSIZE", (0, 0), (-1, -1), 8),
+        ("LEADING", (0, 0), (-1, -1), 10),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+    ]))
+    story.append(table)
+    document.build(story)
+    safe_tenant = "".join(char if char.isalnum() else "-" for char in str(details["tenant_name"]))
+    return stream.getvalue(), f"Nebenkostenabrechnung-{safe_tenant}-{period_start[:4]}.pdf"
+
+
+def settlement_ods_for_period(
+    connection: sqlite3.Connection,
+    property_id: int | None,
+    lease_id: int,
+    period_start: str,
+    period_end: str,
+    unit_id: int | None = None,
+) -> tuple[bytes, str]:
+    """Fill and return the repository's editable ODS master template."""
+    settlement = settlement_for_period(connection, property_id, period_start, period_end, unit_id)
+    result = next((item for item in settlement["results"] if item["lease_id"] == lease_id), None)
+    if result is None:
+        raise ValueError("lease is not part of the selected settlement period")
+    details = connection.execute(
+        """
+        SELECT t.alternate_street, t.alternate_postal_code, t.alternate_city,
+               u.label AS unit_label, u.street AS unit_street,
+               u.postal_code AS unit_postal_code, u.city AS unit_city,
+               r.label AS room_label,
+               b.street AS building_street, b.postal_code AS building_postal_code,
+               b.city AS building_city,
+               p.street AS property_street, p.postal_code AS property_postal_code,
+               p.city AS property_city, o.name AS organization_name
+        FROM leases l
+        JOIN tenants t ON t.id = l.tenant_id
+        JOIN units u ON u.id = l.unit_id
+        LEFT JOIN rooms r ON r.id = l.room_id
+        LEFT JOIN buildings b ON b.id = u.building_id
+        LEFT JOIN properties p ON p.id = b.property_id
+        LEFT JOIN organizations o ON o.id = p.organization_id
+        WHERE l.id = ?
+          AND (? IS NULL OR p.id = ?)
+          AND (? IS NULL OR u.id = ?)
+        """,
+        (lease_id, property_id, property_id, unit_id, unit_id),
+    ).fetchone()
+    if details is None:
+        raise ValueError("lease not found for selected settlement object")
+
+    unit_street = (
+        details["unit_street"]
+        or details["building_street"]
+        or details["property_street"]
+        or ""
+    )
+    unit_postal_code = (
+        details["unit_postal_code"]
+        or details["building_postal_code"]
+        or details["property_postal_code"]
+        or ""
+    )
+    unit_city = (
+        details["unit_city"]
+        or details["building_city"]
+        or details["property_city"]
+        or ""
+    )
+    has_alternate = details is not None and all(
+        details[field] for field in ("alternate_street", "alternate_postal_code", "alternate_city")
+    )
+    street = str(details["alternate_street"] if has_alternate else unit_street)
+    postal_code = str(details["alternate_postal_code"] if has_alternate else unit_postal_code)
+    city = str(details["alternate_city"] if has_alternate else unit_city)
+    city_line = " ".join(part for part in (postal_code, city) if part)
+    period_display = (
+        f"{parse_date(result['billing_period_start']).strftime('%d.%m.%Y')} – "
+        f"{parse_date(result['billing_period_end']).strftime('%d.%m.%Y')}"
+    )
+    document_bytes = render_settlement_template(
+        sender_name=os.environ.get(
+            "EASYPRENT_SENDER_NAME", str(details["organization_name"] or "")
+        ),
+        sender_street=os.environ.get("EASYPRENT_SENDER_STREET", ""),
+        sender_city_line=os.environ.get("EASYPRENT_SENDER_CITY", ""),
+        tenant_name=result["tenant_name"],
+        tenant_street=street,
+        tenant_city_line=city_line,
+        object_lines=[
+            str(result["unit_label"]),
+            unit_street,
+            " ".join(part for part in (str(unit_postal_code), str(unit_city)) if part),
+        ],
+        created_on=date.today().strftime("%d.%m.%Y"),
+        period_label=period_display,
+        line_items=result["line_items"],
+        allocated_costs=result["allocated_costs"],
+        advances_paid=None,
+        balance=None,
+    )
+    safe_tenant = "".join(char if char.isalnum() else "-" for char in result["tenant_name"])
+    return document_bytes, f"Nebenkostenabrechnung-{safe_tenant}-{period_start[:4]}.ods"
 
 
 def depreciation_schedule_for_year(connection: sqlite3.Connection, year: int) -> dict:
