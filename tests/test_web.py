@@ -2512,7 +2512,7 @@ process.stdout.write(JSON.stringify({ target: !!target, options: options }));
         self.assertIn("10439 Berlin", content)
         self.assertIn("4.200,00 €", content)
         self.assertNotIn("↳", content)
-        self.assertNotIn("Geleistete Vorauszahlungen", content)
+        self.assertIn("Geleistete Vorauszahlungen", content)
         self.assertNotIn("Guthaben", content)
         self.assertNotIn("{{", content)
         self.assertNotIn("Tiefgarage", content)
@@ -2577,7 +2577,7 @@ process.stdout.write(JSON.stringify({ target: !!target, options: options }));
             content = archive.read("content.xml").decode("utf-8")
         self.assertIn("01.04.2025 – 31.12.2025", content)
         self.assertNotIn("01.01.2025 – 31.12.2025", content)
-        self.assertNotIn("Geleistete Vorauszahlungen", content)
+        self.assertIn("Geleistete Vorauszahlungen", content)
         self.assertNotIn("1.710,00 €", content)
 
     def test_settlement_document_uses_complete_alternate_tenant_address(self) -> None:

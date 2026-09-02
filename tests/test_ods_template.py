@@ -22,6 +22,7 @@ STYLE_NS = "urn:oasis:names:tc:opendocument:xmlns:style:1.0"
 MANIFEST_NS = "urn:oasis:names:tc:opendocument:xmlns:manifest:1.0"
 CONFIG_NS = "urn:oasis:names:tc:opendocument:xmlns:config:1.0"
 OFFICE_NS = "urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+FO_NS = "urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0"
 META_NS = "urn:oasis:names:tc:opendocument:xmlns:meta:1.0"
 DC_NS = "http://purl.org/dc/elements/1.1/"
 CELL_TAGS = {
@@ -252,6 +253,8 @@ def _render(
     period_label: str = "01.01.2026 – 31.12.2026",
     line_items: list[dict] | None = None,
     allocated_costs: str = "300.00",
+    advances_paid: str | None = "100.00",
+    balance: str | None = "200.00",
 ) -> bytes:
     with tempfile.TemporaryDirectory() as directory:
         template_path = Path(directory) / "template.ods"
@@ -276,8 +279,8 @@ def _render(
                 }
             ],
             allocated_costs=allocated_costs,
-            advances_paid="100.00",
-            balance="200.00",
+            advances_paid=advances_paid,
+            balance=balance,
         )
 
 
@@ -403,6 +406,51 @@ class OdsTemplateTests(unittest.TestCase):
         )
         self.assertEqual(active_table.text, "2026")
         self.assert_has_no_private_metadata(document)
+
+    def test_render_keeps_blank_advance_payment_section_for_manual_entry(self) -> None:
+        document = _render(
+            _template_bytes(),
+            advances_paid=None,
+            balance=None,
+        )
+
+        with ZipFile(BytesIO(document)) as archive:
+            content = archive.read("content.xml").decode("utf-8")
+        self.assertIn("Geleistete Vorauszahlungen", content)
+        self.assertNotIn("{{", content)
+        self.assertNotIn("of:=ABS(", content)
+        self.assertNotIn("Nachzahlung", content)
+        self.assertNotIn("Guthaben", content)
+
+    def test_render_left_aligns_all_cost_amounts(self) -> None:
+        document = _render(
+            _template_bytes(),
+            advances_paid=None,
+            balance=None,
+        )
+
+        with ZipFile(BytesIO(document)) as archive:
+            root = ET.fromstring(archive.read("content.xml"))
+        styles = {
+            style.get(f"{{{STYLE_NS}}}name"): style
+            for style in root.findall(f".//{{{STYLE_NS}}}style")
+        }
+        currency_cells = [
+            cell
+            for cell in root.findall(f".//{{{TABLE_NS}}}table-cell")
+            if cell.get(f"{{{OFFICE_NS}}}value-type") == "currency"
+        ]
+        self.assertTrue(currency_cells)
+        for cell in currency_cells:
+            style = styles[cell.get(f"{{{TABLE_NS}}}style-name")]
+            paragraph_properties = style.find(
+                f"{{{STYLE_NS}}}paragraph-properties"
+            )
+            self.assertIsNotNone(paragraph_properties)
+            self.assertEqual(
+                paragraph_properties.get(f"{{{FO_NS}}}text-align"),
+                "start",
+            )
 
     def test_formulas_follow_relocated_marker_columns(self) -> None:
         document = _render(_with_relocated_formula_markers(_template_bytes()))

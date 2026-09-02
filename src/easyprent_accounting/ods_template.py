@@ -586,7 +586,7 @@ def _finish_prepared_template(
         paragraph_properties = style.find("style:paragraph-properties", NS)
         if paragraph_properties is None:
             paragraph_properties = ET.SubElement(style, f"{{{STYLE_NS}}}paragraph-properties")
-        paragraph_properties.set(f"{{{FO_NS}}}text-align", "end")
+        paragraph_properties.set(f"{{{FO_NS}}}text-align", "start")
 
     replacements = {
         "content.xml": _serialize_content(root),
@@ -965,94 +965,92 @@ def render_settlement_template(
         formula=share_formula,
     )
 
-    if advances_paid is None or balance is None:
-        rows = sheet.findall("table:table-row", NS)
-        payment_section_start = _find_row_containing(
-            rows, "Geleistete Vorauszahlungen"
-        )
-        result_notice_row, _ = _find_marker(sheet, "{{ERGEBNIS_TEXT}}")
-        start_index = rows.index(payment_section_start)
-        end_index = rows.index(result_notice_row)
-        for row in rows[start_index : end_index + 1]:
-            sheet.remove(row)
-        replacements = _sanitize_package_files(
-            entries,
-            {"content.xml": _serialize_content(root)},
-            sheet_name=new_sheet_name,
-            old_sheet_name=old_sheet_name,
-        )
-        return _write_archive(entries, replacements)
-
     payment_period_row, payment_period_column = _find_marker(
         sheet, "{{VORAUSZAHLUNG_ZEITRAUM}}"
     )
     payment_row, payment_column = _find_marker(sheet, "{{VORAUSZAHLUNGEN}}")
-    _set_cell(payment_period_row, payment_period_column, period_label)
-    _set_cell(
-        payment_row,
-        payment_column,
-        _format_money(advances_paid),
-        number=Decimal(advances_paid),
-        currency=True,
-    )
     advance_row, advance_column = _find_marker(sheet, "{{VORAUSZAHLUNGEN_SUMME}}")
-    payment_row_number = _row_number(sheet, payment_row)
-    payment_column_name = _column_name(payment_column)
-    _set_cell(
-        advance_row,
-        advance_column,
-        _format_money(advances_paid),
-        number=Decimal(advances_paid),
-        currency=True,
-        formula=f"of:=[.{payment_column_name}{payment_row_number}]",
-    )
-
-    balance_value = Decimal(balance)
-    balance_label = "Nachzahlung" if balance_value > 0 else "Guthaben" if balance_value < 0 else "Saldo"
     balance_label_row, balance_label_column = _find_marker(sheet, "{{SALDO_BEZEICHNUNG}}")
     balance_amount_row, balance_amount_column = _find_marker(sheet, "{{SALDO_BETRAG}}")
-    total_row_number = _row_number(sheet, total_row)
-    advance_row_number = _row_number(sheet, advance_row)
-    tenant_total_column_name = _column_name(tenant_total_column)
-    advance_column_name = _column_name(advance_column)
-    difference = (
-        f"[.{tenant_total_column_name}{total_row_number}]-"
-        f"[.{advance_column_name}{advance_row_number}]"
-    )
-    _set_cell(
-        balance_label_row,
-        balance_label_column,
-        balance_label,
-        formula=(
-            f'of:=IF({difference}>0;"Nachzahlung";IF({difference}<0;"Guthaben";"Saldo"))'
-        ),
-    )
-    _set_cell(
-        balance_amount_row,
-        balance_amount_column,
-        _format_money(abs(balance_value)),
-        number=abs(balance_value),
-        currency=True,
-        formula=f"of:=ABS({difference})",
-    )
-    notice = (
-        "Bitte überweisen Sie die ausgewiesene Nachzahlung."
-        if balance_value > 0
-        else "Ihr ausgewiesenes Guthaben wird Ihnen erstattet."
-        if balance_value < 0
-        else "Die Abrechnung ist ausgeglichen."
-    )
     notice_row, notice_column = _find_marker(sheet, "{{ERGEBNIS_TEXT}}")
-    _set_cell(
-        notice_row,
-        notice_column,
-        notice,
-        formula=(
-            f'of:=IF({difference}>0;"Bitte überweisen Sie die ausgewiesene Nachzahlung.";'
-            f'IF({difference}<0;"Ihr ausgewiesenes Guthaben wird Ihnen erstattet.";'
-            '"Die Abrechnung ist ausgeglichen."))'
-        ),
-    )
+
+    if advances_paid is None or balance is None:
+        # The lease stores an agreed monthly advance, but that is not proof of
+        # actual payments. Keep this section in every export as editable ODS
+        # structure for the later payment-recording feature, without deriving
+        # or calculating any values from the lease today.
+        for row, column in (
+            (payment_period_row, payment_period_column),
+            (payment_row, payment_column),
+            (advance_row, advance_column),
+            (balance_label_row, balance_label_column),
+            (balance_amount_row, balance_amount_column),
+            (notice_row, notice_column),
+        ):
+            _set_cell(row, column, "")
+    else:
+        _set_cell(payment_period_row, payment_period_column, period_label)
+        _set_cell(
+            payment_row,
+            payment_column,
+            _format_money(advances_paid),
+            number=Decimal(advances_paid),
+            currency=True,
+        )
+        payment_row_number = _row_number(sheet, payment_row)
+        payment_column_name = _column_name(payment_column)
+        _set_cell(
+            advance_row,
+            advance_column,
+            _format_money(advances_paid),
+            number=Decimal(advances_paid),
+            currency=True,
+            formula=f"of:=[.{payment_column_name}{payment_row_number}]",
+        )
+
+        balance_value = Decimal(balance)
+        balance_label = "Nachzahlung" if balance_value > 0 else "Guthaben" if balance_value < 0 else "Saldo"
+        total_row_number = _row_number(sheet, total_row)
+        advance_row_number = _row_number(sheet, advance_row)
+        tenant_total_column_name = _column_name(tenant_total_column)
+        advance_column_name = _column_name(advance_column)
+        difference = (
+            f"[.{tenant_total_column_name}{total_row_number}]-"
+            f"[.{advance_column_name}{advance_row_number}]"
+        )
+        _set_cell(
+            balance_label_row,
+            balance_label_column,
+            balance_label,
+            formula=(
+                f'of:=IF({difference}>0;"Nachzahlung";IF({difference}<0;"Guthaben";"Saldo"))'
+            ),
+        )
+        _set_cell(
+            balance_amount_row,
+            balance_amount_column,
+            _format_money(abs(balance_value)),
+            number=abs(balance_value),
+            currency=True,
+            formula=f"of:=ABS({difference})",
+        )
+        notice = (
+            "Bitte überweisen Sie die ausgewiesene Nachzahlung."
+            if balance_value > 0
+            else "Ihr ausgewiesenes Guthaben wird Ihnen erstattet."
+            if balance_value < 0
+            else "Die Abrechnung ist ausgeglichen."
+        )
+        _set_cell(
+            notice_row,
+            notice_column,
+            notice,
+            formula=(
+                f'of:=IF({difference}>0;"Bitte überweisen Sie die ausgewiesene Nachzahlung.";'
+                f'IF({difference}<0;"Ihr ausgewiesenes Guthaben wird Ihnen erstattet.";'
+                '"Die Abrechnung ist ausgeglichen."))'
+            ),
+        )
 
     replacements = _sanitize_package_files(
         entries,
