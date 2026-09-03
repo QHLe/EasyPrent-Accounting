@@ -912,6 +912,26 @@
       token_masked: null,
       updated_at: null,
     });
+    const [gnucashSettings, setGnuCashSettings] = useState({
+      configured: false,
+      host: "",
+      port: 5432,
+      database: "",
+      username: "",
+      password_present: false,
+      password_masked: null,
+      sslmode: "require",
+      updated_at: null,
+    });
+    const [gnucashForm, setGnuCashForm] = useState({
+      host: "",
+      port: "5432",
+      database: "",
+      username: "",
+      password: "",
+      sslmode: "require",
+    });
+    const [gnucashAccounts, setGnuCashAccounts] = useState([]);
     const [applicationSettings, setApplicationSettings] = useState({
       show_delete_actions: true,
       updated_at: null,
@@ -986,6 +1006,8 @@
         alternate_street: "",
         alternate_postal_code: "",
         alternate_city: "",
+        gnucash_nk_account_guid: "",
+        gnucash_nk_account_name: "",
       },
       lease: {
         unit_id: "",
@@ -1128,6 +1150,8 @@
             alternate_street: current.tenant.alternate_street,
             alternate_postal_code: current.tenant.alternate_postal_code,
             alternate_city: current.tenant.alternate_city,
+            gnucash_nk_account_guid: current.tenant.gnucash_nk_account_guid,
+            gnucash_nk_account_name: current.tenant.gnucash_nk_account_name,
           },
           lease: {
             unit_id: normalizedLeaseUnitId,
@@ -1234,6 +1258,7 @@
             fetchJson("/api/paperless-settings"),
             fetchJson("/api/paperless-status"),
             fetchJson("/api/application-settings"),
+            fetchJson("/api/gnucash-settings"),
           ]);
         })
         .then(function (results) {
@@ -1249,6 +1274,7 @@
           setPaperlessSettings(results[3]);
           setPaperlessStatus(results[4]);
           setApplicationSettings(results[5]);
+          setGnuCashSettings(results[6]);
           setPaperlessForm({
             base_url: (results[3] && results[3].base_url) || "",
             api_token: "",
@@ -1258,6 +1284,14 @@
               !results[5] || typeof results[5].show_delete_actions === "undefined"
                 ? true
                 : !!results[5].show_delete_actions,
+          });
+          setGnuCashForm({
+            host: (results[6] && results[6].host) || "",
+            port: String((results[6] && results[6].port) || 5432),
+            database: (results[6] && results[6].database) || "",
+            username: (results[6] && results[6].username) || "",
+            password: "",
+            sslmode: (results[6] && results[6].sslmode) || "require",
           });
           syncFormDefaults(results[0]);
         })
@@ -1295,8 +1329,22 @@
       event.preventDefault();
       setLoading(true);
       setError("");
-      fetchJson("/api/settlements?" + new URLSearchParams(settlementFilters).toString())
-        .then(setSettlement)
+      fetchJson("/api/settlements/refresh", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(settlementFilters),
+      })
+        .then(function (payload) {
+          setSettlement(payload.settlement);
+          const imported = payload.import || {};
+          setStatus(
+            "Abrechnung aktualisiert: " +
+              String(imported.imported || 0) +
+              " neue GnuCash-Zahlung(en), " +
+              String(imported.existing || 0) +
+              " bereits vorhanden."
+          );
+        })
         .catch(function (loadError) { setError(loadError.message || "Abrechnung konnte nicht geladen werden."); })
         .finally(function () { setLoading(false); });
     }
@@ -2404,6 +2452,8 @@
         alternate_street: forms.tenant.alternate_street || null,
         alternate_postal_code: forms.tenant.alternate_postal_code || null,
         alternate_city: forms.tenant.alternate_city || null,
+        gnucash_nk_account_guid: forms.tenant.gnucash_nk_account_guid || null,
+        gnucash_nk_account_name: forms.tenant.gnucash_nk_account_name || null,
       };
       submitToApi(
         isEditing ? "/api/tenants/" + editingId : "/api/tenants",
@@ -2418,6 +2468,11 @@
               full_name: "",
               email: "",
               phone: "",
+              alternate_street: "",
+              alternate_postal_code: "",
+              alternate_city: "",
+              gnucash_nk_account_guid: "",
+              gnucash_nk_account_name: "",
             };
           });
         },
@@ -2585,6 +2640,8 @@
             alternate_street: tenant.alternate_street || "",
             alternate_postal_code: tenant.alternate_postal_code || "",
             alternate_city: tenant.alternate_city || "",
+            gnucash_nk_account_guid: tenant.gnucash_nk_account_guid || "",
+            gnucash_nk_account_name: tenant.gnucash_nk_account_name || "",
           },
         });
       });
@@ -2801,6 +2858,62 @@
         .finally(function () {
           setSaving(false);
         });
+    }
+
+    function setGnuCashField(field, value) {
+      setGnuCashForm(function (current) {
+        return Object.assign({}, current, { [field]: value });
+      });
+    }
+
+    function handleGnuCashSubmit(event) {
+      event.preventDefault();
+      setSaving(true);
+      setError("");
+      setStatus("");
+      fetchJson("/api/gnucash-settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          host: gnucashForm.host,
+          port: Number(gnucashForm.port),
+          database: gnucashForm.database,
+          username: gnucashForm.username,
+          password: gnucashForm.password,
+          sslmode: gnucashForm.sslmode,
+        }),
+      })
+        .then(function (payload) {
+          setGnuCashSettings(payload);
+          setGnuCashForm({
+            host: payload.host || "",
+            port: String(payload.port || 5432),
+            database: payload.database || "",
+            username: payload.username || "",
+            password: "",
+            sslmode: payload.sslmode || "require",
+          });
+          setStatus("GnuCash-Einstellungen gespeichert.");
+        })
+        .catch(function (saveError) {
+          setError(saveError.message || "GnuCash-Einstellungen konnten nicht gespeichert werden.");
+        })
+        .finally(function () { setSaving(false); });
+    }
+
+    function loadGnuCashAccounts() {
+      setLoading(true);
+      setError("");
+      return fetchJson("/api/gnucash-accounts")
+        .then(function (accounts) {
+          setGnuCashAccounts(accounts || []);
+          setStatus(String((accounts || []).length) + " GnuCash-Konten geladen.");
+        })
+        .catch(function (loadError) {
+          setError(loadError.message || "GnuCash-Konten konnten nicht geladen werden.");
+          throw loadError;
+        })
+        .finally(function () { setLoading(false); });
     }
 
     function handleApplicationSettingsSubmit(event) {
@@ -3283,6 +3396,8 @@
       unitOptions: unitOptions,
       leaseRoomOptions: leaseRoomOptions,
       tenantOptions: tenantOptions,
+      gnucashAccounts: gnucashAccounts,
+      onLoadGnuCashAccounts: loadGnuCashAccounts,
       meterOptions: meterOptions,
       expenseMeterOptions: expenseMeterOptions,
       meterTargetOptions: meterTargetOptions,
@@ -3511,10 +3626,14 @@
         : mainTab === "settings"
           ? e(SettingsContent, {
               onPaperlessSubmit: handlePaperlessSubmit,
+              onGnuCashSubmit: handleGnuCashSubmit,
               onApplicationSettingsSubmit: handleApplicationSettingsSubmit,
               paperlessForm: paperlessForm,
               onFieldChange: setPaperlessField,
               paperlessSettings: paperlessSettings,
+              gnucashForm: gnucashForm,
+              onGnuCashFieldChange: setGnuCashField,
+              gnucashSettings: gnucashSettings,
               applicationSettings: applicationSettings,
               applicationSettingsForm: applicationSettingsForm,
               onApplicationSettingsFieldChange: setApplicationSettingsField,
@@ -3543,6 +3662,8 @@
               isPreviewCollapsible: isPreviewCollapsible,
               isPreviewExpanded: isPreviewExpanded,
               isActionDisabled: saving || loading,
+              gnucashAccounts: gnucashAccounts,
+              onLoadGnuCashAccounts: loadGnuCashAccounts,
               onToggleCreateForm: function () {
                 if (shouldShowActiveForm) {
                   setCreateFormVisible(activeTab, false);

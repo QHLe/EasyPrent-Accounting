@@ -254,6 +254,8 @@
             String(row.billing_period_end || "")
         ),
         e("td", null, row.allocated_costs),
+        e("td", null, row.advances_paid == null ? "-" : row.advances_paid),
+        e("td", null, row.balance == null ? "-" : row.balance),
         e("td", null, e("a", { href: documentUrl }, "ODS-Abrechnung herunterladen"))
       );
     });

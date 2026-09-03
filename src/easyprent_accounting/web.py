@@ -22,6 +22,7 @@ from .services import (
     delete_tenant_document,
     get_paperless_status,
     get_application_settings,
+    get_gnucash_settings,
     create_room,
     create_tenant,
     create_unit,
@@ -35,6 +36,8 @@ from .services import (
     download_expense_document,
     export_application_data,
     get_paperless_settings,
+    import_gnucash_payments_for_period,
+    list_gnucash_accounts,
     list_lease_documents,
     list_overview,
     list_expense_documents,
@@ -51,6 +54,7 @@ from .services import (
     update_application_settings,
     update_building,
     update_paperless_settings,
+    update_gnucash_settings,
     update_property,
     update_room,
     update_tenant,
@@ -396,6 +400,15 @@ def application(environ, start_response):
         if method == "GET" and path == "/api/application-settings":
             return json_response(start_response, HTTPStatus.OK, get_application_settings(connection))
 
+        if method == "GET" and path == "/api/gnucash-settings":
+            return json_response(start_response, HTTPStatus.OK, get_gnucash_settings(connection))
+
+        if method == "GET" and path == "/api/gnucash-accounts":
+            try:
+                return json_response(start_response, HTTPStatus.OK, list_gnucash_accounts(connection))
+            except ValueError as error:
+                return json_response(start_response, HTTPStatus.BAD_REQUEST, {"error": str(error)})
+
         if method == "GET" and path == "/api/application-export":
             return json_response(start_response, HTTPStatus.OK, export_application_data(connection))
 
@@ -415,6 +428,16 @@ def application(environ, start_response):
                     start_response,
                     HTTPStatus.OK,
                     update_application_settings(connection, read_json(environ)),
+                )
+            except ValueError as error:
+                return json_response(start_response, HTTPStatus.BAD_REQUEST, {"error": str(error)})
+
+        if method == "PUT" and path == "/api/gnucash-settings":
+            try:
+                return json_response(
+                    start_response,
+                    HTTPStatus.OK,
+                    update_gnucash_settings(connection, read_json(environ)),
                 )
             except ValueError as error:
                 return json_response(start_response, HTTPStatus.BAD_REQUEST, {"error": str(error)})
@@ -546,6 +569,29 @@ def application(environ, start_response):
                     start_response, HTTPStatus.BAD_REQUEST, {"error": str(error)}
                 )
             return json_response(start_response, HTTPStatus.OK, settlement)
+
+        if method == "POST" and path == "/api/settlements/refresh":
+            payload = read_json(environ)
+            try:
+                raw_property_id = payload.get("property_id")
+                raw_unit_id = payload.get("unit_id")
+                property_id = None if raw_property_id in (None, "") else int(raw_property_id)
+                unit_id = None if raw_unit_id in (None, "") else int(raw_unit_id)
+                period_start = str(payload.get("period_start") or "")
+                period_end = str(payload.get("period_end") or "")
+                imported = import_gnucash_payments_for_period(
+                    connection, property_id, period_start, period_end, unit_id
+                )
+                settlement = settlement_for_period(
+                    connection, property_id, period_start, period_end, unit_id
+                )
+                return json_response(
+                    start_response,
+                    HTTPStatus.OK,
+                    {"import": imported, "settlement": settlement},
+                )
+            except (TypeError, ValueError) as error:
+                return json_response(start_response, HTTPStatus.BAD_REQUEST, {"error": str(error)})
 
         if method == "GET" and path == "/api/settlements/document.pdf":
             params = parse_qs(environ.get("QUERY_STRING", ""))

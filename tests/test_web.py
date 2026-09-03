@@ -176,7 +176,7 @@ class WebApiAndUiTests(unittest.TestCase):
         self.assertIn("Mietvertrag erfassen", content)
         self.assertIn("Nebenkostenvorauszahlung pro Monat", content)
         self.assertIn("Abgerechneter Zeitraum", content)
-        self.assertIn("Vorauszahlungen und Saldo werden nicht automatisch", content)
+        self.assertIn("Beim Aktualisieren werden fehlende GnuCash-Nebenkostenvorauszahlungen", content)
         self.assertIn("Zimmer optional", content)
         self.assertIn("Zimmerfläche in m²", content)
         self.assertIn("Mieterliste", content)
@@ -515,6 +515,9 @@ process.stdout.write(JSON.stringify({ target: !!target, options: options }));
         self.assertIn("/api/application-settings", payload["paths"])
         self.assertIn("/api/application-export", payload["paths"])
         self.assertIn("/api/application-import", payload["paths"])
+        self.assertIn("/api/gnucash-settings", payload["paths"])
+        self.assertIn("/api/gnucash-accounts", payload["paths"])
+        self.assertIn("/api/settlements/refresh", payload["paths"])
         self.assertIn("/api/expenses/{id}", payload["paths"])
         self.assertIn("/api/tenants/{id}", payload["paths"])
         self.assertIn("/api/tenants/{id}/documents", payload["paths"])
@@ -577,6 +580,8 @@ process.stdout.write(JSON.stringify({ target: !!target, options: options }));
         self.assertIn("ApplicationExportResponse", payload["components"]["schemas"])
         self.assertIn("ApplicationImportRequest", payload["components"]["schemas"])
         self.assertIn("ApplicationImportResponse", payload["components"]["schemas"])
+        self.assertIn("GnuCashSettingsResponse", payload["components"]["schemas"])
+        self.assertIn("SettlementRefreshResponse", payload["components"]["schemas"])
         self.assertIn("LinkedDocumentUploadRequest", payload["components"]["schemas"])
         self.assertIn("LinkedDocumentResponse", payload["components"]["schemas"])
         self.assertIn("LinkedDocumentListResponse", payload["components"]["schemas"])
@@ -590,6 +595,43 @@ process.stdout.write(JSON.stringify({ target: !!target, options: options }));
             payload["components"]["schemas"]["ExpenseDocumentUploadEntry"]["properties"],
         )
         self.assertNotIn("label", payload["components"]["schemas"]["ExpenseCreateRequest"]["required"])
+
+    def test_gnucash_settings_mask_password_and_refresh_is_an_explicit_post_action(self) -> None:
+        settings_body = json.dumps(
+            {
+                "host": "gnucash.internal",
+                "port": 5432,
+                "database": "book",
+                "username": "reader",
+                "password": "not-returned",
+                "sslmode": "require",
+            }
+        ).encode("utf-8")
+        status, _, body = self._call_app("PUT", "/api/gnucash-settings", settings_body)
+        settings = json.loads(body.decode("utf-8"))
+        self.assertTrue(status.startswith("200"))
+        self.assertTrue(settings["password_present"])
+        self.assertNotIn("password", settings)
+
+        with mock.patch(
+            "src.easyprent_accounting.web.import_gnucash_payments_for_period",
+            return_value={"imported": 1, "existing": 2, "accounts": 1},
+        ) as imported:
+            refresh_body = json.dumps(
+                {
+                    "property_id": 1,
+                    "period_start": "2025-01-01",
+                    "period_end": "2025-12-31",
+                }
+            ).encode("utf-8")
+            refresh_status, _, refresh_response = self._call_app(
+                "POST", "/api/settlements/refresh", refresh_body
+            )
+
+        response = json.loads(refresh_response.decode("utf-8"))
+        self.assertTrue(refresh_status.startswith("200"))
+        self.assertEqual(response["import"]["imported"], 1)
+        imported.assert_called_once()
 
     def test_api_health_reports_server_reachable(self) -> None:
         status, _, body = self._call_app("GET", "/api/health")
@@ -2553,7 +2595,7 @@ process.stdout.write(JSON.stringify({ target: !!target, options: options }));
         self.assertIn("4.200,00 €", content)
         self.assertNotIn("↳", content)
         self.assertIn("Geleistete Vorauszahlungen", content)
-        self.assertNotIn("Guthaben", content)
+        self.assertIn("Nachzahlung", content)
         self.assertNotIn("{{", content)
         self.assertNotIn("Tiefgarage", content)
         self.assertNotIn("Solarstr.", content)
@@ -2601,7 +2643,7 @@ process.stdout.write(JSON.stringify({ target: !!target, options: options }));
         self.assertIn("of:=SUM([.E20:.E22])", formulas)
         self.assertIn("of:=SUM([.D23:.D23])", formulas)
         self.assertIn("of:=SUM([.F23:.F23])", formulas)
-        self.assertFalse(any(formula.startswith("of:=ABS(") for formula in formulas))
+        self.assertTrue(any(formula.startswith("of:=ABS(") for formula in formulas))
 
     def test_settlement_document_uses_tenant_billing_period(self) -> None:
         status, _, body = self._call_app(

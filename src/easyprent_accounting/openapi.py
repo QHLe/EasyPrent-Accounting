@@ -657,6 +657,59 @@ def build_openapi_document() -> dict:
                     },
                 },
             },
+            "/api/gnucash-settings": {
+                "get": {
+                    "summary": "Lädt die gespeicherten GnuCash-PostgreSQL-Einstellungen",
+                    "responses": {
+                        "200": {
+                            "description": "GnuCash-Einstellungen ohne Passwort",
+                            "content": {
+                                "application/json": {
+                                    "schema": {"$ref": "#/components/schemas/GnuCashSettingsResponse"}
+                                }
+                            },
+                        }
+                    },
+                },
+                "put": {
+                    "summary": "Speichert die GnuCash-PostgreSQL-Einstellungen",
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {"$ref": "#/components/schemas/GnuCashSettingsUpdateRequest"}
+                            }
+                        },
+                    },
+                    "responses": {
+                        "200": {
+                            "description": "Aktualisierte GnuCash-Einstellungen ohne Passwort",
+                            "content": {
+                                "application/json": {
+                                    "schema": {"$ref": "#/components/schemas/GnuCashSettingsResponse"}
+                                }
+                            },
+                        },
+                        "400": {"description": "Ungültige Eingabedaten"},
+                    },
+                },
+            },
+            "/api/gnucash-accounts": {
+                "get": {
+                    "summary": "Lädt auswählbare GnuCash-Konten aus dem konfigurierten Buch",
+                    "responses": {
+                        "200": {
+                            "description": "GnuCash-Konten",
+                            "content": {
+                                "application/json": {
+                                    "schema": {"type": "array", "items": {"$ref": "#/components/schemas/GnuCashAccount"}}
+                                }
+                            },
+                        },
+                        "400": {"description": "GnuCash ist nicht erreichbar oder nicht konfiguriert"},
+                    },
+                },
+            },
             "/api/application-settings": {
                 "get": {
                     "summary": "Lädt allgemeine Anwendungseinstellungen",
@@ -791,6 +844,30 @@ def build_openapi_document() -> dict:
                                 }
                             },
                         }
+                    },
+                }
+            },
+            "/api/settlements/refresh": {
+                "post": {
+                    "summary": "Importiert fehlende GnuCash-NK-Vorauszahlungen und berechnet die Abrechnung live neu",
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {"$ref": "#/components/schemas/SettlementRefreshRequest"}
+                            }
+                        },
+                    },
+                    "responses": {
+                        "200": {
+                            "description": "Importprotokoll und aktuelle Abrechnung",
+                            "content": {
+                                "application/json": {
+                                    "schema": {"$ref": "#/components/schemas/SettlementRefreshResponse"}
+                                }
+                            },
+                        },
+                        "400": {"description": "Ungültige Eingabe oder GnuCash-Fehler"},
                     },
                 }
             },
@@ -1573,6 +1650,8 @@ def build_openapi_document() -> dict:
                         "alternate_street": {"type": ["string", "null"]},
                         "alternate_postal_code": {"type": ["string", "null"]},
                         "alternate_city": {"type": ["string", "null"]},
+                        "gnucash_nk_account_guid": {"type": ["string", "null"]},
+                        "gnucash_nk_account_name": {"type": ["string", "null"]},
                     },
                 },
                 "TenantResponse": {
@@ -1585,6 +1664,8 @@ def build_openapi_document() -> dict:
                         "alternate_street": {"type": ["string", "null"]},
                         "alternate_postal_code": {"type": ["string", "null"]},
                         "alternate_city": {"type": ["string", "null"]},
+                        "gnucash_nk_account_guid": {"type": ["string", "null"]},
+                        "gnucash_nk_account_name": {"type": ["string", "null"]},
                     },
                 },
                 "LeaseCreateRequest": {
@@ -1677,6 +1758,57 @@ def build_openapi_document() -> dict:
                         "period_end": {"type": "string", "format": "date"},
                         "results": {"type": "array", "items": {"type": "object"}},
                         "totals": {"type": "object"},
+                    },
+                },
+                "SettlementRefreshRequest": {
+                    "type": "object",
+                    "required": ["period_start", "period_end"],
+                    "properties": {
+                        "property_id": {"type": ["integer", "null"]},
+                        "unit_id": {"type": ["integer", "null"]},
+                        "period_start": {"type": "string", "format": "date"},
+                        "period_end": {"type": "string", "format": "date"},
+                    },
+                },
+                "SettlementRefreshResponse": {
+                    "type": "object",
+                    "properties": {
+                        "import": {"type": "object"},
+                        "settlement": {"$ref": "#/components/schemas/SettlementResponse"},
+                    },
+                },
+                "GnuCashSettingsUpdateRequest": {
+                    "type": "object",
+                    "required": ["host", "port", "database", "username"],
+                    "properties": {
+                        "host": {"type": "string"},
+                        "port": {"type": "integer"},
+                        "database": {"type": "string"},
+                        "username": {"type": "string"},
+                        "password": {"type": "string"},
+                        "sslmode": {"type": "string"},
+                    },
+                },
+                "GnuCashSettingsResponse": {
+                    "type": "object",
+                    "properties": {
+                        "configured": {"type": "boolean"},
+                        "host": {"type": "string"},
+                        "port": {"type": "integer"},
+                        "database": {"type": "string"},
+                        "username": {"type": "string"},
+                        "password_present": {"type": "boolean"},
+                        "password_masked": {"type": ["string", "null"]},
+                        "sslmode": {"type": "string"},
+                    },
+                },
+                "GnuCashAccount": {
+                    "type": "object",
+                    "required": ["guid", "name", "full_name"],
+                    "properties": {
+                        "guid": {"type": "string"},
+                        "name": {"type": "string"},
+                        "full_name": {"type": "string"},
                     },
                 },
                 "DepreciationScheduleResponse": {

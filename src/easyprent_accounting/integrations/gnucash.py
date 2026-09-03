@@ -1,0 +1,122 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import date
+from decimal import Decimal
+from typing import Protocol
+from urllib.parse import quote
+
+
+class GnuCashIntegrationError(ValueError):
+    """Raised when the configured GnuCash book cannot be read."""
+
+
+@dataclass(frozen=True, slots=True)
+class GnuCashAccount:
+    guid: str
+    name: str
+    full_name: str
+
+
+@dataclass(frozen=True, slots=True)
+class GnuCashPayment:
+    split_guid: str
+    transaction_guid: str
+    account_guid: str
+    booking_date: date
+    amount: Decimal
+    description: str
+
+
+class GnuCashReader(Protocol):
+    def list_accounts(self, settings: dict) -> list[GnuCashAccount]: ...
+
+    def list_payments(
+        self,
+        settings: dict,
+        account_guids: set[str],
+        period_start: date,
+        period_end: date,
+    ) -> list[GnuCashPayment]: ...
+
+
+class PiecashGnuCashReader:
+    """Read a remote PostgreSQL-backed GnuCash book without changing it."""
+
+    def _open_book(self, settings: dict):
+        try:
+            import piecash
+        except ImportError as error:  # pragma: no cover - exercised in deployment
+            raise GnuCashIntegrationError(
+                "piecash is not installed; install the server dependencies first"
+            ) from error
+
+        required = ("host", "port", "database", "username", "password")
+        if any(not settings.get(field) for field in required):
+            raise GnuCashIntegrationError("GnuCash connection is not configured")
+
+        sslmode = str(settings.get("sslmode") or "require")
+        uri = (
+            "postgresql+psycopg2://"
+            f"{quote(str(settings['username']), safe='')}:{quote(str(settings['password']), safe='')}@"
+            f"{settings['host']}:{int(settings['port'])}/{quote(str(settings['database']), safe='')}"
+            f"?sslmode={quote(sslmode, safe='')}"
+        )
+        try:
+            return piecash.open_book(uri_conn=uri, readonly=True)
+        except Exception as error:  # piecash exposes several exception classes
+            raise GnuCashIntegrationError(f"GnuCash connection failed: {error}") from error
+
+    def list_accounts(self, settings: dict) -> list[GnuCashAccount]:
+        book = self._open_book(settings)
+        try:
+            return sorted(
+                [
+                    GnuCashAccount(
+                        guid=str(account.guid),
+                        name=str(account.name),
+                        full_name=str(account.fullname),
+                    )
+                    for account in book.accounts
+                ],
+                key=lambda account: account.full_name.casefold(),
+            )
+        finally:
+            book.close()
+
+    def list_payments(
+        self,
+        settings: dict,
+        account_guids: set[str],
+        period_start: date,
+        period_end: date,
+    ) -> list[GnuCashPayment]:
+        if not account_guids:
+            return []
+        book = self._open_book(settings)
+        try:
+            payments: list[GnuCashPayment] = []
+            for account in book.accounts:
+                if str(account.guid) not in account_guids:
+                    continue
+                for split in account.splits:
+                    transaction = split.transaction
+                    booking_date = transaction.post_date
+                    if not period_start <= booking_date <= period_end:
+                        continue
+                    payments.append(
+                        GnuCashPayment(
+                            split_guid=str(split.guid),
+                            transaction_guid=str(transaction.guid),
+                            account_guid=str(account.guid),
+                            booking_date=booking_date,
+                            # The configured account only holds NK advances. The
+                            # source account type determines the sign in GnuCash;
+                            # EasyPrent stores the payment magnitude uniformly.
+                            amount=abs(Decimal(str(split.value))),
+                            description=str(transaction.description or ""),
+                        )
+                    )
+            return payments
+        finally:
+            book.close()

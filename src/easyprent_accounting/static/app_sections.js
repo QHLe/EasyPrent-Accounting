@@ -140,7 +140,7 @@
             ),
             e("label", null, "Von", e("input", { type: "date", name: "period_start", value: props.settlementFilters.period_start, onChange: props.onSettlementFilterChange })),
             e("label", null, "Bis", e("input", { type: "date", name: "period_end", value: props.settlementFilters.period_end, onChange: props.onSettlementFilterChange })),
-            e("button", { type: "submit", disabled: !settlementTargetValue }, "Abrechnung laden")
+            e("button", { type: "submit", disabled: !settlementTargetValue }, "Abrechnung aktualisieren")
           ),
           table(
             [
@@ -148,6 +148,8 @@
               "Mietobjekt",
               "Abgerechneter Zeitraum",
               "Kostenanteil",
+              "Geleistete Vorauszahlungen",
+              "Saldo",
               "Dokument",
             ],
             props.settlementRows
@@ -155,15 +157,19 @@
           e(
             "p",
             { className: "hint" },
-            "Vorauszahlungen und Saldo werden nicht automatisch aus dem Mietvertrag " +
-              "abgeleitet und daher derzeit nicht ausgewiesen."
+            "Beim Aktualisieren werden fehlende GnuCash-Nebenkostenvorauszahlungen " +
+              "für den gewählten Zeitraum eingelesen. Der Buchungsmonat zählt."
           ),
           props.settlement
             ? e(
                 "p",
                 { className: "hint" },
                 "Gesamt: Kosten ",
-                props.settlement.totals.costs
+                props.settlement.totals.costs,
+                " · Vorauszahlungen ",
+                props.settlement.totals.advances == null ? "-" : props.settlement.totals.advances,
+                " · Saldo ",
+                props.settlement.totals.balance == null ? "-" : props.settlement.totals.balance
               )
             : null
         ),
@@ -266,6 +272,103 @@
               "button",
               { type: "submit", disabled: props.isActionDisabled },
               props.saving ? "Speichert ..." : "Einstellungen speichern"
+            )
+          )
+        ),
+        e(
+          "form",
+          { onSubmit: props.onGnuCashSubmit },
+          e("h3", null, "GnuCash-Zahlungsimport"),
+          e(
+            "p",
+            { className: "hint" },
+            "Der Abrechnungs-Button liest Nebenkostenvorauszahlungen ausschließlich lesend aus dem PostgreSQL-GnuCash-Buch."
+          ),
+          e(
+            "div",
+            { className: "form-grid" },
+            e(
+              "label",
+              null,
+              "Host",
+              e("input", {
+                value: props.gnucashForm.host,
+                onChange: function (event) { props.onGnuCashFieldChange("host", event.target.value); },
+                required: true,
+              })
+            ),
+            e(
+              "label",
+              null,
+              "Port",
+              e("input", {
+                type: "number",
+                min: "1",
+                max: "65535",
+                value: props.gnucashForm.port,
+                onChange: function (event) { props.onGnuCashFieldChange("port", event.target.value); },
+                required: true,
+              })
+            ),
+            e(
+              "label",
+              null,
+              "Datenbank",
+              e("input", {
+                value: props.gnucashForm.database,
+                onChange: function (event) { props.onGnuCashFieldChange("database", event.target.value); },
+                required: true,
+              })
+            ),
+            e(
+              "label",
+              null,
+              "Benutzer",
+              e("input", {
+                value: props.gnucashForm.username,
+                onChange: function (event) { props.onGnuCashFieldChange("username", event.target.value); },
+                required: true,
+              })
+            ),
+            e(
+              "label",
+              null,
+              "Passwort",
+              e("input", {
+                type: "password",
+                value: props.gnucashForm.password,
+                placeholder: props.gnucashSettings.password_present
+                  ? "Leer lassen, um das gespeicherte Passwort zu behalten"
+                  : "",
+                onChange: function (event) { props.onGnuCashFieldChange("password", event.target.value); },
+                required: !props.gnucashSettings.password_present,
+              })
+            ),
+            e(
+              "label",
+              null,
+              "TLS-Modus",
+              e(
+                "select",
+                {
+                  value: props.gnucashForm.sslmode,
+                  onChange: function (event) { props.onGnuCashFieldChange("sslmode", event.target.value); },
+                },
+                ["require", "verify-ca", "verify-full", "prefer", "allow", "disable"].map(function (mode) {
+                  return e("option", { key: mode, value: mode }, mode);
+                })
+              )
+            ),
+            e(
+              "p",
+              { className: "hint" },
+              "Passwort (maskiert): ",
+              props.gnucashSettings.password_masked || "Nicht gesetzt"
+            ),
+            e(
+              "button",
+              { type: "submit", disabled: props.isActionDisabled },
+              props.saving ? "Speichert ..." : "GnuCash-Einstellungen speichern"
             )
           )
         ),
