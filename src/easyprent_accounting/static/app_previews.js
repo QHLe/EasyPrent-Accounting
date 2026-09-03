@@ -25,14 +25,6 @@
     return String(value || "").trim().toLowerCase();
   }
 
-  function formatSettlementAdvance(value) {
-    if (value == null || value === "") {
-      return "-";
-    }
-    const normalized = String(value);
-    return normalized.startsWith("-") ? normalized.slice(1) : "-" + normalized;
-  }
-
   function matchesManagementFilter(managementListFilters, tabKey, values) {
     const query = normalizedFilterText((managementListFilters || {})[tabKey]);
     if (!query) {
@@ -262,7 +254,7 @@
             String(row.billing_period_end || "")
         ),
         e("td", null, row.allocated_costs),
-        e("td", null, formatSettlementAdvance(row.advances_paid)),
+        e("td", null, row.advances_paid == null ? "-" : row.advances_paid),
         e("td", null, row.balance == null ? "-" : row.balance),
         e(
           "td",

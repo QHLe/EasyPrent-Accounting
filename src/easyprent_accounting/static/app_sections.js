@@ -171,11 +171,7 @@
                 "Gesamt: Kosten ",
                 props.settlement.totals.costs,
                 " · Vorauszahlungen ",
-                props.settlement.totals.advances == null
-                  ? "-"
-                  : String(props.settlement.totals.advances).startsWith("-")
-                    ? String(props.settlement.totals.advances).slice(1)
-                    : "-" + String(props.settlement.totals.advances),
+                props.settlement.totals.advances == null ? "-" : props.settlement.totals.advances,
                 " · Saldo ",
                 props.settlement.totals.balance == null ? "-" : props.settlement.totals.balance
               )

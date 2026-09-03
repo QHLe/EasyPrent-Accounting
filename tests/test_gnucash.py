@@ -92,7 +92,7 @@ class GnuCashPaymentImportTests(unittest.TestCase):
                     transaction_guid="transaction-jan-payment",
                     account_guid="nk-tenant-1",
                     booking_date=date(2025, 1, 5),
-                    amount=Decimal("75.00"),
+                    amount=Decimal("-75.00"),
                     description="Nebenkostenvorauszahlung Januar",
                 )
             ]
@@ -127,13 +127,13 @@ class GnuCashPaymentImportTests(unittest.TestCase):
         self.assertEqual(repeated_import["imported"], 0)
         self.assertEqual(repeated_import["existing"], 1)
         self.assertEqual(reader.requests[0][0], {"nk-tenant-1"})
-        self.assertEqual(tenant_result["advances_paid"], "75.00")
+        self.assertEqual(tenant_result["advances_paid"], "-75.00")
         self.assertEqual(
             tenant_result["balance"],
             f"{Decimal(tenant_result['allocated_costs']) - Decimal('75.00'):.2f}",
         )
 
-    def test_keeps_negative_refunds_signed(self) -> None:
+    def test_keeps_positive_reversals_signed_and_increases_the_balance(self) -> None:
         reader = FakeGnuCashReader(
             [
                 GnuCashPayment(
@@ -141,7 +141,7 @@ class GnuCashPaymentImportTests(unittest.TestCase):
                     transaction_guid="transaction-refund",
                     account_guid="nk-tenant-1",
                     booking_date=date(2025, 1, 5),
-                    amount=Decimal("-20.00"),
+                    amount=Decimal("20.00"),
                     description="Rückzahlung",
                 )
             ]
@@ -155,7 +155,11 @@ class GnuCashPaymentImportTests(unittest.TestCase):
         )
 
         tenant_result = next(result for result in settlement["results"] if result["lease_id"] == 1)
-        self.assertEqual(tenant_result["advances_paid"], "-20.00")
+        self.assertEqual(tenant_result["advances_paid"], "20.00")
+        self.assertEqual(
+            tenant_result["balance"],
+            f"{Decimal(tenant_result['allocated_costs']) + Decimal('20.00'):.2f}",
+        )
 
     def test_import_uses_the_tenant_nk_account_without_a_bank_account(self) -> None:
         update_gnucash_settings(
@@ -176,7 +180,7 @@ class GnuCashPaymentImportTests(unittest.TestCase):
                     transaction_guid="transaction-no-bank-link",
                     account_guid="nk-tenant-1",
                     booking_date=date(2025, 1, 5),
-                    amount=Decimal("75.00"),
+                    amount=Decimal("-75.00"),
                     description="Nebenkostenvorauszahlung",
                 )
             ]

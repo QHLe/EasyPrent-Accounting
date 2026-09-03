@@ -253,7 +253,7 @@ def _render(
     period_label: str = "01.01.2026 – 31.12.2026",
     line_items: list[dict] | None = None,
     allocated_costs: str = "300.00",
-    advances_paid: str | None = "100.00",
+    advances_paid: str | None = "-100.00",
     balance: str | None = "200.00",
 ) -> bytes:
     with tempfile.TemporaryDirectory() as directory:
@@ -422,6 +422,31 @@ class OdsTemplateTests(unittest.TestCase):
         self.assertNotIn("Nachzahlung", content)
         self.assertNotIn("Guthaben", content)
 
+    def test_render_adds_signed_advance_payments_to_costs_for_the_balance(self) -> None:
+        document = _render(
+            _template_bytes(),
+            allocated_costs="300.00",
+            advances_paid="-100.00",
+            balance="200.00",
+        )
+
+        with ZipFile(BytesIO(document)) as archive:
+            root = ET.fromstring(archive.read("content.xml"))
+            content = archive.read("content.xml").decode("utf-8")
+        formulas = {
+            cell.get(f"{{{TABLE_NS}}}formula")
+            for cell in root.findall(f".//{{{TABLE_NS}}}table-cell")
+            if cell.get(f"{{{TABLE_NS}}}formula")
+        }
+
+        self.assertIn("-100,00 €", content)
+        self.assertTrue(
+            any(
+                formula.startswith("of:=ABS(") and "]+" in formula
+                for formula in formulas
+            )
+        )
+
     def test_render_left_aligns_all_cost_amounts(self) -> None:
         document = _render(
             _template_bytes(),
@@ -471,7 +496,7 @@ class OdsTemplateTests(unittest.TestCase):
         self.assertTrue(any(re.fullmatch(r"of:=\[\.A\d+\]", formula) for formula in formulas))
         self.assertTrue(
             any(
-                re.fullmatch(r"of:=ABS\(\[\.C\d+\]-\[\.A\d+\]\)", formula)
+                re.fullmatch(r"of:=ABS\(\[\.C\d+\]\+\[\.A\d+\]\)", formula)
                 for formula in formulas
             )
         )

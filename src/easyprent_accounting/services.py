@@ -3615,7 +3615,7 @@ def settlement_for_period(
                 start=Decimal("0"),
             )
         )
-        balance = quantize_money(Decimal(lease_result["allocated_costs"]) - advances_paid)
+        balance = quantize_money(Decimal(lease_result["allocated_costs"]) + advances_paid)
         lease_result["advances_paid"] = f"{advances_paid:.2f}"
         lease_result["balance"] = f"{balance:.2f}"
         total_advances += advances_paid
@@ -3623,7 +3623,7 @@ def settlement_for_period(
     result["totals"] = {
         "costs": f"{total_costs:.2f}",
         "advances": f"{quantize_money(total_advances):.2f}",
-        "balance": f"{quantize_money(total_costs - total_advances):.2f}",
+        "balance": f"{quantize_money(total_costs + total_advances):.2f}",
     }
     result["property_id"] = property_id
     result["unit_id"] = unit_id
