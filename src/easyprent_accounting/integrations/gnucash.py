@@ -95,9 +95,6 @@ class PiecashGnuCashReader:
     ) -> list[GnuCashPayment]:
         if not account_guids:
             return []
-        bank_account_guid = str(settings.get("bank_account_guid") or "").strip()
-        if not bank_account_guid:
-            raise GnuCashIntegrationError("GnuCash bank account is not configured")
         book = self._open_book(settings)
         try:
             payments: list[GnuCashPayment] = []
@@ -113,25 +110,16 @@ class PiecashGnuCashReader:
                     booking_date = transaction.post_date
                     if not period_start <= booking_date <= period_end:
                         continue
-                    bank_splits = [
-                        transaction_split
-                        for transaction_split in transaction.splits
-                        if str(transaction_split.account.guid) == bank_account_guid
-                    ]
-                    if not bank_splits:
-                        continue
                     payments.append(
                         GnuCashPayment(
                             split_guid=str(split.guid),
                             transaction_guid=str(transaction.guid),
                             account_guid=str(account.guid),
                             booking_date=booking_date,
-                            # The bank split determines the economic direction:
-                            # incoming bank money is positive; refunds are negative.
-                            amount=sum(
-                                (Decimal(str(bank_split.value)) for bank_split in bank_splits),
-                                start=Decimal("0"),
-                            ),
+                            # The selected NK account is the authoritative
+                            # assignment made in GnuCash. Its booked amount is
+                            # imported directly; payment splits are positive.
+                            amount=abs(Decimal(str(split.value))),
                             description=str(transaction.description or ""),
                         )
                     )

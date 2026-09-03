@@ -234,8 +234,7 @@ def _mask_password(password: str | None) -> str | None:
 def _get_gnucash_settings_row(connection: sqlite3.Connection) -> sqlite3.Row | None:
     return connection.execute(
         """
-        SELECT host, port, database_name, username, password, sslmode,
-               bank_account_guid, bank_account_name, updated_at
+        SELECT host, port, database_name, username, password, sslmode, updated_at
         FROM gnucash_settings
         ORDER BY id DESC
         LIMIT 1
@@ -255,8 +254,6 @@ def get_gnucash_settings(connection: sqlite3.Connection) -> dict:
             "password_present": False,
             "password_masked": None,
             "sslmode": "require",
-            "bank_account_guid": None,
-            "bank_account_name": None,
             "updated_at": None,
         }
     password = str(row["password"] or "")
@@ -269,8 +266,6 @@ def get_gnucash_settings(connection: sqlite3.Connection) -> dict:
         "password_present": password != "",
         "password_masked": _mask_password(password),
         "sslmode": str(row["sslmode"] or "require"),
-        "bank_account_guid": row["bank_account_guid"],
-        "bank_account_name": row["bank_account_name"],
         "updated_at": row["updated_at"],
     }
 
@@ -286,7 +281,6 @@ def _gnucash_connection_settings(connection: sqlite3.Connection) -> dict:
         "username": str(row["username"]),
         "password": str(row["password"]),
         "sslmode": str(row["sslmode"] or "require"),
-        "bank_account_guid": str(row["bank_account_guid"] or ""),
     }
 
 
@@ -300,8 +294,6 @@ def update_gnucash_settings(connection: sqlite3.Connection, payload: dict) -> di
     sslmode = str(payload.get("sslmode") or "require").strip()
     if sslmode not in {"disable", "allow", "prefer", "require", "verify-ca", "verify-full"}:
         raise ValueError("sslmode is invalid")
-    bank_account_guid = str(payload.get("bank_account_guid") or "").strip() or None
-    bank_account_name = str(payload.get("bank_account_name") or "").strip() or None
 
     existing = _get_gnucash_settings_row(connection)
     password_input = payload.get("password")
@@ -319,23 +311,20 @@ def update_gnucash_settings(connection: sqlite3.Connection, payload: dict) -> di
         connection.execute(
             """
             INSERT INTO gnucash_settings (
-                host, port, database_name, username, password, sslmode,
-                bank_account_guid, bank_account_name, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                host, port, database_name, username, password, sslmode, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (host, port, database, username, password, sslmode,
-             bank_account_guid, bank_account_name, timestamp, timestamp),
+            (host, port, database, username, password, sslmode, timestamp, timestamp),
         )
     else:
         connection.execute(
             """
             UPDATE gnucash_settings
             SET host = ?, port = ?, database_name = ?, username = ?, password = ?,
-                sslmode = ?, bank_account_guid = ?, bank_account_name = ?, updated_at = ?
+                sslmode = ?, updated_at = ?
             WHERE id = ?
             """,
-            (host, port, database, username, password, sslmode,
-             bank_account_guid, bank_account_name, timestamp, existing_id["id"]),
+            (host, port, database, username, password, sslmode, timestamp, existing_id["id"]),
         )
     connection.commit()
     return get_gnucash_settings(connection)
@@ -3038,8 +3027,6 @@ def import_gnucash_payments_for_period(
 
     active_reader = reader or PiecashGnuCashReader()
     connection_settings = _gnucash_connection_settings(connection)
-    if not connection_settings["bank_account_guid"]:
-        raise ValueError("a GnuCash bank account must be configured before importing payments")
     payments = active_reader.list_payments(
         connection_settings, set(accounts), start, end
     )

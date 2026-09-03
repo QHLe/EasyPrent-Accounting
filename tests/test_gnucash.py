@@ -154,6 +154,37 @@ class GnuCashPaymentImportTests(unittest.TestCase):
         tenant_result = next(result for result in settlement["results"] if result["lease_id"] == 1)
         self.assertEqual(tenant_result["advances_paid"], "-20.00")
 
+    def test_import_uses_the_tenant_nk_account_without_a_bank_account(self) -> None:
+        update_gnucash_settings(
+            self.connection,
+            {
+                "host": "gnucash.internal",
+                "port": 5432,
+                "database": "gnucash",
+                "username": "easyprent_reader",
+                "password": "",
+                "sslmode": "require",
+            },
+        )
+        reader = FakeGnuCashReader(
+            [
+                GnuCashPayment(
+                    split_guid="split-no-bank-link",
+                    transaction_guid="transaction-no-bank-link",
+                    account_guid="nk-tenant-1",
+                    booking_date=date(2025, 1, 5),
+                    amount=Decimal("75.00"),
+                    description="Nebenkostenvorauszahlung",
+                )
+            ]
+        )
+
+        result = import_gnucash_payments_for_period(
+            self.connection, self.property_id, "2025-01-01", "2025-12-31", reader=reader
+        )
+
+        self.assertEqual(result["imported"], 1)
+
     def test_rejects_payment_when_multiple_leases_are_active(self) -> None:
         lease = self.connection.execute("SELECT * FROM leases WHERE id = 1").fetchone()
         assert lease is not None

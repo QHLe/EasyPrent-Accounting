@@ -174,8 +174,6 @@ CREATE TABLE IF NOT EXISTS gnucash_settings (
     username TEXT NOT NULL,
     password TEXT NOT NULL,
     sslmode TEXT NOT NULL DEFAULT 'require',
-    bank_account_guid TEXT,
-    bank_account_name TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -342,17 +340,11 @@ def _ensure_gnucash_settings_table(connection: sqlite3.Connection) -> None:
             username TEXT NOT NULL,
             password TEXT NOT NULL,
             sslmode TEXT NOT NULL DEFAULT 'require',
-            bank_account_guid TEXT,
-            bank_account_name TEXT,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         )
         """
     )
-    columns = {row["name"] for row in connection.execute("PRAGMA table_info(gnucash_settings)").fetchall()}
-    for column in ("bank_account_guid", "bank_account_name"):
-        if column not in columns:
-            connection.execute(f"ALTER TABLE gnucash_settings ADD COLUMN {column} TEXT")
 
 
 def _ensure_gnucash_payments_table(connection: sqlite3.Connection) -> None:

@@ -360,32 +360,6 @@
               )
             ),
             e(
-              "label",
-              null,
-              "Bankkonto für Zahlungseingänge",
-              e(
-                "select",
-                {
-                  value: props.gnucashForm.bank_account_guid,
-                  onChange: function (event) {
-                    const selected = (props.gnucashAccounts || []).find(function (account) {
-                      return account.guid === event.target.value;
-                    });
-                    props.onGnuCashFieldChange("bank_account_guid", event.target.value);
-                    props.onGnuCashFieldChange(
-                      "bank_account_name",
-                      selected ? selected.full_name : ""
-                    );
-                  },
-                },
-                [e("option", { key: "empty", value: "" }, "Bankkonto auswählen")].concat(
-                  (props.gnucashAccounts || []).map(function (account) {
-                    return e("option", { key: account.guid, value: account.guid }, account.full_name);
-                  })
-                )
-              )
-            ),
-            e(
               "button",
               {
                 type: "button",

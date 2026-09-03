@@ -3,7 +3,8 @@
 ## Zielbild
 
 Beim Anfordern einer konkreten Nebenkostenabrechnung liest EasyPrent
-ausschließlich die dafür relevanten Bankbuchungen aus dem GnuCash-Buch in einer
+ausschließlich die dafür relevanten Buchungen der verknüpften
+Nebenkostenvorauszahlungskonten aus dem GnuCash-Buch in einer
 entfernten PostgreSQL-Datenbank über `piecash`. Aus den Split-Buchungen werden
 idempotent Zahlungsnachweise importiert: Ein bereits gespeicherter GnuCash-Split
 wird nicht erneut angelegt. Eine Zuordnung verbindet einen Zahlungsnachweis
@@ -33,9 +34,9 @@ Plausibilitätsprüfung.
   Zahlungsnachweise bei wiederholtem Öffnen derselben Abrechnung.
 - **Mieteridentifikation:** Jeder Mieter besitzt ein ausgewähltes
   **GnuCash-NK-Vorauszahlungskonto** als Unterkonto seines
-  **GnuCash-Mieterkontos**. Ein Gegensplit auf diesem Konto ordnet die Buchung
-  direkt dem Mieter und der Zahlungsart Nebenkostenvorauszahlung zu; das
-  gemeinsame Bankkonto wird global konfiguriert.
+  **GnuCash-Mieterkontos**. Die Aufsplittung und Zuweisung erfolgen bereits in
+  GnuCash; jede Buchung auf diesem Konto ist damit direkt diesem Mieter und der
+  Zahlungsart Nebenkostenvorauszahlung zugeordnet.
 - **Zahlungsmonat:** Für die Abrechnung zählt der Kalendermonat des
   GnuCash-Buchungsdatums. Es gibt keine manuelle Monatszuordnung und keine
   Aufteilung einer Zahlung auf mehrere Monate.
@@ -108,21 +109,19 @@ Type: Grilling
 
 ### Question
 
-Meinst du mit dem in der Mieter-Maske ausgewählten Konto das **GnuCash-
-Mieterkonto/Gegenkonto** (also das andere Split-Konto neben dem gemeinsamen
-Bankkonto), oder das jeweils genutzte **Bankkonto** selbst?
+Ist das in der Mieter-Maske ausgewählte Konto das eigene
+**GnuCash-NK-Vorauszahlungskonto** des Mieters?
 
 ### Recommendation
 
-Das GnuCash-Mieterkonto/Gegenkonto hinterlegen. Die Buchung wird dann nur als
-Vorauszahlung dieses Mieters erkannt, wenn ein Split des konfigurierten
-Bankkontos dem hinterlegten Mieterkonto gegenübersteht. Das gemeinsame Bankkonto
-bleibt eine globale Integrationseinstellung und wird nicht pro Mieter dupliziert.
+Das GnuCash-NK-Vorauszahlungskonto hinterlegen und ausschließlich dessen Splits
+importieren. Die in GnuCash bereits vorgenommene Aufsplittung ist die fachliche
+Quelle der Zuordnung; ein zusätzliches Bankkonto ist nicht nötig.
 
 ### Answer
 
-Es handelt sich um das GnuCash-Mieterkonto beziehungsweise Gegenkonto neben dem
-gemeinsamen Bankkonto, nicht um das Bankkonto des Mieters.
+Es handelt sich um das GnuCash-NK-Vorauszahlungskonto im Mieterkonto, nicht um
+ein Bankkonto.
 
 ## #3: Wie erfolgt die Zuordnung zum Mietvertrag?
 
@@ -141,8 +140,8 @@ ist keine Heuristik aus Mietername, Betrag oder Verwendungszweck erforderlich.
 
 ### Answer
 
-Der Gegensplit einer Bankbuchung auf das beim Mieter hinterlegte
-GnuCash-Mieterkonto ordnet sie direkt diesem Mieter zu.
+Jeder Split auf dem beim Mieter hinterlegten GnuCash-NK-Vorauszahlungskonto ist
+bereits direkt diesem Mieter zugeordnet.
 
 ## #3a: Woran erkennt das System die Nebenkostenvorauszahlung?
 
