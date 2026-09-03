@@ -535,6 +535,7 @@ def import_application_data(connection: sqlite3.Connection, payload: dict) -> di
         raise ValueError("tables is required")
 
     total_rows = 0
+    skipped_legacy_gnucash_payments = 0
     try:
         connection.execute("BEGIN")
         for table_name in reversed(APP_DATA_EXPORT_TABLES):
@@ -555,6 +556,11 @@ def import_application_data(connection: sqlite3.Connection, payload: dict) -> di
             for row_index, row in enumerate(table_rows):
                 if not isinstance(row, dict):
                     raise ValueError(f"tables.{table_name}[{row_index}] must be an object")
+                if table_name == "gnucash_payments" and not row.get("lease_id"):
+                    # Exports from before contract assignment cannot be allocated
+                    # safely. They can be re-imported from GnuCash on demand.
+                    skipped_legacy_gnucash_payments += 1
+                    continue
                 values = [
                     _decode_application_import_value(row.get(column_name))
                     for column_name in columns
@@ -574,6 +580,7 @@ def import_application_data(connection: sqlite3.Connection, payload: dict) -> di
         "imported_at": datetime.now(UTC).replace(microsecond=0).isoformat(),
         "table_count": len(APP_DATA_EXPORT_TABLES),
         "row_count": total_rows,
+        "skipped_legacy_gnucash_payments": skipped_legacy_gnucash_payments,
     }
 
 
@@ -3134,6 +3141,12 @@ def delete_lease(connection: sqlite3.Connection, lease_id: int) -> dict:
     if row is None:
         raise ValueError("lease not found")
 
+    payment_count_row = connection.execute(
+        "SELECT COUNT(*) AS payment_count FROM gnucash_payments WHERE lease_id = ?", (lease_id,)
+    ).fetchone()
+    if payment_count_row is not None and int(payment_count_row["payment_count"] or 0) > 0:
+        raise ValueError("lease cannot be deleted while GnuCash payments exist")
+
     connection.execute("DELETE FROM lease_documents WHERE lease_id = ?", (lease_id,))
     connection.execute("DELETE FROM leases WHERE id = ?", (lease_id,))
     connection.commit()
@@ -3599,7 +3612,7 @@ def settlement_for_period(
         """
         SELECT lease_id, amount
         FROM gnucash_payments
-        WHERE booking_date >= ? AND booking_date <= ?
+        WHERE booking_date >= ? AND booking_date <= ? AND lease_id IS NOT NULL
         """,
         (period_start, period_end),
     ).fetchall()

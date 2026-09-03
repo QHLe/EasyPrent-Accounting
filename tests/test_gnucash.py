@@ -8,6 +8,7 @@ from decimal import Decimal
 from src.easyprent_accounting.db import SCHEMA, seed_demo_data
 from src.easyprent_accounting.integrations.gnucash import GnuCashPayment
 from src.easyprent_accounting.services import (
+    delete_lease,
     import_gnucash_payments_for_period,
     settlement_for_period,
     update_gnucash_settings,
@@ -187,3 +188,23 @@ class GnuCashPaymentImportTests(unittest.TestCase):
             import_gnucash_payments_for_period(
                 self.connection, self.property_id, "2025-01-01", "2025-12-31", reader=reader
             )
+
+    def test_rejects_deleting_a_lease_with_imported_payments(self) -> None:
+        reader = FakeGnuCashReader(
+            [
+                GnuCashPayment(
+                    split_guid="split-protected-lease",
+                    transaction_guid="transaction-protected-lease",
+                    account_guid="nk-tenant-1",
+                    booking_date=date(2025, 1, 5),
+                    amount=Decimal("75.00"),
+                    description="Nebenkostenvorauszahlung",
+                )
+            ]
+        )
+        import_gnucash_payments_for_period(
+            self.connection, self.property_id, "2025-01-01", "2025-12-31", reader=reader
+        )
+
+        with self.assertRaisesRegex(ValueError, "GnuCash payments exist"):
+            delete_lease(self.connection, 1)
