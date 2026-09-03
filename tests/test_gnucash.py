@@ -4,9 +4,10 @@ import sqlite3
 import unittest
 from datetime import date
 from decimal import Decimal
+from types import SimpleNamespace
 
 from src.easyprent_accounting.db import SCHEMA, seed_demo_data
-from src.easyprent_accounting.integrations.gnucash import GnuCashPayment
+from src.easyprent_accounting.integrations.gnucash import GnuCashPayment, PiecashGnuCashReader
 from src.easyprent_accounting.services import (
     delete_lease,
     import_gnucash_payments_for_period,
@@ -239,3 +240,25 @@ class GnuCashPaymentImportTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "GnuCash payments exist"):
             delete_lease(self.connection, 1)
+
+
+class PiecashGnuCashReaderTests(unittest.TestCase):
+    def test_preserves_the_sign_of_a_nk_account_split(self) -> None:
+        transaction = SimpleNamespace(
+            guid="transaction-refund",
+            post_date=date(2025, 1, 5),
+            description="Rückzahlung",
+        )
+        split = SimpleNamespace(guid="split-refund", value=Decimal("-20.00"), transaction=transaction)
+        account = SimpleNamespace(
+            guid="nk-tenant-1",
+            parent=SimpleNamespace(guid="tenant-1"),
+            splits=[split],
+        )
+        book = SimpleNamespace(accounts=[account], close=lambda: None)
+        reader = PiecashGnuCashReader()
+        reader._open_book = lambda settings: book  # type: ignore[method-assign]
+
+        payments = reader.list_payments({}, {"nk-tenant-1"}, date(2025, 1, 1), date(2025, 1, 31))
+
+        self.assertEqual(payments[0].amount, Decimal("-20.00"))

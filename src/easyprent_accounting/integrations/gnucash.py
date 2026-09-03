@@ -117,9 +117,9 @@ class PiecashGnuCashReader:
                             account_guid=str(account.guid),
                             booking_date=booking_date,
                             # The selected NK account is the authoritative
-                            # assignment made in GnuCash. Its booked amount is
-                            # imported directly; payment splits are positive.
-                            amount=abs(Decimal(str(split.value))),
+                            # assignment made in GnuCash. Preserve its economic
+                            # direction so refunds reduce paid advances.
+                            amount=Decimal(str(split.value)),
                             description=str(transaction.description or ""),
                         )
                     )
