@@ -525,7 +525,11 @@ def _migrate_legacy_import_gnucash_accounts(tables_payload: dict) -> int:
         if not isinstance(tenant, dict):
             continue
         account_guid = str(tenant.get("gnucash_nk_account_guid") or "").strip()
-        if not account_guid or account_guid in linked_account_guids:
+        if not account_guid:
+            continue
+        if account_guid in linked_account_guids:
+            tenant["gnucash_nk_account_guid"] = None
+            tenant["gnucash_nk_account_name"] = None
             continue
         candidates = [
             lease
@@ -555,6 +559,8 @@ def _migrate_legacy_import_gnucash_accounts(tables_payload: dict) -> int:
         )
         target_lease["gnucash_nk_account_guid"] = account_guid
         target_lease["gnucash_nk_account_name"] = tenant.get("gnucash_nk_account_name")
+        tenant["gnucash_nk_account_guid"] = None
+        tenant["gnucash_nk_account_name"] = None
         linked_account_guids.add(account_guid)
         migrated += 1
     return migrated

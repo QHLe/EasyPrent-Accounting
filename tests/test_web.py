@@ -1231,6 +1231,14 @@ process.stdout.write(JSON.stringify({ target: !!target, options: options }));
         self.assertEqual(document_download_body, b"Backup Dokument aus Paperless")
 
     def test_api_import_migrates_legacy_tenant_gnucash_account_to_lease(self) -> None:
+        connection = sqlite3.connect(self.db_path)
+        try:
+            connection.execute("ALTER TABLE tenants ADD COLUMN gnucash_nk_account_guid TEXT")
+            connection.execute("ALTER TABLE tenants ADD COLUMN gnucash_nk_account_name TEXT")
+            connection.commit()
+        finally:
+            connection.close()
+
         export_status, _, export_body = self._call_app("GET", "/api/application-export")
         export_payload = json.loads(export_body.decode("utf-8"))
         target_lease = export_payload["tables"]["leases"][0]
@@ -1263,6 +1271,14 @@ process.stdout.write(JSON.stringify({ target: !!target, options: options }));
                 """,
                 (target_lease["id"],),
             ).fetchone()
+            restored_tenant = connection.execute(
+                """
+                SELECT gnucash_nk_account_guid, gnucash_nk_account_name
+                FROM tenants
+                WHERE id = ?
+                """,
+                (target_tenant["id"],),
+            ).fetchone()
         finally:
             connection.close()
 
@@ -1271,6 +1287,8 @@ process.stdout.write(JSON.stringify({ target: !!target, options: options }));
         self.assertEqual(import_payload["migrated_legacy_gnucash_accounts"], 1)
         self.assertEqual(restored_lease["gnucash_nk_account_guid"], "legacy-backup-account")
         self.assertEqual(restored_lease["gnucash_nk_account_name"], "Alt:Nebenkosten")
+        self.assertIsNone(restored_tenant["gnucash_nk_account_guid"])
+        self.assertIsNone(restored_tenant["gnucash_nk_account_name"])
 
     def test_api_can_delete_lease(self) -> None:
         tenant_status, _, tenant_body = self._call_app(
