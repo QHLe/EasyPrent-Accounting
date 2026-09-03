@@ -169,7 +169,7 @@ class GnuCashPaymentImportTests(unittest.TestCase):
             f"{Decimal(settlement['totals']['costs']) - Decimal('75.00'):.2f}",
         )
 
-    def test_assigns_payment_by_lease_account_within_requested_period(self) -> None:
+    def test_ignores_payment_before_lease_start(self) -> None:
         lease = self.connection.execute("SELECT * FROM leases WHERE id = 1").fetchone()
         assert lease is not None
         update_lease(
@@ -210,7 +210,8 @@ class GnuCashPaymentImportTests(unittest.TestCase):
             reader=reader,
         )
 
-        self.assertEqual(imported["imported"], 1)
+        self.assertEqual(imported["imported"], 0)
+        self.assertEqual(imported["existing"], 0)
         self.assertEqual(
             reader.requests,
             [({"nk-tenant-1"}, date(2025, 1, 1), date(2025, 12, 31))],
@@ -219,7 +220,35 @@ class GnuCashPaymentImportTests(unittest.TestCase):
             "SELECT lease_id FROM gnucash_payments WHERE split_guid = ?",
             ("split-before-lease-start",),
         ).fetchone()
-        self.assertEqual(stored["lease_id"], 1)
+        self.assertIsNone(stored)
+
+        self.connection.execute(
+            """
+            INSERT INTO gnucash_payments (
+                split_guid, transaction_guid, tenant_id, lease_id, account_guid, account_name,
+                booking_date, amount, description, imported_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "previously-imported-before-lease-start",
+                "transaction-before-lease-start",
+                self.tenant_id,
+                1,
+                "nk-tenant-1",
+                "Mieter 1:Nebenkosten",
+                "2025-01-31",
+                "-75.00",
+                "Vorauszahlung vor Mietbeginn",
+                "2025-02-01T00:00:00+00:00",
+            ),
+        )
+        self.connection.commit()
+
+        settlement = settlement_for_period(
+            self.connection, self.property_id, "2025-01-01", "2025-12-31"
+        )
+        tenant_result = next(result for result in settlement["results"] if result["lease_id"] == 1)
+        self.assertEqual(tenant_result["advances_paid"], "0.00")
 
     def test_positive_reversal_reduces_paid_advances_and_increases_balance(self) -> None:
         reader = FakeGnuCashReader(

@@ -3063,7 +3063,8 @@ def import_gnucash_payments_for_period(
 
     lease_rows = connection.execute(
         """
-        SELECT l.id, l.tenant_id, l.gnucash_nk_account_guid, l.gnucash_nk_account_name
+        SELECT l.id, l.tenant_id, l.start_date, l.end_date,
+               l.gnucash_nk_account_guid, l.gnucash_nk_account_name
         FROM leases l
         JOIN units u ON u.id = l.unit_id
         LEFT JOIN buildings b ON b.id = u.building_id
@@ -3096,6 +3097,12 @@ def import_gnucash_payments_for_period(
     for payment in payments:
         lease = accounts.get(payment.account_guid)
         if lease is None:
+            continue
+        lease_start = parse_date(str(lease["start_date"]))
+        lease_end = parse_date(str(lease["end_date"])) if lease["end_date"] else None
+        if payment.booking_date < lease_start or (
+            lease_end is not None and payment.booking_date > lease_end
+        ):
             continue
         lease_id = int(lease["id"])
         known = connection.execute(
@@ -3641,9 +3648,12 @@ def settlement_for_period(
         )
     payment_rows = connection.execute(
         """
-        SELECT lease_id, amount
-        FROM gnucash_payments
-        WHERE booking_date >= ? AND booking_date <= ? AND lease_id IS NOT NULL
+        SELECT gp.lease_id, gp.amount
+        FROM gnucash_payments gp
+        JOIN leases l ON l.id = gp.lease_id
+        WHERE gp.booking_date >= ? AND gp.booking_date <= ?
+          AND gp.booking_date >= l.start_date
+          AND (l.end_date IS NULL OR gp.booking_date <= l.end_date)
         """,
         (period_start, period_end),
     ).fetchall()

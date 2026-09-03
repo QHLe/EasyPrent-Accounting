@@ -45,6 +45,10 @@ Plausibilitätsprüfung.
 - **Zahlungsmonat:** Für die Abrechnung zählt der Kalendermonat des
   GnuCash-Buchungsdatums. Es gibt keine manuelle Monatszuordnung und keine
   Aufteilung einer Zahlung auf mehrere Monate.
+- **Zeitraumprüfung:** Eine Buchung wird nur berücksichtigt, wenn ihr
+  Buchungsdatum sowohl in den angefragten Abrechnungszeitraum als auch in die
+  Laufzeit des verknüpften Mietvertrags fällt. Buchungen vor Vertragsbeginn oder
+  nach Vertragsende bleiben vorerst unberücksichtigt.
 
 ## #1: Wo wird das GnuCash-Buch gelesen?
 
@@ -104,9 +108,9 @@ Mietvertrag mit seinen GnuCash-Buchungen?
 
 Die PostgreSQL-Zugangsdaten werden in den EasyPrent-Einstellungen hinterlegt.
 In der Mietvertragsmaske wird das zugehörige GnuCash-Konto ausgewählt. Dieses
-Konto ist der Primärschlüssel für die Zahlungszuordnung; Buchungstext,
-Verwendungszweck und ein am Buchungstag aktiver Vertrag sind dafür nicht
-erforderlich.
+Konto ist der Primärschlüssel für die Zahlungszuordnung; Buchungstext und
+Verwendungszweck sind dafür nicht erforderlich. Zusätzlich muss das
+Buchungsdatum in der Laufzeit dieses Mietvertrags liegen.
 
 ## #2a: Welche Kontoseite wird beim Mietvertrag hinterlegt?
 
