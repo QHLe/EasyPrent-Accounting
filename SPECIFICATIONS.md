@@ -338,9 +338,13 @@ Mietverträgen, Nebenkosten und abschreibungsrelevanten Objektdaten.
 - `REQ-NKA-005`
   Das System muss für einen definierten Zeitraum eine Nebenkostenabrechnung pro Mietverhältnis erzeugen können.
 - `REQ-NKA-006`
-  Das System muss Nebenkostenvorauszahlungen in der Abrechnung berücksichtigen können.
+  Die vertraglich vereinbarte Nebenkostenvorauszahlung muss am Mietvertrag
+  gespeichert bleiben, darf aber ohne gesonderte Zahlungsbuchungen nicht als
+  tatsächlich geleistete Vorauszahlung verrechnet werden.
 - `REQ-NKA-007`
-  Das System muss das Ergebnis je Mietverhältnis als Nachzahlung oder Guthaben ausweisen können.
+  Nachzahlung oder Guthaben dürfen erst ausgewiesen werden, wenn tatsächlich
+  geleistete Vorauszahlungen für den Abrechnungszeitraum vorliegen. Bis zur
+  Einführung dieser Zahlungsverwaltung muss der Saldo leer bleiben.
 - `REQ-NKA-008`
   Das System muss die Kostenverteilung nachvollziehbar je Kostenposition darstellen können.
 - `REQ-NKA-009`
@@ -417,6 +421,30 @@ Mietverträgen, Nebenkosten und abschreibungsrelevanten Objektdaten.
   Bei jährlich wiederholenden Kosten muss die tagesgenaue Verteilung auf einem jahresweisen Kostenzyklus basieren, der am `period_start` der Kostenposition verankert ist; ein vollständig abgedeckter Jahreszyklus muss genau den Jahresbetrag ergeben.
 - `REQ-NKA-045`
   Für `Gesamtkosten` muss der Zeitraum (`period_start` und `period_end`) verpflichtend gespeichert werden.
+- `REQ-NKA-046`
+  Die Nebenkostenabrechnung muss als bearbeitbare ODS-Datei aus einer
+  anpassbaren Master-Vorlage erzeugt werden können.
+- `REQ-NKA-047`
+  Der ausgewiesene Abrechnungszeitraum eines Mieters muss auf die tatsächliche
+  Überschneidung von gewähltem Zeitraum und Mietvertrag begrenzt werden.
+- `REQ-NKA-048`
+  Unterjährige Kosten und Verbrauchswerte müssen für den konkreten
+  Vertragszeitraum ermittelt werden; eine pauschale Aufteilung durch zwölf ist
+  nicht zulässig.
+- `REQ-NKA-049`
+  Kostenpositionen müssen im ODS nach Kostenart gruppiert werden. Gibt es
+  mehrere oder abweichend benannte Positionen, müssen sie als Unterpositionen
+  erscheinen, ohne in der Gesamtsumme doppelt gezählt zu werden.
+- `REQ-NKA-050`
+  Die ODS-Ausgabe muss die Struktur für Vorauszahlungen, Summe, Saldo und
+  Ergebnishinweis erhalten. Solange keine tatsächlichen Zahlungsdaten
+  vorliegen, müssen deren dynamische Zellen leer und manuell editierbar sein.
+- `REQ-NKA-051`
+  Jahreskosten und Mieteranteile müssen in der erzeugten ODS-Datei linksbündig
+  formatiert sein.
+- `REQ-NKA-052`
+  Für die Empfängeranschrift muss eine vollständig gepflegte abweichende
+  Mieteranschrift Vorrang vor der Anschrift der Wohnung haben.
 
 ### Objektlebenszyklus
 
@@ -477,7 +505,11 @@ Mietverträgen, Nebenkosten und abschreibungsrelevanten Objektdaten.
 - Vertragsstruktur:
   Mieter -> Mietvertrag -> Einheit
 - Abrechnungsstruktur:
-  Abrechnungszeitraum -> Kostenart -> Verteilerschlüssel -> Ergebnis je Vertrag oder Einheit
+  Abrechnungszeitraum -> Vertragsüberschneidung -> Kostenart -> Position ->
+  Verteilerschlüssel/Verbrauch -> Mieteranteil -> ODS
+- Vorauszahlungsstruktur:
+  Mietvertrag -> vereinbarte Vorauszahlung; zukünftige Zahlungsbuchungen ->
+  periodenbezogene Summe -> Saldo
 - Abschreibungsstruktur:
   Abschreibungsobjekt -> Anschaffungsdaten -> Regel -> Jahreswerte
 
@@ -493,6 +525,9 @@ Mietverträgen, Nebenkosten und abschreibungsrelevanten Objektdaten.
   Keine komplexen Sonderfälle der Nebenkostenabrechnung
 - `OUT-005`
   Keine vollständige steuerliche Speziallogik für Abschreibung
+- `OUT-006`
+  Keine automatische Verrechnung vertraglicher Vorauszahlungen ohne separat
+  erfasste tatsächliche Zahlungsbuchungen
 
 ## Abnahmeorientierte Prüfpunkte
 
@@ -501,7 +536,20 @@ Mietverträgen, Nebenkosten und abschreibungsrelevanten Objektdaten.
 - `ACC-002`
   Die Anforderungen `REQ-LEASE-001` bis `REQ-LEASE-010` sind erfüllt, wenn Mieter und Mietverträge Wohnungen eindeutig zugeordnet werden können, Mietverträge optional zusätzlich einem Zimmer innerhalb der Wohnung zugeordnet werden können, Mieter ohne referenzierende Mietverträge gezielt gelöscht werden können, Mietverträge selbst ebenfalls gezielt gelöscht werden können und sowohl Mieter als auch Mietverträge mit einem oder mehreren Dokumenten einschließlich referenzierter Paperless-Dokumente verknüpft werden können.
 - `ACC-003`
-  Die Anforderungen `REQ-NKA-001` bis `REQ-NKA-045` sind erfüllt, wenn für einen definierten Zeitraum eine nachvollziehbare Nebenkostenabrechnung mit Vorauszahlungen, Saldo und den Kostentypen `total`, `monthly`, `yearly` und `consumption` erzeugt werden kann, Kostenpositionen Objekten der unterstützten Objektarten zugeordnet, gemäß ihrer Typlogik mit verpflichtendem Zeitraum bei Gesamtkosten, offenem oder begrenztem Zeitraum bei wiederholenden Kosten, Verbrauchseinheit oder Zählerbezug erfasst, um Kostenart, Empfänger und Bezeichnung fachlich ergänzt, aus vorhandenen Kombinationen wiederverwendbar vorgeschlagen, nachträglich mit denselben fachlichen Regeln bearbeitet sowie archiviert und erst nach der Archivierung gelöscht werden können, die berechnete Gesamtsumme wiederholender Kosten tagesgenau über die tatsächliche Zeitüberlappung ermittelt wird, jährlich wiederholende Kosten einen am Startdatum verankerten Jahreszyklus für die tagesgenaue Verteilung nutzen, EUR-Präzisionsregeln für Beträge und Verbrauchspreise eingehalten werden und fehlende Bezeichnungen automatisch aus der Kostenart abgeleitet werden.
+  Die Anforderungen `REQ-NKA-001` bis `REQ-NKA-052` sind erfüllt, wenn für
+  einen definierten Zeitraum eine nachvollziehbare, editierbare
+  ODS-Nebenkostenabrechnung mit den Kostentypen `total`, `monthly`, `yearly`
+  und `consumption` erzeugt werden kann, der Mieterzeitraum auf die
+  Vertragsüberschneidung begrenzt ist, unterjährige Kosten und Verbräuche für
+  diesen konkreten Zeitraum ermittelt werden, Kostenarten und Unterpositionen
+  ohne doppelte Summierung dargestellt werden und die Empfängeranschrift die
+  optionale abweichende Mieteranschrift berücksichtigt. Vertragswerte für
+  Vorauszahlungen dürfen nicht als Zahlungen interpretiert werden; die
+  Vorauszahlungs- und Saldostruktur bleibt leer und editierbar, bis eine
+  separate Zahlungsverwaltung verfügbar ist. Kostenpositionen müssen den
+  unterstützten Objektarten zugeordnet, gemäß ihrer Typlogik erfasst,
+  bearbeitet, archiviert und gelöscht werden können; wiederholende Kosten
+  werden tagesgenau verteilt und EUR-Präzisionsregeln eingehalten.
 - `ACC-004`
   Die Anforderungen `REQ-DEPR-001` bis `REQ-DEPR-006` sind erfüllt, wenn Abschreibungsdaten vollständig erfasst und Jahreswerte berechnet werden können.
 - `ACC-005`
@@ -513,5 +561,7 @@ Mietverträgen, Nebenkosten und abschreibungsrelevanten Objektdaten.
 
 - Welche Rollen werden in Version 1 wirklich benötigt?
 - Welche Sonderfälle in der Nebenkostenabrechnung haben Priorität?
+- Wie sollen tatsächliche Vorauszahlungen, Korrekturen und rückwirkende
+  Vertragsänderungen als Zahlungsbuchungen modelliert werden?
 - Welche Abschreibungsarten sollen nach dem MVP unterstützt werden?
 - Welche Auswertungen oder Exporte werden zuerst benötigt?

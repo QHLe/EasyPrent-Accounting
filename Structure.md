@@ -5,7 +5,11 @@
 - `src/easyprent_accounting/`
   Python-Anwendung mit Webserver, Datenbankzugriff, Domänenlogik und HTML-Dashboard
 - `tests/`
-  Unit-Tests für Nebenkosten- und Abschreibungsberechnung
+  Unit- und API-Tests für Berechnung, Web-Anwendung und ODS-Ausgabe
+- `templates/`
+  Bearbeitbare Master-Vorlagen, insbesondere `utility_settlement.ods`
+- `scripts/`
+  Hilfsprogramme zur Vorbereitung und Synchronisierung der ODS-Vorlage
 
 ## Wichtige Module
 
@@ -15,6 +19,10 @@
   Fachlogik für CRUD-nahe Abläufe und Auswertungen
 - `calculations.py`
   Nebenkosten- und Abschreibungsberechnungen
+- `expense_math.py`
+  Tagesgenaue Kostenperioden und Verbrauchsinterpolation
+- `ods_template.py`
+  Vorbereitung und Befüllung der editierbaren ODS-Abrechnung
 - `web.py`
   HTTP-Routing, JSON-API und HTML-Ausgabe
 - `server.py`
@@ -25,5 +33,7 @@
 - Organisation -> Nutzer -> Rollen
 - Immobilie -> Gebäude -> Einheit
 - Mieter -> Mietvertrag -> Einheit
-- Abrechnungszeitraum -> Kostenposition -> Verteilerschlüssel -> Ergebnis je Vertrag
+- Abrechnungszeitraum -> Vertragsüberschneidung -> Kostenart -> Position ->
+  Verteilerschlüssel/Verbrauch -> Mieteranteil -> editierbares ODS
+- Mietvertrag -> vereinbarte Vorauszahlung; spätere Zahlungsbuchungen -> Saldo
 - Abschreibungsobjekt -> Anschaffungsdaten -> Regel -> Jahreswerte

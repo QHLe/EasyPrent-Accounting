@@ -23,16 +23,32 @@ Oder direkt aus dem Checkout:
 
 Danach ist die Anwendung unter `http://localhost:8020` erreichbar.
 
-Verfuegbare Befehle:
+Verfügbare Befehle für einen direkt aus dem Checkout gestarteten Server:
 
 - `./easy-rem start`
 - `./easy-rem stop`
 - `./easy-rem restart`
 - `./easy-rem update`
 
-`update` fuehrt `git pull --ff-only` aus, installiert bei Bedarf Node-Abhaengigkeiten neu und startet einen laufenden Server anschliessend automatisch neu.
+`update` führt `git pull --ff-only` aus, installiert bei Bedarf Node- und
+Python-Abhängigkeiten neu und startet einen laufenden Server anschließend
+automatisch neu.
 
 Logs und PID-Datei liegen unter `.easyprent/`.
+
+Wurde die Anwendung mit `install.sh` als systemd-Dienst eingerichtet, wird der
+Server von `easy-prent.service` verwaltet. In diesem Fall dürfen nicht parallel
+die direkten `start`- oder `restart`-Befehle verwendet werden, da sonst Port
+8020 bereits belegt ist. Für den installierten Dienst gelten stattdessen:
+
+```bash
+systemctl status easy-prent.service
+systemctl restart easy-prent.service
+journalctl -u easy-prent.service -n 100 --no-pager
+```
+
+`./easy-rem update` erkennt einen laufenden systemd-Dienst und startet ihn nach
+dem Update über systemd neu.
 
 ## Tests
 
@@ -71,10 +87,21 @@ eingerückte Unterpositionen. Zu dieser Zeile gehören außerdem die Marker
 weicht der Positionsname von der Kostenart ab, erzeugt der Export die
 Unterteilung automatisch. Die Gesamtsumme berücksichtigt nur die
 Kostenarten-Summenzeilen und zählt Unterpositionen daher nicht doppelt.
-Der angezeigte Abrechnungszeitraum wird auf die Überschneidung mit dem
-Mietvertrag begrenzt. Vertrags-Vorauszahlungen werden nicht als tatsächlich
-geleistete Zahlungen behandelt und deshalb weder verrechnet noch als
-Guthaben oder Nachzahlung ausgewiesen.
+Jahreskosten und Mieteranteile werden linksbündig ausgegeben.
+
+Der angezeigte Abrechnungszeitraum wird auf die tatsächliche Überschneidung
+mit dem Mietvertrag begrenzt. Unterjährige und verbrauchsabhängige Kosten
+werden mit den für diesen Zeitraum ermittelten Kosten- und Verbrauchswerten
+berechnet; es erfolgt keine pauschale Aufteilung durch zwölf. Bei einer
+vollständig gepflegten abweichenden Mieteranschrift verwendet die Abrechnung
+diese Adresse, andernfalls die Anschrift der Wohnung.
+
+Die im Mietvertrag gespeicherte Nebenkostenvorauszahlung ist nur eine
+vertragliche Soll-Angabe und kein Nachweis tatsächlich geleisteter Zahlungen.
+Sie wird daher nicht automatisch verrechnet und es wird kein Guthaben oder
+keine Nachzahlung berechnet. Der Vorauszahlungs- und Saldoabschnitt bleibt im
+ODS als leere, editierbare Struktur erhalten, damit er manuell ergänzt und
+später um eine Zahlungsverwaltung erweitert werden kann.
 
 Nach dem Austausch durch eine noch unvorbereitete ODS-Datei werden die Marker
 einmalig eingefügt und die Installationskopie aktualisiert:
