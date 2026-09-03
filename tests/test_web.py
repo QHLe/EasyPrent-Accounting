@@ -1100,7 +1100,7 @@ process.stdout.write(JSON.stringify({ target: !!target, options: options }));
         self.assertEqual(document_payload["documents"][0]["filename"], "backup-pass.txt")
         self.assertTrue(exported_status.startswith("200"))
         self.assertEqual(export_headers["Content-Type"], "application/json; charset=utf-8")
-        self.assertEqual(export_payload["format_version"], 1)
+        self.assertEqual(export_payload["format_version"], 2)
         self.assertIn("tables", export_payload)
         self.assertIn("tenants", export_payload["tables"])
         self.assertIn("tenant_documents", export_payload["tables"])
@@ -1206,7 +1206,7 @@ process.stdout.write(JSON.stringify({ target: !!target, options: options }));
         self.assertTrue(changed_settings_status.startswith("200"))
         self.assertTrue(toggle_back_status.startswith("200"))
         self.assertTrue(import_status.startswith("200"))
-        self.assertEqual(import_payload["format_version"], 1)
+        self.assertEqual(import_payload["format_version"], 2)
         self.assertGreater(import_payload["row_count"], 0)
         self.assertTrue(overview_status.startswith("200"))
         self.assertTrue(application_settings_status.startswith("200"))
@@ -1229,6 +1229,48 @@ process.stdout.write(JSON.stringify({ target: !!target, options: options }));
             'inline; filename="backup-pass.txt"',
         )
         self.assertEqual(document_download_body, b"Backup Dokument aus Paperless")
+
+    def test_api_import_migrates_legacy_tenant_gnucash_account_to_lease(self) -> None:
+        export_status, _, export_body = self._call_app("GET", "/api/application-export")
+        export_payload = json.loads(export_body.decode("utf-8"))
+        target_lease = export_payload["tables"]["leases"][0]
+        target_tenant = next(
+            tenant
+            for tenant in export_payload["tables"]["tenants"]
+            if tenant["id"] == target_lease["tenant_id"]
+        )
+        target_tenant["gnucash_nk_account_guid"] = "legacy-backup-account"
+        target_tenant["gnucash_nk_account_name"] = "Alt:Nebenkosten"
+        target_lease.pop("gnucash_nk_account_guid", None)
+        target_lease.pop("gnucash_nk_account_name", None)
+        export_payload["format_version"] = 1
+
+        import_status, _, import_body = self._call_app(
+            "POST",
+            "/api/application-import",
+            json.dumps(export_payload).encode("utf-8"),
+        )
+        import_payload = json.loads(import_body.decode("utf-8"))
+
+        connection = sqlite3.connect(self.db_path)
+        connection.row_factory = sqlite3.Row
+        try:
+            restored_lease = connection.execute(
+                """
+                SELECT gnucash_nk_account_guid, gnucash_nk_account_name
+                FROM leases
+                WHERE id = ?
+                """,
+                (target_lease["id"],),
+            ).fetchone()
+        finally:
+            connection.close()
+
+        self.assertTrue(export_status.startswith("200"))
+        self.assertTrue(import_status.startswith("200"), import_payload)
+        self.assertEqual(import_payload["migrated_legacy_gnucash_accounts"], 1)
+        self.assertEqual(restored_lease["gnucash_nk_account_guid"], "legacy-backup-account")
+        self.assertEqual(restored_lease["gnucash_nk_account_name"], "Alt:Nebenkosten")
 
     def test_api_can_delete_lease(self) -> None:
         tenant_status, _, tenant_body = self._call_app(

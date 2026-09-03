@@ -36,6 +36,12 @@ Plausibilitätsprüfung.
   **GnuCash-NK-Vorauszahlungskonto**. Die Aufsplittung erfolgt bereits in
   GnuCash; jede Buchung auf diesem Konto ist damit direkt diesem Mietvertrag und
   der Zahlungsart Nebenkostenvorauszahlung zugeordnet.
+- **Bestandsmigration:** Eine frühere Kontoverknüpfung am Mieter wird auf den
+  Vertrag mit bereits importierten Zahlungen übertragen, andernfalls auf den
+  zuletzt begonnenen Vertrag. Ein GnuCash-Konto bleibt genau einem Mietvertrag
+  zugeordnet; weitere Verträge werden bei Bedarf in ihrer Vertragsmaske manuell
+  verknüpft. Neue Sicherungen verwenden Exportformat 2, beim Import alter
+  Sicherungen im Format 1 erfolgt dieselbe Übertragung automatisch.
 - **Zahlungsmonat:** Für die Abrechnung zählt der Kalendermonat des
   GnuCash-Buchungsdatums. Es gibt keine manuelle Monatszuordnung und keine
   Aufteilung einer Zahlung auf mehrere Monate.

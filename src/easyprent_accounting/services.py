@@ -68,6 +68,7 @@ DOCUMENT_EXPORT_TABLES = {
 }
 
 OPEN_ENDED_PERIOD_END = "9999-12-31"
+APPLICATION_EXPORT_FORMAT_VERSION = 2
 
 
 def _row_dicts(rows: list[sqlite3.Row]) -> list[dict]:
@@ -499,12 +500,64 @@ def export_application_data(connection: sqlite3.Connection) -> dict:
         total_rows += len(exported_rows)
 
     return {
-        "format_version": 1,
+        "format_version": APPLICATION_EXPORT_FORMAT_VERSION,
         "exported_at": exported_at,
         "table_count": len(APP_DATA_EXPORT_TABLES),
         "row_count": total_rows,
         "tables": tables,
     }
+
+
+def _migrate_legacy_import_gnucash_accounts(tables_payload: dict) -> int:
+    tenant_rows = tables_payload.get("tenants", [])
+    lease_rows = tables_payload.get("leases", [])
+    payment_rows = tables_payload.get("gnucash_payments", [])
+    if not all(isinstance(rows, list) for rows in (tenant_rows, lease_rows, payment_rows)):
+        return 0
+
+    linked_account_guids = {
+        str(lease.get("gnucash_nk_account_guid"))
+        for lease in lease_rows
+        if isinstance(lease, dict) and lease.get("gnucash_nk_account_guid")
+    }
+    migrated = 0
+    for tenant in tenant_rows:
+        if not isinstance(tenant, dict):
+            continue
+        account_guid = str(tenant.get("gnucash_nk_account_guid") or "").strip()
+        if not account_guid or account_guid in linked_account_guids:
+            continue
+        candidates = [
+            lease
+            for lease in lease_rows
+            if isinstance(lease, dict)
+            and lease.get("tenant_id") == tenant.get("id")
+            and not lease.get("gnucash_nk_account_guid")
+        ]
+        if not candidates:
+            continue
+
+        payment_lease_ids = {
+            payment.get("lease_id")
+            for payment in payment_rows
+            if isinstance(payment, dict)
+            and payment.get("tenant_id") == tenant.get("id")
+            and payment.get("account_guid") == account_guid
+            and payment.get("lease_id") is not None
+        }
+        candidates_with_payments = [
+            lease for lease in candidates if lease.get("id") in payment_lease_ids
+        ]
+        target_candidates = candidates_with_payments or candidates
+        target_lease = max(
+            target_candidates,
+            key=lambda lease: (str(lease.get("start_date") or ""), int(lease.get("id") or 0)),
+        )
+        target_lease["gnucash_nk_account_guid"] = account_guid
+        target_lease["gnucash_nk_account_name"] = tenant.get("gnucash_nk_account_name")
+        linked_account_guids.add(account_guid)
+        migrated += 1
+    return migrated
 
 
 def import_application_data(connection: sqlite3.Connection, payload: dict) -> dict:
@@ -516,12 +569,18 @@ def import_application_data(connection: sqlite3.Connection, payload: dict) -> di
         format_version = int(raw_format_version)
     except (TypeError, ValueError) as error:
         raise ValueError("format_version must be an integer") from error
-    if format_version != 1:
+    if format_version not in (1, APPLICATION_EXPORT_FORMAT_VERSION):
         raise ValueError("unsupported import format_version")
 
     tables_payload = payload.get("tables")
     if not isinstance(tables_payload, dict):
         raise ValueError("tables is required")
+
+    migrated_legacy_gnucash_accounts = 0
+    if format_version == 1:
+        migrated_legacy_gnucash_accounts = _migrate_legacy_import_gnucash_accounts(
+            tables_payload
+        )
 
     total_rows = 0
     skipped_legacy_gnucash_payments = 0
@@ -570,6 +629,7 @@ def import_application_data(connection: sqlite3.Connection, payload: dict) -> di
         "table_count": len(APP_DATA_EXPORT_TABLES),
         "row_count": total_rows,
         "skipped_legacy_gnucash_payments": skipped_legacy_gnucash_payments,
+        "migrated_legacy_gnucash_accounts": migrated_legacy_gnucash_accounts,
     }
 
 
