@@ -2044,7 +2044,16 @@ def list_overview(connection: sqlite3.Connection) -> dict:
     )
     for room in rooms:
         room["area_sqm"] = _normalize_optional_decimal_string(room.get("area_sqm"), "area_sqm")
-    tenants = _row_dicts(connection.execute("SELECT * FROM tenants ORDER BY id").fetchall())
+    tenants = _row_dicts(
+        connection.execute(
+            """
+            SELECT id, full_name, email, phone,
+                   alternate_street, alternate_postal_code, alternate_city
+            FROM tenants
+            ORDER BY id
+            """
+        ).fetchall()
+    )
     leases = _row_dicts(
         connection.execute(
             """
@@ -2638,28 +2647,12 @@ def delete_object(connection: sqlite3.Connection, resource_name: str, object_id:
     return {"resource": resource_name, "id": object_id, "deleted": True}
 
 
-def _validate_gnucash_account_assignment(
-    connection: sqlite3.Connection, account_guid: str | None, tenant_id: int | None = None
-) -> None:
-    if account_guid is None:
-        return
-    existing = connection.execute(
-        "SELECT id FROM tenants WHERE gnucash_nk_account_guid = ?", (account_guid,)
-    ).fetchone()
-    if existing is not None and int(existing["id"]) != tenant_id:
-        raise ValueError("a GnuCash NK account can only be assigned to one tenant")
-
-
 def create_tenant(connection: sqlite3.Connection, payload: dict) -> dict:
-    gnucash_account_guid = str(payload.get("gnucash_nk_account_guid") or "").strip() or None
-    gnucash_account_name = str(payload.get("gnucash_nk_account_name") or "").strip() or None
-    _validate_gnucash_account_assignment(connection, gnucash_account_guid)
     cursor = connection.execute(
         """
         INSERT INTO tenants (
-            full_name, email, phone, alternate_street, alternate_postal_code, alternate_city,
-            gnucash_nk_account_guid, gnucash_nk_account_name
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            full_name, email, phone, alternate_street, alternate_postal_code, alternate_city
+        ) VALUES (?, ?, ?, ?, ?, ?)
         """,
         (
             payload["full_name"],
@@ -2668,20 +2661,25 @@ def create_tenant(connection: sqlite3.Connection, payload: dict) -> dict:
             payload.get("alternate_street"),
             payload.get("alternate_postal_code"),
             payload.get("alternate_city"),
-            gnucash_account_guid,
-            gnucash_account_name,
         ),
     )
     connection.commit()
     return {
         "id": cursor.lastrowid,
-        **payload,
-        "gnucash_nk_account_guid": gnucash_account_guid,
-        "gnucash_nk_account_name": gnucash_account_name,
+        "full_name": payload["full_name"],
+        "email": payload.get("email"),
+        "phone": payload.get("phone"),
+        "alternate_street": payload.get("alternate_street"),
+        "alternate_postal_code": payload.get("alternate_postal_code"),
+        "alternate_city": payload.get("alternate_city"),
     }
 
 
-def _normalize_lease_payload(connection: sqlite3.Connection, payload: dict) -> dict:
+def _normalize_lease_payload(
+    connection: sqlite3.Connection,
+    payload: dict,
+    lease_id: int | None = None,
+) -> dict:
     tenant_id = payload.get("tenant_id")
     if tenant_id in (None, ""):
         raise ValueError("lease requires tenant_id")
@@ -2746,6 +2744,16 @@ def _normalize_lease_payload(connection: sqlite3.Connection, payload: dict) -> d
     if occupant_count < 1:
         raise ValueError("occupant_count must be at least 1")
 
+    gnucash_account_guid = str(payload.get("gnucash_nk_account_guid") or "").strip() or None
+    gnucash_account_name = str(payload.get("gnucash_nk_account_name") or "").strip() or None
+    if gnucash_account_guid is not None:
+        existing_lease = connection.execute(
+            "SELECT id FROM leases WHERE gnucash_nk_account_guid = ?",
+            (gnucash_account_guid,),
+        ).fetchone()
+        if existing_lease is not None and int(existing_lease["id"]) != lease_id:
+            raise ValueError("a GnuCash NK account can only be assigned to one lease")
+
     return {
         "unit_id": unit_id,
         "room_id": room_id,
@@ -2756,6 +2764,8 @@ def _normalize_lease_payload(connection: sqlite3.Connection, payload: dict) -> d
         "start_date": start_date,
         "end_date": end_date if end_date not in ("",) else None,
         "status": payload.get("status", "active"),
+        "gnucash_nk_account_guid": gnucash_account_guid,
+        "gnucash_nk_account_name": gnucash_account_name,
     }
 
 
@@ -2765,8 +2775,9 @@ def create_lease(connection: sqlite3.Connection, payload: dict) -> dict:
         """
         INSERT INTO leases (
             unit_id, room_id, tenant_id, rent_cold, additional_charges_advance,
-            occupant_count, start_date, end_date, status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            occupant_count, start_date, end_date, status,
+            gnucash_nk_account_guid, gnucash_nk_account_name
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             normalized_payload["unit_id"],
@@ -2778,6 +2789,8 @@ def create_lease(connection: sqlite3.Connection, payload: dict) -> dict:
             normalized_payload["start_date"],
             normalized_payload["end_date"],
             normalized_payload["status"],
+            normalized_payload["gnucash_nk_account_guid"],
+            normalized_payload["gnucash_nk_account_name"],
         ),
     )
     connection.commit()
@@ -2939,30 +2952,11 @@ def update_tenant(connection: sqlite3.Connection, tenant_id: int, payload: dict)
     if row is None:
         raise ValueError("tenant not found")
 
-    existing_account = connection.execute(
-        """
-        SELECT gnucash_nk_account_guid, gnucash_nk_account_name
-        FROM tenants WHERE id = ?
-        """,
-        (tenant_id,),
-    ).fetchone()
-    gnucash_account_guid = (
-        str(payload.get("gnucash_nk_account_guid") or "").strip() or None
-        if "gnucash_nk_account_guid" in payload
-        else existing_account["gnucash_nk_account_guid"]
-    )
-    gnucash_account_name = (
-        str(payload.get("gnucash_nk_account_name") or "").strip() or None
-        if "gnucash_nk_account_name" in payload
-        else existing_account["gnucash_nk_account_name"]
-    )
-    _validate_gnucash_account_assignment(connection, gnucash_account_guid, tenant_id)
-
     connection.execute(
         """
         UPDATE tenants
         SET full_name = ?, email = ?, phone = ?, alternate_street = ?, alternate_postal_code = ?,
-            alternate_city = ?, gnucash_nk_account_guid = ?, gnucash_nk_account_name = ?
+            alternate_city = ?
         WHERE id = ?
         """,
         (
@@ -2972,17 +2966,18 @@ def update_tenant(connection: sqlite3.Connection, tenant_id: int, payload: dict)
             payload.get("alternate_street"),
             payload.get("alternate_postal_code"),
             payload.get("alternate_city"),
-            gnucash_account_guid,
-            gnucash_account_name,
             tenant_id,
         ),
     )
     connection.commit()
     return {
         "id": tenant_id,
-        **payload,
-        "gnucash_nk_account_guid": gnucash_account_guid,
-        "gnucash_nk_account_name": gnucash_account_name,
+        "full_name": payload["full_name"],
+        "email": payload.get("email"),
+        "phone": payload.get("phone"),
+        "alternate_street": payload.get("alternate_street"),
+        "alternate_postal_code": payload.get("alternate_postal_code"),
+        "alternate_city": payload.get("alternate_city"),
     }
 
 
@@ -3000,27 +2995,26 @@ def import_gnucash_payments_for_period(
     if start > end:
         raise ValueError("period_start must be before or equal to period_end")
 
-    tenant_rows = connection.execute(
+    lease_rows = connection.execute(
         """
-        SELECT DISTINCT t.id, t.gnucash_nk_account_guid, t.gnucash_nk_account_name
-        FROM tenants t
-        JOIN leases l ON l.tenant_id = t.id
+        SELECT l.id, l.tenant_id, l.gnucash_nk_account_guid, l.gnucash_nk_account_name
+        FROM leases l
         JOIN units u ON u.id = l.unit_id
         LEFT JOIN buildings b ON b.id = u.building_id
         WHERE ((? IS NOT NULL AND b.property_id = ?) OR (? IS NOT NULL AND u.id = ?))
           AND l.start_date <= ?
           AND (l.end_date IS NULL OR l.end_date >= ?)
-          AND COALESCE(t.gnucash_nk_account_guid, '') != ''
+          AND COALESCE(l.gnucash_nk_account_guid, '') != ''
         """,
         (property_id, property_id, unit_id, unit_id, period_end, period_start),
     ).fetchall()
     accounts: dict[str, sqlite3.Row] = {}
-    for tenant in tenant_rows:
-        account_guid = str(tenant["gnucash_nk_account_guid"])
-        existing_tenant = accounts.get(account_guid)
-        if existing_tenant is not None and int(existing_tenant["id"]) != int(tenant["id"]):
-            raise ValueError("a GnuCash NK account can only be assigned to one tenant")
-        accounts[account_guid] = tenant
+    for lease in lease_rows:
+        account_guid = str(lease["gnucash_nk_account_guid"])
+        existing_lease = accounts.get(account_guid)
+        if existing_lease is not None and int(existing_lease["id"]) != int(lease["id"]):
+            raise ValueError("a GnuCash NK account can only be assigned to one lease")
+        accounts[account_guid] = lease
 
     if not accounts:
         return {"imported": 0, "existing": 0, "accounts": 0}
@@ -3034,30 +3028,10 @@ def import_gnucash_payments_for_period(
     existing = 0
     imported_at = datetime.now(UTC).replace(microsecond=0).isoformat()
     for payment in payments:
-        tenant = accounts.get(payment.account_guid)
-        if tenant is None:
+        lease = accounts.get(payment.account_guid)
+        if lease is None:
             continue
-        lease_rows = connection.execute(
-            """
-            SELECT l.id
-            FROM leases l
-            JOIN units u ON u.id = l.unit_id
-            LEFT JOIN buildings b ON b.id = u.building_id
-            WHERE l.tenant_id = ?
-              AND ((? IS NOT NULL AND b.property_id = ?) OR (? IS NOT NULL AND u.id = ?))
-              AND l.start_date <= ?
-              AND (l.end_date IS NULL OR l.end_date >= ?)
-            """,
-            (
-                int(tenant["id"]), property_id, property_id, unit_id, unit_id,
-                payment.booking_date.isoformat(), payment.booking_date.isoformat(),
-            ),
-        ).fetchall()
-        if len(lease_rows) != 1:
-            raise ValueError(
-                "each GnuCash payment must match exactly one active lease on its booking date"
-            )
-        lease_id = int(lease_rows[0]["id"])
+        lease_id = int(lease["id"])
         known = connection.execute(
             "SELECT id FROM gnucash_payments WHERE split_guid = ?", (payment.split_guid,)
         ).fetchone()
@@ -3085,10 +3059,10 @@ def import_gnucash_payments_for_period(
             (
                 payment.split_guid,
                 payment.transaction_guid,
-                int(tenant["id"]),
+                int(lease["tenant_id"]),
                 lease_id,
                 payment.account_guid,
-                tenant["gnucash_nk_account_name"],
+                lease["gnucash_nk_account_name"],
                 payment.booking_date.isoformat(),
                 str(payment.amount),
                 payment.description,
@@ -3145,7 +3119,7 @@ def update_lease(connection: sqlite3.Connection, lease_id: int, payload: dict) -
     if row is None:
         raise ValueError("lease not found")
 
-    normalized_payload = _normalize_lease_payload(connection, payload)
+    normalized_payload = _normalize_lease_payload(connection, payload, lease_id)
 
     connection.execute(
         """
@@ -3158,7 +3132,9 @@ def update_lease(connection: sqlite3.Connection, lease_id: int, payload: dict) -
             occupant_count = ?,
             start_date = ?,
             end_date = ?,
-            status = ?
+            status = ?,
+            gnucash_nk_account_guid = ?,
+            gnucash_nk_account_name = ?
         WHERE id = ?
         """,
         (
@@ -3171,6 +3147,8 @@ def update_lease(connection: sqlite3.Connection, lease_id: int, payload: dict) -
             normalized_payload["start_date"],
             normalized_payload["end_date"],
             normalized_payload["status"],
+            normalized_payload["gnucash_nk_account_guid"],
+            normalized_payload["gnucash_nk_account_name"],
             lease_id,
         ),
     )

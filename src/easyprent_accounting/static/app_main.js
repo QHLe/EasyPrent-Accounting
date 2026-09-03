@@ -1006,8 +1006,6 @@
         alternate_street: "",
         alternate_postal_code: "",
         alternate_city: "",
-        gnucash_nk_account_guid: "",
-        gnucash_nk_account_name: "",
       },
       lease: {
         unit_id: "",
@@ -1019,6 +1017,8 @@
         start_date: bootstrap.settlementPeriodStart,
         end_date: "",
         status: "active",
+        gnucash_nk_account_guid: "",
+        gnucash_nk_account_name: "",
       },
       expense: {
         object_type: createExpenseFormState().object_type,
@@ -1150,8 +1150,6 @@
             alternate_street: current.tenant.alternate_street,
             alternate_postal_code: current.tenant.alternate_postal_code,
             alternate_city: current.tenant.alternate_city,
-            gnucash_nk_account_guid: current.tenant.gnucash_nk_account_guid,
-            gnucash_nk_account_name: current.tenant.gnucash_nk_account_name,
           },
           lease: {
             unit_id: normalizedLeaseUnitId,
@@ -1168,6 +1166,8 @@
             occupant_count: current.lease.occupant_count || "1",
             start_date: current.lease.start_date || bootstrap.settlementPeriodStart,
             end_date: current.lease.end_date,
+            gnucash_nk_account_guid: current.lease.gnucash_nk_account_guid,
+            gnucash_nk_account_name: current.lease.gnucash_nk_account_name,
             status: current.lease.status || "active",
           },
           expense: {
@@ -2452,8 +2452,6 @@
         alternate_street: forms.tenant.alternate_street || null,
         alternate_postal_code: forms.tenant.alternate_postal_code || null,
         alternate_city: forms.tenant.alternate_city || null,
-        gnucash_nk_account_guid: forms.tenant.gnucash_nk_account_guid || null,
-        gnucash_nk_account_name: forms.tenant.gnucash_nk_account_name || null,
       };
       submitToApi(
         isEditing ? "/api/tenants/" + editingId : "/api/tenants",
@@ -2471,8 +2469,6 @@
               alternate_street: "",
               alternate_postal_code: "",
               alternate_city: "",
-              gnucash_nk_account_guid: "",
-              gnucash_nk_account_name: "",
             };
           });
         },
@@ -2495,6 +2491,8 @@
         start_date: forms.lease.start_date,
         end_date: forms.lease.end_date || null,
         status: forms.lease.status || "active",
+        gnucash_nk_account_guid: forms.lease.gnucash_nk_account_guid || null,
+        gnucash_nk_account_name: forms.lease.gnucash_nk_account_name || null,
       };
       submitToApi(
         isEditing ? "/api/leases/" + editingId : "/api/leases",
@@ -2515,6 +2513,8 @@
               start_date: current.start_date,
               end_date: "",
               status: current.status || "active",
+              gnucash_nk_account_guid: "",
+              gnucash_nk_account_name: "",
             };
           });
         },
@@ -2640,8 +2640,6 @@
             alternate_street: tenant.alternate_street || "",
             alternate_postal_code: tenant.alternate_postal_code || "",
             alternate_city: tenant.alternate_city || "",
-            gnucash_nk_account_guid: tenant.gnucash_nk_account_guid || "",
-            gnucash_nk_account_name: tenant.gnucash_nk_account_name || "",
           },
         });
       });
@@ -2679,6 +2677,8 @@
             start_date: lease.start_date || bootstrap.settlementPeriodStart,
             end_date: lease.end_date || "",
             status: lease.status || "active",
+            gnucash_nk_account_guid: lease.gnucash_nk_account_guid || "",
+            gnucash_nk_account_name: lease.gnucash_nk_account_name || "",
           },
         });
       });

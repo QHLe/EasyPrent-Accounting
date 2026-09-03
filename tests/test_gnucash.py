@@ -15,7 +15,7 @@ from src.easyprent_accounting.services import (
     import_gnucash_payments_for_period,
     settlement_for_period,
     update_gnucash_settings,
-    update_tenant,
+    update_lease,
 )
 
 
@@ -47,22 +47,25 @@ class GnuCashPaymentImportTests(unittest.TestCase):
         self.connection.executescript(SCHEMA)
         seed_demo_data(self.connection)
 
-        tenant = self.connection.execute("SELECT * FROM tenants ORDER BY id LIMIT 1").fetchone()
-        assert tenant is not None
-        self.tenant_id = int(tenant["id"])
+        lease = self.connection.execute("SELECT * FROM leases ORDER BY id LIMIT 1").fetchone()
+        assert lease is not None
+        self.tenant_id = int(lease["tenant_id"])
         self.property_id = int(
             self.connection.execute("SELECT id FROM properties ORDER BY id LIMIT 1").fetchone()["id"]
         )
-        update_tenant(
+        update_lease(
             self.connection,
-            self.tenant_id,
+            int(lease["id"]),
             {
-                "full_name": tenant["full_name"],
-                "email": tenant["email"],
-                "phone": tenant["phone"],
-                "alternate_street": tenant["alternate_street"],
-                "alternate_postal_code": tenant["alternate_postal_code"],
-                "alternate_city": tenant["alternate_city"],
+                "unit_id": lease["unit_id"],
+                "room_id": lease["room_id"],
+                "tenant_id": lease["tenant_id"],
+                "rent_cold": lease["rent_cold"],
+                "additional_charges_advance": lease["additional_charges_advance"],
+                "occupant_count": lease["occupant_count"],
+                "start_date": lease["start_date"],
+                "end_date": lease["end_date"],
+                "status": lease["status"],
                 "gnucash_nk_account_guid": "nk-tenant-1",
                 "gnucash_nk_account_name": "Mieter 1:Nebenkosten",
             },
@@ -83,6 +86,34 @@ class GnuCashPaymentImportTests(unittest.TestCase):
 
     def tearDown(self) -> None:
         self.connection.close()
+
+    def test_links_the_gnucash_nk_account_to_the_lease(self) -> None:
+        lease = self.connection.execute("SELECT * FROM leases WHERE id = 1").fetchone()
+        assert lease is not None
+
+        updated = update_lease(
+            self.connection,
+            1,
+            {
+                "unit_id": lease["unit_id"],
+                "room_id": lease["room_id"],
+                "tenant_id": lease["tenant_id"],
+                "rent_cold": lease["rent_cold"],
+                "additional_charges_advance": lease["additional_charges_advance"],
+                "occupant_count": lease["occupant_count"],
+                "start_date": lease["start_date"],
+                "end_date": lease["end_date"],
+                "status": lease["status"],
+                "gnucash_nk_account_guid": "nk-lease-1",
+                "gnucash_nk_account_name": "Mietvertrag 1:Nebenkosten",
+            },
+        )
+
+        self.assertEqual(updated["gnucash_nk_account_guid"], "nk-lease-1")
+        stored = self.connection.execute(
+            "SELECT gnucash_nk_account_guid FROM leases WHERE id = 1"
+        ).fetchone()
+        self.assertEqual(stored["gnucash_nk_account_guid"], "nk-lease-1")
 
     def test_imports_each_matching_split_once_and_uses_booking_month_for_settlement(self) -> None:
         reader = FakeGnuCashReader(
@@ -137,6 +168,58 @@ class GnuCashPaymentImportTests(unittest.TestCase):
             settlement["totals"]["balance"],
             f"{Decimal(settlement['totals']['costs']) - Decimal('75.00'):.2f}",
         )
+
+    def test_assigns_payment_by_lease_account_within_requested_period(self) -> None:
+        lease = self.connection.execute("SELECT * FROM leases WHERE id = 1").fetchone()
+        assert lease is not None
+        update_lease(
+            self.connection,
+            1,
+            {
+                "unit_id": lease["unit_id"],
+                "room_id": lease["room_id"],
+                "tenant_id": lease["tenant_id"],
+                "rent_cold": lease["rent_cold"],
+                "additional_charges_advance": lease["additional_charges_advance"],
+                "occupant_count": lease["occupant_count"],
+                "start_date": "2025-02-01",
+                "end_date": lease["end_date"],
+                "status": lease["status"],
+                "gnucash_nk_account_guid": "nk-tenant-1",
+                "gnucash_nk_account_name": "Mieter 1:Nebenkosten",
+            },
+        )
+        reader = FakeGnuCashReader(
+            [
+                GnuCashPayment(
+                    split_guid="split-before-lease-start",
+                    transaction_guid="transaction-before-lease-start",
+                    account_guid="nk-tenant-1",
+                    booking_date=date(2025, 1, 31),
+                    amount=Decimal("-75.00"),
+                    description="Vorauszahlung vor Mietbeginn",
+                )
+            ]
+        )
+
+        imported = import_gnucash_payments_for_period(
+            self.connection,
+            self.property_id,
+            "2025-01-01",
+            "2025-12-31",
+            reader=reader,
+        )
+
+        self.assertEqual(imported["imported"], 1)
+        self.assertEqual(
+            reader.requests,
+            [({"nk-tenant-1"}, date(2025, 1, 1), date(2025, 12, 31))],
+        )
+        stored = self.connection.execute(
+            "SELECT lease_id FROM gnucash_payments WHERE split_guid = ?",
+            ("split-before-lease-start",),
+        ).fetchone()
+        self.assertEqual(stored["lease_id"], 1)
 
     def test_positive_reversal_reduces_paid_advances_and_increases_balance(self) -> None:
         reader = FakeGnuCashReader(
@@ -197,39 +280,26 @@ class GnuCashPaymentImportTests(unittest.TestCase):
 
         self.assertEqual(result["imported"], 1)
 
-    def test_rejects_payment_when_multiple_leases_are_active(self) -> None:
-        lease = self.connection.execute("SELECT * FROM leases WHERE id = 1").fetchone()
+    def test_rejects_assigning_the_same_nk_account_to_multiple_leases(self) -> None:
+        lease = self.connection.execute("SELECT * FROM leases WHERE id = 2").fetchone()
         assert lease is not None
-        self.connection.execute(
-            """
-            INSERT INTO leases (
-                unit_id, room_id, tenant_id, rent_cold, additional_charges_advance,
-                occupant_count, start_date, end_date, status
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                lease["unit_id"], lease["room_id"], lease["tenant_id"], lease["rent_cold"],
-                lease["additional_charges_advance"], lease["occupant_count"],
-                "2025-01-01", "2025-12-31", lease["status"],
-            ),
-        )
-        self.connection.commit()
-        reader = FakeGnuCashReader(
-            [
-                GnuCashPayment(
-                    split_guid="split-ambiguous",
-                    transaction_guid="transaction-ambiguous",
-                    account_guid="nk-tenant-1",
-                    booking_date=date(2025, 1, 5),
-                    amount=Decimal("75.00"),
-                    description="Nebenkostenvorauszahlung",
-                )
-            ]
-        )
-
-        with self.assertRaisesRegex(ValueError, "exactly one active lease"):
-            import_gnucash_payments_for_period(
-                self.connection, self.property_id, "2025-01-01", "2025-12-31", reader=reader
+        with self.assertRaisesRegex(ValueError, "only be assigned to one lease"):
+            update_lease(
+                self.connection,
+                2,
+                {
+                    "unit_id": lease["unit_id"],
+                    "room_id": lease["room_id"],
+                    "tenant_id": lease["tenant_id"],
+                    "rent_cold": lease["rent_cold"],
+                    "additional_charges_advance": lease["additional_charges_advance"],
+                    "occupant_count": lease["occupant_count"],
+                    "start_date": lease["start_date"],
+                    "end_date": lease["end_date"],
+                    "status": lease["status"],
+                    "gnucash_nk_account_guid": "nk-tenant-1",
+                    "gnucash_nk_account_name": "Mieter 1:Nebenkosten",
+                },
             )
 
     def test_rejects_deleting_a_lease_with_imported_payments(self) -> None:

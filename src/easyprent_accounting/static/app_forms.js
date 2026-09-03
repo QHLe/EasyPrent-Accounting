@@ -963,75 +963,6 @@
             e("label", null, "Abweichende PLZ optional", e("input", { value: forms.tenant.alternate_postal_code, onChange: function (event) { props.setFormField("tenant", "alternate_postal_code", event.target.value); } })),
             e("label", null, "Abweichender Ort optional", e("input", { value: forms.tenant.alternate_city, onChange: function (event) { props.setFormField("tenant", "alternate_city", event.target.value); } })),
             e(
-              "label",
-              null,
-              "GnuCash-NK-Vorauszahlungskonto optional",
-              e(
-                "select",
-                {
-                  value: forms.tenant.gnucash_nk_account_guid || "",
-                  onChange: function (event) {
-                    const account = (props.gnucashAccounts || []).find(function (candidate) {
-                      return candidate.guid === event.target.value;
-                    });
-                    props.setFormField("tenant", "gnucash_nk_account_guid", event.target.value);
-                    props.setFormField(
-                      "tenant",
-                      "gnucash_nk_account_name",
-                      account ? account.full_name : ""
-                    );
-                  },
-                },
-                (function () {
-                  const accounts = props.gnucashAccounts || [];
-                  const linkedAccountGuid = forms.tenant.gnucash_nk_account_guid || "";
-                  const isLinkedAccountLoaded = accounts.some(function (account) {
-                    return account.guid === linkedAccountGuid;
-                  });
-                  const linkedAccountOption =
-                    linkedAccountGuid && !isLinkedAccountLoaded
-                      ? [
-                          e(
-                            "option",
-                            { key: linkedAccountGuid, value: linkedAccountGuid },
-                            forms.tenant.gnucash_nk_account_name || "Verknüpftes GnuCash-Konto"
-                          ),
-                        ]
-                      : [];
-                  const emptyOption = linkedAccountGuid
-                    ? [e("option", { key: "remove-link", value: "" }, "Verknüpfung entfernen")]
-                    : [
-                        e(
-                          "option",
-                          { key: "select-account", value: "", disabled: true },
-                          "GnuCash-Konto auswählen"
-                        ),
-                      ];
-                  return linkedAccountOption
-                    .concat(
-                      accounts.map(function (account) {
-                        return e("option", { key: account.guid, value: account.guid }, account.full_name);
-                      })
-                    )
-                    .concat(emptyOption);
-                })()
-              )
-            ),
-            e(
-              "div",
-              { className: "inline-actions" },
-              e(
-                "button",
-                {
-                  type: "button",
-                  className: "action-button secondary",
-                  disabled: props.saving || props.loading || typeof props.onLoadGnuCashAccounts !== "function",
-                  onClick: props.onLoadGnuCashAccounts,
-                },
-                "GnuCash-Konten laden"
-              ),
-            ),
-            e(
               "div",
               { className: "inline-actions" },
               e(
@@ -1194,6 +1125,75 @@
               },
               required: true,
             })
+          ),
+          e(
+            "label",
+            null,
+            "GnuCash-NK-Vorauszahlungskonto optional",
+            e(
+              "select",
+              {
+                value: forms.lease.gnucash_nk_account_guid || "",
+                onChange: function (event) {
+                  const account = (props.gnucashAccounts || []).find(function (candidate) {
+                    return candidate.guid === event.target.value;
+                  });
+                  props.setFormField("lease", "gnucash_nk_account_guid", event.target.value);
+                  props.setFormField(
+                    "lease",
+                    "gnucash_nk_account_name",
+                    account ? account.full_name : ""
+                  );
+                },
+              },
+              (function () {
+                const accounts = props.gnucashAccounts || [];
+                const linkedAccountGuid = forms.lease.gnucash_nk_account_guid || "";
+                const isLinkedAccountLoaded = accounts.some(function (account) {
+                  return account.guid === linkedAccountGuid;
+                });
+                const linkedAccountOption =
+                  linkedAccountGuid && !isLinkedAccountLoaded
+                    ? [
+                        e(
+                          "option",
+                          { key: linkedAccountGuid, value: linkedAccountGuid },
+                          forms.lease.gnucash_nk_account_name || "Verknüpftes GnuCash-Konto"
+                        ),
+                      ]
+                    : [];
+                const emptyOption = linkedAccountGuid
+                  ? [e("option", { key: "remove-link", value: "" }, "Verknüpfung entfernen")]
+                  : [
+                      e(
+                        "option",
+                        { key: "select-account", value: "", disabled: true },
+                        "GnuCash-Konto auswählen"
+                      ),
+                    ];
+                return linkedAccountOption
+                  .concat(
+                    accounts.map(function (account) {
+                      return e("option", { key: account.guid, value: account.guid }, account.full_name);
+                    })
+                  )
+                  .concat(emptyOption);
+              })()
+            )
+          ),
+          e(
+            "div",
+            { className: "inline-actions" },
+            e(
+              "button",
+              {
+                type: "button",
+                className: "action-button secondary",
+                disabled: props.saving || props.loading || typeof props.onLoadGnuCashAccounts !== "function",
+                onClick: props.onLoadGnuCashAccounts,
+              },
+              "GnuCash-Konten laden"
+            )
           ),
           e(
             "label",

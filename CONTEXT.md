@@ -12,6 +12,6 @@ _Avoid_: Bankkonto des Mieters, Mieter-Bankkonto
 
 **GnuCash-NK-Vorauszahlungskonto**:
 Das Unterkonto eines GnuCash-Mieterkontos, auf dem ausschließlich
-Nebenkostenvorauszahlungen gebucht werden. Es ist das für den ersten
-Zahlungsimport ausgewählte und allein maßgebliche Konto.
+Nebenkostenvorauszahlungen gebucht werden. Es wird genau einem Mietvertrag
+zugeordnet und ist das für dessen Zahlungsimport allein maßgebliche Konto.
 _Avoid_: Gesamtmietkonto, Kaltmietenkonto

@@ -197,6 +197,10 @@ class WebApiAndUiTests(unittest.TestCase):
         self.assertNotIn('e("option", { value: "" }, "Nicht verknüpft")', content)
         self.assertIn("Verknüpfung entfernen", content)
         self.assertNotIn('e("span", { className: "hint" }, forms.tenant.gnucash_nk_account_name)', content)
+        self.assertNotIn("forms.tenant.gnucash_nk_account_guid", content)
+        self.assertNotIn("forms.tenant.gnucash_nk_account_name", content)
+        self.assertIn("forms.lease.gnucash_nk_account_guid", content)
+        self.assertIn("forms.lease.gnucash_nk_account_name", content)
         self.assertNotIn("formatSettlementAdvance", content)
         self.assertIn('row.advances_paid == null ? "-" : row.advances_paid', content)
         self.assertIn("settlement-table-scroll", content)
@@ -573,6 +577,14 @@ process.stdout.write(JSON.stringify({ target: !!target, options: options }));
         self.assertIn("TenantCreateRequest", payload["components"]["schemas"])
         self.assertIn("LeaseCreateRequest", payload["components"]["schemas"])
         self.assertIn("room_id", payload["components"]["schemas"]["LeaseCreateRequest"]["properties"])
+        self.assertNotIn(
+            "gnucash_nk_account_guid",
+            payload["components"]["schemas"]["TenantCreateRequest"]["properties"],
+        )
+        self.assertIn(
+            "gnucash_nk_account_guid",
+            payload["components"]["schemas"]["LeaseCreateRequest"]["properties"],
+        )
         self.assertIn("room_id", payload["components"]["schemas"]["LeaseResponse"]["properties"])
         self.assertIn("expense_categories", payload["components"]["schemas"]["OverviewResponse"]["properties"])
         self.assertIn("total_amount", payload["components"]["schemas"]["ExpenseResponse"]["properties"])
@@ -657,6 +669,8 @@ process.stdout.write(JSON.stringify({ target: !!target, options: options }));
                     "full_name": "Test Mieter",
                     "email": "test.mieter@example.org",
                     "phone": "+49 123 4567",
+                    "gnucash_nk_account_guid": "must-not-stay-on-tenant",
+                    "gnucash_nk_account_name": "Veraltete Zuordnung",
                 }
             ).encode("utf-8"),
         )
@@ -664,6 +678,8 @@ process.stdout.write(JSON.stringify({ target: !!target, options: options }));
         self.assertTrue(tenant_status.startswith("201"))
         self.assertEqual(tenant_payload["full_name"], "Test Mieter")
         self.assertEqual(tenant_payload["email"], "test.mieter@example.org")
+        self.assertNotIn("gnucash_nk_account_guid", tenant_payload)
+        self.assertNotIn("gnucash_nk_account_name", tenant_payload)
 
         overview_status, _, overview_body = self._call_app("GET", "/api/overview")
         overview_payload = json.loads(overview_body.decode("utf-8"))
@@ -684,6 +700,8 @@ process.stdout.write(JSON.stringify({ target: !!target, options: options }));
                     "start_date": "2026-01-01",
                     "end_date": "2026-12-31",
                     "status": "active",
+                    "gnucash_nk_account_guid": "nk-contract-test",
+                    "gnucash_nk_account_name": "Mietvertrag Test:Nebenkosten",
                 }
             ).encode("utf-8"),
         )
@@ -701,11 +719,15 @@ process.stdout.write(JSON.stringify({ target: !!target, options: options }));
                 for tenant in overview_after_payload["tenants"]
             )
         )
-        self.assertTrue(
-            any(
-                lease["id"] == lease_payload["id"]
-                for lease in overview_after_payload["leases"]
-            )
+        stored_lease = next(
+            lease
+            for lease in overview_after_payload["leases"]
+            if lease["id"] == lease_payload["id"]
+        )
+        self.assertEqual(stored_lease["gnucash_nk_account_guid"], "nk-contract-test")
+        self.assertEqual(
+            stored_lease["gnucash_nk_account_name"],
+            "Mietvertrag Test:Nebenkosten",
         )
 
     def test_api_can_update_property_tenant_and_lease(self) -> None:

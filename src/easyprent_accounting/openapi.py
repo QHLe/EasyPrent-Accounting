@@ -1650,8 +1650,6 @@ def build_openapi_document() -> dict:
                         "alternate_street": {"type": ["string", "null"]},
                         "alternate_postal_code": {"type": ["string", "null"]},
                         "alternate_city": {"type": ["string", "null"]},
-                        "gnucash_nk_account_guid": {"type": ["string", "null"]},
-                        "gnucash_nk_account_name": {"type": ["string", "null"]},
                     },
                 },
                 "TenantResponse": {
@@ -1664,8 +1662,6 @@ def build_openapi_document() -> dict:
                         "alternate_street": {"type": ["string", "null"]},
                         "alternate_postal_code": {"type": ["string", "null"]},
                         "alternate_city": {"type": ["string", "null"]},
-                        "gnucash_nk_account_guid": {"type": ["string", "null"]},
-                        "gnucash_nk_account_name": {"type": ["string", "null"]},
                     },
                 },
                 "LeaseCreateRequest": {
@@ -1687,6 +1683,8 @@ def build_openapi_document() -> dict:
                         "start_date": {"type": "string", "format": "date"},
                         "end_date": {"type": ["string", "null"], "format": "date"},
                         "status": {"type": "string"},
+                        "gnucash_nk_account_guid": {"type": ["string", "null"]},
+                        "gnucash_nk_account_name": {"type": ["string", "null"]},
                     },
                 },
                 "LeaseResponse": {
@@ -1702,6 +1700,8 @@ def build_openapi_document() -> dict:
                         "start_date": {"type": "string", "format": "date"},
                         "end_date": {"type": ["string", "null"], "format": "date"},
                         "status": {"type": "string"},
+                        "gnucash_nk_account_guid": {"type": ["string", "null"]},
+                        "gnucash_nk_account_name": {"type": ["string", "null"]},
                     },
                 },
                 "MeterCreateRequest": {

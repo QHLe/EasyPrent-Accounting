@@ -32,11 +32,10 @@ Plausibilitätsprüfung.
   importiert nur die benötigten Buchungen des angefragten Zeitraums. Ein
   eindeutiger GnuCash-Schlüssel je importiertem Split verhindert doppelte lokale
   Zahlungsnachweise bei wiederholtem Öffnen derselben Abrechnung.
-- **Mieteridentifikation:** Jeder Mieter besitzt ein ausgewähltes
-  **GnuCash-NK-Vorauszahlungskonto** als Unterkonto seines
-  **GnuCash-Mieterkontos**. Die Aufsplittung und Zuweisung erfolgen bereits in
-  GnuCash; jede Buchung auf diesem Konto ist damit direkt diesem Mieter und der
-  Zahlungsart Nebenkostenvorauszahlung zugeordnet.
+- **Vertragszuordnung:** Jeder Mietvertrag besitzt ein ausgewähltes
+  **GnuCash-NK-Vorauszahlungskonto**. Die Aufsplittung erfolgt bereits in
+  GnuCash; jede Buchung auf diesem Konto ist damit direkt diesem Mietvertrag und
+  der Zahlungsart Nebenkostenvorauszahlung zugeordnet.
 - **Zahlungsmonat:** Für die Abrechnung zählt der Kalendermonat des
   GnuCash-Buchungsdatums. Es gibt keine manuelle Monatszuordnung und keine
   Aufteilung einer Zahlung auf mehrere Monate.
@@ -93,24 +92,25 @@ Type: Grilling
 ### Question
 
 Wo werden die Verbindungsdaten gepflegt und welches Merkmal verbindet einen
-Mieter mit seinen GnuCash-Buchungen?
+Mietvertrag mit seinen GnuCash-Buchungen?
 
 ### Answer
 
 Die PostgreSQL-Zugangsdaten werden in den EasyPrent-Einstellungen hinterlegt.
-In der Mieter-Maske wird ein zugehöriges GnuCash-Konto ausgewählt. Dieses Konto
-ist der vorgesehene Primärschlüssel für die Zahlungszuordnung; Buchungstext und
-Verwendungszweck sind dafür nicht erforderlich.
+In der Mietvertragsmaske wird das zugehörige GnuCash-Konto ausgewählt. Dieses
+Konto ist der Primärschlüssel für die Zahlungszuordnung; Buchungstext,
+Verwendungszweck und ein am Buchungstag aktiver Vertrag sind dafür nicht
+erforderlich.
 
-## #2a: Welche Kontoseite wird beim Mieter hinterlegt?
+## #2a: Welche Kontoseite wird beim Mietvertrag hinterlegt?
 
 Blocked by: #2
 Type: Grilling
 
 ### Question
 
-Ist das in der Mieter-Maske ausgewählte Konto das eigene
-**GnuCash-NK-Vorauszahlungskonto** des Mieters?
+Ist das in der Mietvertragsmaske ausgewählte Konto das zugehörige
+**GnuCash-NK-Vorauszahlungskonto**?
 
 ### Recommendation
 
@@ -120,8 +120,8 @@ Quelle der Zuordnung; ein zusätzliches Bankkonto ist nicht nötig.
 
 ### Answer
 
-Es handelt sich um das GnuCash-NK-Vorauszahlungskonto im Mieterkonto, nicht um
-ein Bankkonto.
+Es handelt sich um das GnuCash-NK-Vorauszahlungskonto für diesen Mietvertrag,
+nicht um ein Bankkonto.
 
 ## #3: Wie erfolgt die Zuordnung zum Mietvertrag?
 
@@ -130,18 +130,19 @@ Type: Grilling
 
 ### Question
 
-Wie wird eine GnuCash-Buchung einem Mieter statt nur per Textsuche eindeutig
-zugeordnet?
+Wie wird eine GnuCash-Buchung einem Mietvertrag statt nur per Textsuche
+eindeutig zugeordnet?
 
 ### Recommendation
 
-Das GnuCash-Mieterkonto als fachlich stabile Kontoverknüpfung verwenden. Damit
-ist keine Heuristik aus Mietername, Betrag oder Verwendungszweck erforderlich.
+Das GnuCash-NK-Vorauszahlungskonto als fachlich stabile Kontoverknüpfung am
+Mietvertrag verwenden. Damit ist keine Heuristik aus Mietername, Betrag,
+Verwendungszweck oder Buchungsdatum erforderlich.
 
 ### Answer
 
-Jeder Split auf dem beim Mieter hinterlegten GnuCash-NK-Vorauszahlungskonto ist
-bereits direkt diesem Mieter zugeordnet.
+Jeder Split auf dem beim Mietvertrag hinterlegten
+GnuCash-NK-Vorauszahlungskonto ist bereits direkt diesem Vertrag zugeordnet.
 
 ## #3a: Woran erkennt das System die Nebenkostenvorauszahlung?
 
@@ -164,7 +165,7 @@ Aufteilung erfasst oder bestätigt werden.
 ### Answer
 
 Die Nebenkostenvorauszahlung wird auf einem eigenen Unterkonto des
-GnuCash-Mieterkontos gebucht. Die Mieter-Maske verknüpft für diesen Import
+GnuCash-Mieterkontos gebucht. Die Mietvertragsmaske verknüpft für diesen Import
 direkt dieses Unterkonto; Kaltmiete und andere Zahlungen liegen außerhalb des
 Importumfangs.
 
@@ -222,8 +223,9 @@ nicht versioniert oder eingefroren.
    read-only Integrationsschicht mit Verbindungs- und Fehlerbehandlung bauen.
 2. GnuCash-Einstellungen (Host, Port, Datenbank, Benutzer, Passwort, TLS) sowie
    „Verbindung testen“ im Einstellungs-Tab ergänzen; Zugangsdaten nie exportieren.
-3. Die Kontohierarchie bei Bedarf über `piecash` laden und in der Mieter-Maske
-   das GnuCash-NK-Vorauszahlungskonto per stabiler GnuCash-GUID speichern.
+3. Die Kontohierarchie bei Bedarf über `piecash` laden und in der
+   Mietvertragsmaske das GnuCash-NK-Vorauszahlungskonto per stabiler
+   GnuCash-GUID speichern.
 4. Eine lokale Tabelle für importierte Zahlungs-Splits mit einzigartiger
    GnuCash-Split-GUID anlegen. Der Abrechnungs-Button importiert nur Splits der
    ausgewählten Mieter-Unterkonten im angefragten Zeitraum.

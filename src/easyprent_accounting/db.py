@@ -105,9 +105,7 @@ CREATE TABLE IF NOT EXISTS tenants (
     phone TEXT,
     alternate_street TEXT,
     alternate_postal_code TEXT,
-    alternate_city TEXT,
-    gnucash_nk_account_guid TEXT,
-    gnucash_nk_account_name TEXT
+    alternate_city TEXT
 );
 
 CREATE TABLE IF NOT EXISTS leases (
@@ -121,6 +119,8 @@ CREATE TABLE IF NOT EXISTS leases (
     start_date TEXT NOT NULL,
     end_date TEXT,
     status TEXT NOT NULL,
+    gnucash_nk_account_guid TEXT,
+    gnucash_nk_account_name TEXT,
     FOREIGN KEY (unit_id) REFERENCES units(id),
     FOREIGN KEY (room_id) REFERENCES rooms(id),
     FOREIGN KEY (tenant_id) REFERENCES tenants(id)
@@ -299,10 +299,9 @@ def ensure_schema_updates(connection: sqlite3.Connection) -> None:
     _ensure_tenant_documents_table(connection)
     _ensure_lease_documents_table(connection)
     _ensure_tenant_alternate_address_columns(connection)
-    _ensure_tenant_gnucash_account_columns(connection)
-    _ensure_tenant_gnucash_account_uniqueness(connection)
     _ensure_gnucash_settings_table(connection)
     _ensure_gnucash_payments_table(connection)
+    _ensure_lease_gnucash_account_columns(connection)
 
 
 def _ensure_tenant_alternate_address_columns(connection: sqlite3.Connection) -> None:
@@ -310,23 +309,6 @@ def _ensure_tenant_alternate_address_columns(connection: sqlite3.Connection) -> 
     for column in ("alternate_street", "alternate_postal_code", "alternate_city"):
         if column not in columns:
             connection.execute(f"ALTER TABLE tenants ADD COLUMN {column} TEXT")
-
-
-def _ensure_tenant_gnucash_account_columns(connection: sqlite3.Connection) -> None:
-    columns = {row["name"] for row in connection.execute("PRAGMA table_info(tenants)").fetchall()}
-    for column in ("gnucash_nk_account_guid", "gnucash_nk_account_name"):
-        if column not in columns:
-            connection.execute(f"ALTER TABLE tenants ADD COLUMN {column} TEXT")
-
-
-def _ensure_tenant_gnucash_account_uniqueness(connection: sqlite3.Connection) -> None:
-    connection.execute(
-        """
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_tenants_gnucash_nk_account_guid
-        ON tenants(gnucash_nk_account_guid)
-        WHERE gnucash_nk_account_guid IS NOT NULL AND gnucash_nk_account_guid != ''
-        """
-    )
 
 
 def _ensure_gnucash_settings_table(connection: sqlite3.Connection) -> None:
@@ -369,6 +351,76 @@ def _ensure_gnucash_payments_table(connection: sqlite3.Connection) -> None:
     columns = {row["name"] for row in connection.execute("PRAGMA table_info(gnucash_payments)").fetchall()}
     if "lease_id" not in columns:
         connection.execute("ALTER TABLE gnucash_payments ADD COLUMN lease_id INTEGER")
+
+
+def _ensure_lease_gnucash_account_columns(connection: sqlite3.Connection) -> None:
+    columns = {row["name"] for row in connection.execute("PRAGMA table_info(leases)").fetchall()}
+    for column in ("gnucash_nk_account_guid", "gnucash_nk_account_name"):
+        if column not in columns:
+            connection.execute(f"ALTER TABLE leases ADD COLUMN {column} TEXT")
+
+    tenant_columns = {
+        row["name"] for row in connection.execute("PRAGMA table_info(tenants)").fetchall()
+    }
+    if {"gnucash_nk_account_guid", "gnucash_nk_account_name"} <= tenant_columns:
+        legacy_links = connection.execute(
+            """
+            SELECT id, gnucash_nk_account_guid, gnucash_nk_account_name
+            FROM tenants
+            WHERE COALESCE(gnucash_nk_account_guid, '') != ''
+            """
+        ).fetchall()
+        for tenant in legacy_links:
+            linked_lease = connection.execute(
+                "SELECT id FROM leases WHERE gnucash_nk_account_guid = ?",
+                (tenant["gnucash_nk_account_guid"],),
+            ).fetchone()
+            if linked_lease is None:
+                linked_lease = connection.execute(
+                    """
+                    SELECT l.id
+                    FROM leases l
+                    WHERE l.tenant_id = ?
+                      AND COALESCE(l.gnucash_nk_account_guid, '') = ''
+                    ORDER BY
+                        EXISTS (
+                            SELECT 1 FROM gnucash_payments gp WHERE gp.lease_id = l.id
+                        ) DESC,
+                        l.start_date DESC,
+                        l.id DESC
+                    LIMIT 1
+                    """,
+                    (tenant["id"],),
+                ).fetchone()
+                if linked_lease is not None:
+                    connection.execute(
+                        """
+                        UPDATE leases
+                        SET gnucash_nk_account_guid = ?, gnucash_nk_account_name = ?
+                        WHERE id = ?
+                        """,
+                        (
+                            tenant["gnucash_nk_account_guid"],
+                            tenant["gnucash_nk_account_name"],
+                            linked_lease["id"],
+                        ),
+                    )
+            if linked_lease is not None:
+                connection.execute(
+                    """
+                    UPDATE tenants
+                    SET gnucash_nk_account_guid = NULL, gnucash_nk_account_name = NULL
+                    WHERE id = ?
+                    """,
+                    (tenant["id"],),
+                )
+    connection.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_leases_gnucash_nk_account_guid
+        ON leases(gnucash_nk_account_guid)
+        WHERE gnucash_nk_account_guid IS NOT NULL AND gnucash_nk_account_guid != ''
+        """
+    )
 
 
 def _ensure_expense_item_legacy_columns(connection: sqlite3.Connection) -> None:
