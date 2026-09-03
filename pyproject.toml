@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "EasyPrent Accounting CLI and local web server"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = ["reportlab==4.4.10", "odfpy==1.4.1", "piecash", "psycopg2-binary==2.9.11"]
+dependencies = ["reportlab==4.4.10", "odfpy==1.4.1", "piecash==1.2.1", "psycopg2-binary==2.9.11"]
 
 [project.scripts]
 easy-rem = "src.easyprent_accounting.cli:main"
