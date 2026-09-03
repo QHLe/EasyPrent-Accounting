@@ -1015,7 +1015,7 @@ def render_settlement_template(
         tenant_total_column_name = _column_name(tenant_total_column)
         advance_column_name = _column_name(advance_column)
         difference = (
-            f"[.{tenant_total_column_name}{total_row_number}]+"
+            f"[.{tenant_total_column_name}{total_row_number}]-"
             f"[.{advance_column_name}{advance_row_number}]"
         )
         _set_cell(

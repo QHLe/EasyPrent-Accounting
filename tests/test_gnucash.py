@@ -127,13 +127,18 @@ class GnuCashPaymentImportTests(unittest.TestCase):
         self.assertEqual(repeated_import["imported"], 0)
         self.assertEqual(repeated_import["existing"], 1)
         self.assertEqual(reader.requests[0][0], {"nk-tenant-1"})
-        self.assertEqual(tenant_result["advances_paid"], "-75.00")
+        self.assertEqual(tenant_result["advances_paid"], "75.00")
         self.assertEqual(
             tenant_result["balance"],
             f"{Decimal(tenant_result['allocated_costs']) - Decimal('75.00'):.2f}",
         )
+        self.assertEqual(settlement["totals"]["advances"], "75.00")
+        self.assertEqual(
+            settlement["totals"]["balance"],
+            f"{Decimal(settlement['totals']['costs']) - Decimal('75.00'):.2f}",
+        )
 
-    def test_keeps_positive_reversals_signed_and_increases_the_balance(self) -> None:
+    def test_positive_reversal_reduces_paid_advances_and_increases_balance(self) -> None:
         reader = FakeGnuCashReader(
             [
                 GnuCashPayment(
@@ -155,7 +160,7 @@ class GnuCashPaymentImportTests(unittest.TestCase):
         )
 
         tenant_result = next(result for result in settlement["results"] if result["lease_id"] == 1)
-        self.assertEqual(tenant_result["advances_paid"], "20.00")
+        self.assertEqual(tenant_result["advances_paid"], "-20.00")
         self.assertEqual(
             tenant_result["balance"],
             f"{Decimal(tenant_result['allocated_costs']) + Decimal('20.00'):.2f}",

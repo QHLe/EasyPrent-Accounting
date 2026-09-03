@@ -3605,17 +3605,18 @@ def settlement_for_period(
     ).fetchall()
     total_advances = Decimal("0")
     for lease_result in result["results"]:
-        advances_paid = quantize_money(
-            sum(
-                (
-                    Decimal(str(payment["amount"]))
-                    for payment in payment_rows
-                    if int(payment["lease_id"]) == int(lease_result["lease_id"])
-                ),
-                start=Decimal("0"),
-            )
+        raw_signed_advances = sum(
+            (
+                Decimal(str(payment["amount"]))
+                for payment in payment_rows
+                if int(payment["lease_id"]) == int(lease_result["lease_id"])
+            ),
+            start=Decimal("0"),
         )
-        balance = quantize_money(Decimal(lease_result["allocated_costs"]) + advances_paid)
+        advances_paid = quantize_money(-raw_signed_advances)
+        balance = quantize_money(
+            Decimal(lease_result["allocated_costs"]) - advances_paid
+        )
         lease_result["advances_paid"] = f"{advances_paid:.2f}"
         lease_result["balance"] = f"{balance:.2f}"
         total_advances += advances_paid
@@ -3623,7 +3624,7 @@ def settlement_for_period(
     result["totals"] = {
         "costs": f"{total_costs:.2f}",
         "advances": f"{quantize_money(total_advances):.2f}",
-        "balance": f"{quantize_money(total_costs + total_advances):.2f}",
+        "balance": f"{quantize_money(total_costs - total_advances):.2f}",
     }
     result["property_id"] = property_id
     result["unit_id"] = unit_id
