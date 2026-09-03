@@ -998,11 +998,22 @@
                           ),
                         ]
                       : [];
-                  return linkedAccountOption.concat(
-                    accounts.map(function (account) {
-                      return e("option", { key: account.guid, value: account.guid }, account.full_name);
-                    })
-                  );
+                  const emptyOption = linkedAccountGuid
+                    ? [e("option", { key: "remove-link", value: "" }, "Verknüpfung entfernen")]
+                    : [
+                        e(
+                          "option",
+                          { key: "select-account", value: "", disabled: true },
+                          "GnuCash-Konto auswählen"
+                        ),
+                      ];
+                  return linkedAccountOption
+                    .concat(
+                      accounts.map(function (account) {
+                        return e("option", { key: account.guid, value: account.guid }, account.full_name);
+                      })
+                    )
+                    .concat(emptyOption);
                 })()
               )
             ),

@@ -195,6 +195,7 @@ class WebApiAndUiTests(unittest.TestCase):
         self.assertIn("token_masked", content)
         self.assertNotIn("Passwort (maskiert)", content)
         self.assertNotIn('e("option", { value: "" }, "Nicht verknüpft")', content)
+        self.assertIn("Verknüpfung entfernen", content)
         self.assertNotIn('e("span", { className: "hint" }, forms.tenant.gnucash_nk_account_name)', content)
         self.assertIn("formatSettlementAdvance", content)
         self.assertIn("settlement-table-scroll", content)
