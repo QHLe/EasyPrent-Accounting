@@ -1787,6 +1787,8 @@ def build_openapi_document() -> dict:
                         "username": {"type": "string"},
                         "password": {"type": "string"},
                         "sslmode": {"type": "string"},
+                        "bank_account_guid": {"type": ["string", "null"]},
+                        "bank_account_name": {"type": ["string", "null"]},
                     },
                 },
                 "GnuCashSettingsResponse": {
@@ -1800,6 +1802,8 @@ def build_openapi_document() -> dict:
                         "password_present": {"type": "boolean"},
                         "password_masked": {"type": ["string", "null"]},
                         "sslmode": {"type": "string"},
+                        "bank_account_guid": {"type": ["string", "null"]},
+                        "bank_account_name": {"type": ["string", "null"]},
                     },
                 },
                 "GnuCashAccount": {
@@ -1809,6 +1813,7 @@ def build_openapi_document() -> dict:
                         "guid": {"type": "string"},
                         "name": {"type": "string"},
                         "full_name": {"type": "string"},
+                        "parent_guid": {"type": ["string", "null"]},
                     },
                 },
                 "DepreciationScheduleResponse": {

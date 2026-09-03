@@ -234,7 +234,8 @@ def _mask_password(password: str | None) -> str | None:
 def _get_gnucash_settings_row(connection: sqlite3.Connection) -> sqlite3.Row | None:
     return connection.execute(
         """
-        SELECT host, port, database_name, username, password, sslmode, updated_at
+        SELECT host, port, database_name, username, password, sslmode,
+               bank_account_guid, bank_account_name, updated_at
         FROM gnucash_settings
         ORDER BY id DESC
         LIMIT 1
@@ -254,6 +255,8 @@ def get_gnucash_settings(connection: sqlite3.Connection) -> dict:
             "password_present": False,
             "password_masked": None,
             "sslmode": "require",
+            "bank_account_guid": None,
+            "bank_account_name": None,
             "updated_at": None,
         }
     password = str(row["password"] or "")
@@ -266,6 +269,8 @@ def get_gnucash_settings(connection: sqlite3.Connection) -> dict:
         "password_present": password != "",
         "password_masked": _mask_password(password),
         "sslmode": str(row["sslmode"] or "require"),
+        "bank_account_guid": row["bank_account_guid"],
+        "bank_account_name": row["bank_account_name"],
         "updated_at": row["updated_at"],
     }
 
@@ -281,6 +286,7 @@ def _gnucash_connection_settings(connection: sqlite3.Connection) -> dict:
         "username": str(row["username"]),
         "password": str(row["password"]),
         "sslmode": str(row["sslmode"] or "require"),
+        "bank_account_guid": str(row["bank_account_guid"] or ""),
     }
 
 
@@ -294,6 +300,8 @@ def update_gnucash_settings(connection: sqlite3.Connection, payload: dict) -> di
     sslmode = str(payload.get("sslmode") or "require").strip()
     if sslmode not in {"disable", "allow", "prefer", "require", "verify-ca", "verify-full"}:
         raise ValueError("sslmode is invalid")
+    bank_account_guid = str(payload.get("bank_account_guid") or "").strip() or None
+    bank_account_name = str(payload.get("bank_account_name") or "").strip() or None
 
     existing = _get_gnucash_settings_row(connection)
     password_input = payload.get("password")
@@ -311,20 +319,23 @@ def update_gnucash_settings(connection: sqlite3.Connection, payload: dict) -> di
         connection.execute(
             """
             INSERT INTO gnucash_settings (
-                host, port, database_name, username, password, sslmode, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                host, port, database_name, username, password, sslmode,
+                bank_account_guid, bank_account_name, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (host, port, database, username, password, sslmode, timestamp, timestamp),
+            (host, port, database, username, password, sslmode,
+             bank_account_guid, bank_account_name, timestamp, timestamp),
         )
     else:
         connection.execute(
             """
             UPDATE gnucash_settings
             SET host = ?, port = ?, database_name = ?, username = ?, password = ?,
-                sslmode = ?, updated_at = ?
+                sslmode = ?, bank_account_guid = ?, bank_account_name = ?, updated_at = ?
             WHERE id = ?
             """,
-            (host, port, database, username, password, sslmode, timestamp, existing_id["id"]),
+            (host, port, database, username, password, sslmode,
+             bank_account_guid, bank_account_name, timestamp, existing_id["id"]),
         )
     connection.commit()
     return get_gnucash_settings(connection)
@@ -339,7 +350,12 @@ def list_gnucash_accounts(
         _gnucash_connection_settings(connection)
     )
     return [
-        {"guid": account.guid, "name": account.name, "full_name": account.full_name}
+        {
+            "guid": account.guid,
+            "name": account.name,
+            "full_name": account.full_name,
+            "parent_guid": account.parent_guid,
+        }
         for account in accounts
     ]
 
@@ -2626,9 +2642,22 @@ def delete_object(connection: sqlite3.Connection, resource_name: str, object_id:
     return {"resource": resource_name, "id": object_id, "deleted": True}
 
 
+def _validate_gnucash_account_assignment(
+    connection: sqlite3.Connection, account_guid: str | None, tenant_id: int | None = None
+) -> None:
+    if account_guid is None:
+        return
+    existing = connection.execute(
+        "SELECT id FROM tenants WHERE gnucash_nk_account_guid = ?", (account_guid,)
+    ).fetchone()
+    if existing is not None and int(existing["id"]) != tenant_id:
+        raise ValueError("a GnuCash NK account can only be assigned to one tenant")
+
+
 def create_tenant(connection: sqlite3.Connection, payload: dict) -> dict:
     gnucash_account_guid = str(payload.get("gnucash_nk_account_guid") or "").strip() or None
     gnucash_account_name = str(payload.get("gnucash_nk_account_name") or "").strip() or None
+    _validate_gnucash_account_assignment(connection, gnucash_account_guid)
     cursor = connection.execute(
         """
         INSERT INTO tenants (
@@ -2931,6 +2960,7 @@ def update_tenant(connection: sqlite3.Connection, tenant_id: int, payload: dict)
         if "gnucash_nk_account_name" in payload
         else existing_account["gnucash_nk_account_name"]
     )
+    _validate_gnucash_account_assignment(connection, gnucash_account_guid, tenant_id)
 
     connection.execute(
         """
@@ -3000,8 +3030,11 @@ def import_gnucash_payments_for_period(
         return {"imported": 0, "existing": 0, "accounts": 0}
 
     active_reader = reader or PiecashGnuCashReader()
+    connection_settings = _gnucash_connection_settings(connection)
+    if not connection_settings["bank_account_guid"]:
+        raise ValueError("a GnuCash bank account must be configured before importing payments")
     payments = active_reader.list_payments(
-        _gnucash_connection_settings(connection), set(accounts), start, end
+        connection_settings, set(accounts), start, end
     )
     imported = 0
     existing = 0
@@ -3010,6 +3043,27 @@ def import_gnucash_payments_for_period(
         tenant = accounts.get(payment.account_guid)
         if tenant is None:
             continue
+        lease_rows = connection.execute(
+            """
+            SELECT l.id
+            FROM leases l
+            JOIN units u ON u.id = l.unit_id
+            LEFT JOIN buildings b ON b.id = u.building_id
+            WHERE l.tenant_id = ?
+              AND ((? IS NOT NULL AND b.property_id = ?) OR (? IS NOT NULL AND u.id = ?))
+              AND l.start_date <= ?
+              AND (l.end_date IS NULL OR l.end_date >= ?)
+            """,
+            (
+                int(tenant["id"]), property_id, property_id, unit_id, unit_id,
+                payment.booking_date.isoformat(), payment.booking_date.isoformat(),
+            ),
+        ).fetchall()
+        if len(lease_rows) != 1:
+            raise ValueError(
+                "each GnuCash payment must match exactly one active lease on its booking date"
+            )
+        lease_id = int(lease_rows[0]["id"])
         known = connection.execute(
             "SELECT id FROM gnucash_payments WHERE split_guid = ?", (payment.split_guid,)
         ).fetchone()
@@ -3020,12 +3074,13 @@ def import_gnucash_payments_for_period(
         connection.execute(
             """
             INSERT INTO gnucash_payments (
-                split_guid, transaction_guid, tenant_id, account_guid, account_name,
+                split_guid, transaction_guid, tenant_id, lease_id, account_guid, account_name,
                 booking_date, amount, description, imported_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(split_guid) DO UPDATE SET
                 transaction_guid = excluded.transaction_guid,
                 tenant_id = excluded.tenant_id,
+                lease_id = excluded.lease_id,
                 account_guid = excluded.account_guid,
                 account_name = excluded.account_name,
                 booking_date = excluded.booking_date,
@@ -3037,6 +3092,7 @@ def import_gnucash_payments_for_period(
                 payment.split_guid,
                 payment.transaction_guid,
                 int(tenant["id"]),
+                lease_id,
                 payment.account_guid,
                 tenant["gnucash_nk_account_name"],
                 payment.booking_date.isoformat(),
@@ -3060,6 +3116,12 @@ def delete_tenant(connection: sqlite3.Connection, tenant_id: int) -> dict:
     ).fetchone()
     if lease_count_row is not None and int(lease_count_row["lease_count"] or 0) > 0:
         raise ValueError("tenant cannot be deleted while leases exist")
+
+    payment_count_row = connection.execute(
+        "SELECT COUNT(*) AS payment_count FROM gnucash_payments WHERE tenant_id = ?", (tenant_id,)
+    ).fetchone()
+    if payment_count_row is not None and int(payment_count_row["payment_count"] or 0) > 0:
+        raise ValueError("tenant cannot be deleted while GnuCash payments exist")
 
     connection.execute("DELETE FROM tenant_documents WHERE tenant_id = ?", (tenant_id,))
     connection.execute("DELETE FROM tenants WHERE id = ?", (tenant_id,))
@@ -3535,7 +3597,7 @@ def settlement_for_period(
         )
     payment_rows = connection.execute(
         """
-        SELECT tenant_id, booking_date, amount
+        SELECT lease_id, amount
         FROM gnucash_payments
         WHERE booking_date >= ? AND booking_date <= ?
         """,
@@ -3543,21 +3605,12 @@ def settlement_for_period(
     ).fetchall()
     total_advances = Decimal("0")
     for lease_result in result["results"]:
-        lease_row = lease_by_id[lease_result["lease_id"]]
-        lease_start = max(parse_date(lease_row["start_date"]), parse_date(period_start))
-        lease_end = min(
-            parse_date(lease_row["end_date"])
-            if lease_row["end_date"]
-            else parse_date(period_end),
-            parse_date(period_end),
-        )
         advances_paid = quantize_money(
             sum(
                 (
                     Decimal(str(payment["amount"]))
                     for payment in payment_rows
-                    if int(payment["tenant_id"]) == int(lease_row["tenant_id"])
-                    and lease_start <= parse_date(payment["booking_date"]) <= lease_end
+                    if int(payment["lease_id"]) == int(lease_result["lease_id"])
                 ),
                 start=Decimal("0"),
             )

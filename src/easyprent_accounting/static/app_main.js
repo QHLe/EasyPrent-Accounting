@@ -921,6 +921,8 @@
       password_present: false,
       password_masked: null,
       sslmode: "require",
+      bank_account_guid: "",
+      bank_account_name: "",
       updated_at: null,
     });
     const [gnucashForm, setGnuCashForm] = useState({
@@ -930,6 +932,8 @@
       username: "",
       password: "",
       sslmode: "require",
+      bank_account_guid: "",
+      bank_account_name: "",
     });
     const [gnucashAccounts, setGnuCashAccounts] = useState([]);
     const [applicationSettings, setApplicationSettings] = useState({
@@ -1292,6 +1296,8 @@
             username: (results[6] && results[6].username) || "",
             password: "",
             sslmode: (results[6] && results[6].sslmode) || "require",
+            bank_account_guid: (results[6] && results[6].bank_account_guid) || "",
+            bank_account_name: (results[6] && results[6].bank_account_name) || "",
           });
           syncFormDefaults(results[0]);
         })
@@ -2881,6 +2887,8 @@
           username: gnucashForm.username,
           password: gnucashForm.password,
           sslmode: gnucashForm.sslmode,
+          bank_account_guid: gnucashForm.bank_account_guid,
+          bank_account_name: gnucashForm.bank_account_name,
         }),
       })
         .then(function (payload) {
@@ -2892,6 +2900,8 @@
             username: payload.username || "",
             password: "",
             sslmode: payload.sslmode || "require",
+            bank_account_guid: payload.bank_account_guid || "",
+            bank_account_name: payload.bank_account_name || "",
           });
           setStatus("GnuCash-Einstellungen gespeichert.");
         })
@@ -3634,6 +3644,8 @@
               gnucashForm: gnucashForm,
               onGnuCashFieldChange: setGnuCashField,
               gnucashSettings: gnucashSettings,
+              gnucashAccounts: gnucashAccounts,
+              onLoadGnuCashAccounts: loadGnuCashAccounts,
               applicationSettings: applicationSettings,
               applicationSettingsForm: applicationSettingsForm,
               onApplicationSettingsFieldChange: setApplicationSettingsField,

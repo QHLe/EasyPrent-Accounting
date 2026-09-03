@@ -72,6 +72,8 @@ class GnuCashPaymentImportTests(unittest.TestCase):
                 "username": "easyprent_reader",
                 "password": "not-exported",
                 "sslmode": "require",
+                "bank_account_guid": "bank-main",
+                "bank_account_name": "Bank:Giro",
             },
         )
 
@@ -127,3 +129,61 @@ class GnuCashPaymentImportTests(unittest.TestCase):
             f"{Decimal(tenant_result['allocated_costs']) - Decimal('75.00'):.2f}",
         )
 
+    def test_keeps_negative_refunds_signed(self) -> None:
+        reader = FakeGnuCashReader(
+            [
+                GnuCashPayment(
+                    split_guid="split-refund",
+                    transaction_guid="transaction-refund",
+                    account_guid="nk-tenant-1",
+                    booking_date=date(2025, 1, 5),
+                    amount=Decimal("-20.00"),
+                    description="Rückzahlung",
+                )
+            ]
+        )
+
+        import_gnucash_payments_for_period(
+            self.connection, self.property_id, "2025-01-01", "2025-12-31", reader=reader
+        )
+        settlement = settlement_for_period(
+            self.connection, self.property_id, "2025-01-01", "2025-12-31"
+        )
+
+        tenant_result = next(result for result in settlement["results"] if result["lease_id"] == 1)
+        self.assertEqual(tenant_result["advances_paid"], "-20.00")
+
+    def test_rejects_payment_when_multiple_leases_are_active(self) -> None:
+        lease = self.connection.execute("SELECT * FROM leases WHERE id = 1").fetchone()
+        assert lease is not None
+        self.connection.execute(
+            """
+            INSERT INTO leases (
+                unit_id, room_id, tenant_id, rent_cold, additional_charges_advance,
+                occupant_count, start_date, end_date, status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                lease["unit_id"], lease["room_id"], lease["tenant_id"], lease["rent_cold"],
+                lease["additional_charges_advance"], lease["occupant_count"],
+                "2025-01-01", "2025-12-31", lease["status"],
+            ),
+        )
+        self.connection.commit()
+        reader = FakeGnuCashReader(
+            [
+                GnuCashPayment(
+                    split_guid="split-ambiguous",
+                    transaction_guid="transaction-ambiguous",
+                    account_guid="nk-tenant-1",
+                    booking_date=date(2025, 1, 5),
+                    amount=Decimal("75.00"),
+                    description="Nebenkostenvorauszahlung",
+                )
+            ]
+        )
+
+        with self.assertRaisesRegex(ValueError, "exactly one active lease"):
+            import_gnucash_payments_for_period(
+                self.connection, self.property_id, "2025-01-01", "2025-12-31", reader=reader
+            )

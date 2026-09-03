@@ -174,6 +174,8 @@ CREATE TABLE IF NOT EXISTS gnucash_settings (
     username TEXT NOT NULL,
     password TEXT NOT NULL,
     sslmode TEXT NOT NULL DEFAULT 'require',
+    bank_account_guid TEXT,
+    bank_account_name TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -183,13 +185,15 @@ CREATE TABLE IF NOT EXISTS gnucash_payments (
     split_guid TEXT NOT NULL UNIQUE,
     transaction_guid TEXT NOT NULL,
     tenant_id INTEGER NOT NULL,
+    lease_id INTEGER NOT NULL,
     account_guid TEXT NOT NULL,
     account_name TEXT,
     booking_date TEXT NOT NULL,
     amount NUMERIC NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     imported_at TEXT NOT NULL,
-    FOREIGN KEY (tenant_id) REFERENCES tenants(id)
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id),
+    FOREIGN KEY (lease_id) REFERENCES leases(id)
 );
 
 CREATE TABLE IF NOT EXISTS expense_documents (
@@ -264,6 +268,7 @@ def default_db_path() -> str:
 def get_connection() -> sqlite3.Connection:
     connection = sqlite3.connect(default_db_path())
     connection.row_factory = sqlite3.Row
+    connection.execute("PRAGMA foreign_keys = ON")
     return connection
 
 
@@ -297,6 +302,7 @@ def ensure_schema_updates(connection: sqlite3.Connection) -> None:
     _ensure_lease_documents_table(connection)
     _ensure_tenant_alternate_address_columns(connection)
     _ensure_tenant_gnucash_account_columns(connection)
+    _ensure_tenant_gnucash_account_uniqueness(connection)
     _ensure_gnucash_settings_table(connection)
     _ensure_gnucash_payments_table(connection)
 
@@ -315,6 +321,16 @@ def _ensure_tenant_gnucash_account_columns(connection: sqlite3.Connection) -> No
             connection.execute(f"ALTER TABLE tenants ADD COLUMN {column} TEXT")
 
 
+def _ensure_tenant_gnucash_account_uniqueness(connection: sqlite3.Connection) -> None:
+    connection.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_tenants_gnucash_nk_account_guid
+        ON tenants(gnucash_nk_account_guid)
+        WHERE gnucash_nk_account_guid IS NOT NULL AND gnucash_nk_account_guid != ''
+        """
+    )
+
+
 def _ensure_gnucash_settings_table(connection: sqlite3.Connection) -> None:
     connection.execute(
         """
@@ -326,11 +342,17 @@ def _ensure_gnucash_settings_table(connection: sqlite3.Connection) -> None:
             username TEXT NOT NULL,
             password TEXT NOT NULL,
             sslmode TEXT NOT NULL DEFAULT 'require',
+            bank_account_guid TEXT,
+            bank_account_name TEXT,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         )
         """
     )
+    columns = {row["name"] for row in connection.execute("PRAGMA table_info(gnucash_settings)").fetchall()}
+    for column in ("bank_account_guid", "bank_account_name"):
+        if column not in columns:
+            connection.execute(f"ALTER TABLE gnucash_settings ADD COLUMN {column} TEXT")
 
 
 def _ensure_gnucash_payments_table(connection: sqlite3.Connection) -> None:
@@ -341,6 +363,7 @@ def _ensure_gnucash_payments_table(connection: sqlite3.Connection) -> None:
             split_guid TEXT NOT NULL UNIQUE,
             transaction_guid TEXT NOT NULL,
             tenant_id INTEGER NOT NULL,
+            lease_id INTEGER,
             account_guid TEXT NOT NULL,
             account_name TEXT,
             booking_date TEXT NOT NULL,
@@ -351,6 +374,9 @@ def _ensure_gnucash_payments_table(connection: sqlite3.Connection) -> None:
         )
         """
     )
+    columns = {row["name"] for row in connection.execute("PRAGMA table_info(gnucash_payments)").fetchall()}
+    if "lease_id" not in columns:
+        connection.execute("ALTER TABLE gnucash_payments ADD COLUMN lease_id INTEGER")
 
 
 def _ensure_expense_item_legacy_columns(connection: sqlite3.Connection) -> None:

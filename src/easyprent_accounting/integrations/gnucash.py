@@ -16,6 +16,7 @@ class GnuCashAccount:
     guid: str
     name: str
     full_name: str
+    parent_guid: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,6 +77,7 @@ class PiecashGnuCashReader:
                         guid=str(account.guid),
                         name=str(account.name),
                         full_name=str(account.fullname),
+                        parent_guid=(str(account.parent.guid) if account.parent is not None else None),
                     )
                     for account in book.accounts
                 ],
@@ -93,16 +95,30 @@ class PiecashGnuCashReader:
     ) -> list[GnuCashPayment]:
         if not account_guids:
             return []
+        bank_account_guid = str(settings.get("bank_account_guid") or "").strip()
+        if not bank_account_guid:
+            raise GnuCashIntegrationError("GnuCash bank account is not configured")
         book = self._open_book(settings)
         try:
             payments: list[GnuCashPayment] = []
             for account in book.accounts:
                 if str(account.guid) not in account_guids:
                     continue
+                if account.parent is None:
+                    raise GnuCashIntegrationError(
+                        "the selected GnuCash NK account must be a subaccount"
+                    )
                 for split in account.splits:
                     transaction = split.transaction
                     booking_date = transaction.post_date
                     if not period_start <= booking_date <= period_end:
+                        continue
+                    bank_splits = [
+                        transaction_split
+                        for transaction_split in transaction.splits
+                        if str(transaction_split.account.guid) == bank_account_guid
+                    ]
+                    if not bank_splits:
                         continue
                     payments.append(
                         GnuCashPayment(
@@ -110,10 +126,12 @@ class PiecashGnuCashReader:
                             transaction_guid=str(transaction.guid),
                             account_guid=str(account.guid),
                             booking_date=booking_date,
-                            # The configured account only holds NK advances. The
-                            # source account type determines the sign in GnuCash;
-                            # EasyPrent stores the payment magnitude uniformly.
-                            amount=abs(Decimal(str(split.value))),
+                            # The bank split determines the economic direction:
+                            # incoming bank money is positive; refunds are negative.
+                            amount=sum(
+                                (Decimal(str(bank_split.value)) for bank_split in bank_splits),
+                                start=Decimal("0"),
+                            ),
                             description=str(transaction.description or ""),
                         )
                     )
