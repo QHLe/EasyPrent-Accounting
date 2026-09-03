@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import sqlite3
+import sys
 import unittest
 from datetime import date
 from decimal import Decimal
 from types import SimpleNamespace
+from unittest import mock
 
 from src.easyprent_accounting.db import SCHEMA, seed_demo_data
 from src.easyprent_accounting.integrations.gnucash import GnuCashPayment, PiecashGnuCashReader
@@ -243,6 +245,30 @@ class GnuCashPaymentImportTests(unittest.TestCase):
 
 
 class PiecashGnuCashReaderTests(unittest.TestCase):
+    def test_connection_error_never_contains_the_password_or_uri(self) -> None:
+        fake_piecash = SimpleNamespace(
+            open_book=mock.Mock(side_effect=RuntimeError(
+                "Database 'postgresql+psycopg2://postgres:secret-password@db/book' does not exist"
+            ))
+        )
+        reader = PiecashGnuCashReader()
+
+        with mock.patch.dict(sys.modules, {"piecash": fake_piecash}):
+            with self.assertRaisesRegex(ValueError, "GnuCash connection failed") as context:
+                reader.list_accounts(
+                    {
+                        "host": "db",
+                        "port": 5432,
+                        "database": "book",
+                        "username": "postgres",
+                        "password": "secret-password",
+                        "sslmode": "require",
+                    }
+                )
+
+        self.assertNotIn("secret-password", str(context.exception))
+        self.assertNotIn("postgresql+psycopg2://", str(context.exception))
+
     def test_preserves_the_sign_of_a_nk_account_split(self) -> None:
         transaction = SimpleNamespace(
             guid="transaction-refund",
