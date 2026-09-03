@@ -142,17 +142,21 @@
             e("label", null, "Bis", e("input", { type: "date", name: "period_end", value: props.settlementFilters.period_end, onChange: props.onSettlementFilterChange })),
             e("button", { type: "submit", disabled: !settlementTargetValue }, "Abrechnung aktualisieren")
           ),
-          table(
-            [
-              "Mieter",
-              "Mietobjekt",
-              "Abgerechneter Zeitraum",
-              "Kostenanteil",
-              "Geleistete Vorauszahlungen",
-              "Saldo",
-              "Dokument",
-            ],
-            props.settlementRows
+          e(
+            "div",
+            { className: "settlement-table-scroll" },
+            table(
+              [
+                "Mieter",
+                "Mietobjekt",
+                "Abgerechneter Zeitraum",
+                "Kostenanteil",
+                "Geleistete Vorauszahlungen",
+                "Saldo",
+                "Dokument",
+              ],
+              props.settlementRows
+            )
           ),
           e(
             "p",
@@ -167,7 +171,11 @@
                 "Gesamt: Kosten ",
                 props.settlement.totals.costs,
                 " · Vorauszahlungen ",
-                props.settlement.totals.advances == null ? "-" : props.settlement.totals.advances,
+                props.settlement.totals.advances == null
+                  ? "-"
+                  : String(props.settlement.totals.advances).startsWith("-")
+                    ? String(props.settlement.totals.advances).slice(1)
+                    : "-" + String(props.settlement.totals.advances),
                 " · Saldo ",
                 props.settlement.totals.balance == null ? "-" : props.settlement.totals.balance
               )
@@ -367,12 +375,6 @@
                 onClick: props.onLoadGnuCashAccounts,
               },
               "Verbindung testen und Konten laden"
-            ),
-            e(
-              "p",
-              { className: "hint" },
-              "Passwort (maskiert): ",
-              props.gnucashSettings.password_masked || "Nicht gesetzt"
             ),
             e(
               "button",

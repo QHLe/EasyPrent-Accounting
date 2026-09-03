@@ -295,6 +295,20 @@ table {
   font-size: 0.95rem;
 }
 
+.settlement-table-scroll {
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
+}
+
+.settlement-table-scroll table {
+  min-width: 760px;
+}
+
+.settlement-document-download {
+  display: inline-flex;
+  white-space: nowrap;
+}
+
 th,
 td {
   text-align: left;

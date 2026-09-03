@@ -982,10 +982,28 @@
                     );
                   },
                 },
-                e("option", { value: "" }, "Nicht verknüpft"),
-                (props.gnucashAccounts || []).map(function (account) {
-                  return e("option", { key: account.guid, value: account.guid }, account.full_name);
-                })
+                (function () {
+                  const accounts = props.gnucashAccounts || [];
+                  const linkedAccountGuid = forms.tenant.gnucash_nk_account_guid || "";
+                  const isLinkedAccountLoaded = accounts.some(function (account) {
+                    return account.guid === linkedAccountGuid;
+                  });
+                  const linkedAccountOption =
+                    linkedAccountGuid && !isLinkedAccountLoaded
+                      ? [
+                          e(
+                            "option",
+                            { key: linkedAccountGuid, value: linkedAccountGuid },
+                            forms.tenant.gnucash_nk_account_name || "Verknüpftes GnuCash-Konto"
+                          ),
+                        ]
+                      : [];
+                  return linkedAccountOption.concat(
+                    accounts.map(function (account) {
+                      return e("option", { key: account.guid, value: account.guid }, account.full_name);
+                    })
+                  );
+                })()
               )
             ),
             e(
@@ -1001,9 +1019,6 @@
                 },
                 "GnuCash-Konten laden"
               ),
-              forms.tenant.gnucash_nk_account_name
-                ? e("span", { className: "hint" }, forms.tenant.gnucash_nk_account_name)
-                : null
             ),
             e(
               "div",
