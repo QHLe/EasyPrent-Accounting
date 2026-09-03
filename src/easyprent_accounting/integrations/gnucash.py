@@ -68,7 +68,7 @@ class PiecashGnuCashReader:
         except Exception as error:  # piecash exposes several exception classes
             raise GnuCashIntegrationError(
                 "GnuCash connection failed; check the server, database and credentials"
-            ) from error
+            ) from None
 
     def list_accounts(self, settings: dict) -> list[GnuCashAccount]:
         book = self._open_book(settings)

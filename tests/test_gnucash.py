@@ -268,6 +268,7 @@ class PiecashGnuCashReaderTests(unittest.TestCase):
 
         self.assertNotIn("secret-password", str(context.exception))
         self.assertNotIn("postgresql+psycopg2://", str(context.exception))
+        self.assertIsNone(context.exception.__cause__)
 
     def test_preserves_the_sign_of_a_nk_account_split(self) -> None:
         transaction = SimpleNamespace(
