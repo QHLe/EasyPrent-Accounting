@@ -274,60 +274,57 @@ def _apply_advance_payment_page_break(root: ET.Element, row: ET.Element) -> None
     automatic_styles = root.find("office:automatic-styles", NS)
     if automatic_styles is None:
         return
-    if not any(
-        style.get(f"{{{STYLE_NS}}}name") == style_name
+    styles_by_name = {
+        style.get(f"{{{STYLE_NS}}}name", ""): style
         for style in automatic_styles.findall("style:style", NS)
-    ):
-        payment_row_style = ET.SubElement(
-            automatic_styles,
-            f"{{{STYLE_NS}}}style",
-            {
-                f"{{{STYLE_NS}}}name": style_name,
-                f"{{{STYLE_NS}}}family": "table-row",
-                **(
-                    {f"{{{STYLE_NS}}}parent-style-name": row.get(f"{{{TABLE_NS}}}style-name")}
-                    if row.get(f"{{{TABLE_NS}}}style-name")
-                    else {}
-                ),
-            },
+    }
+    payment_row_style = styles_by_name.get(style_name)
+    if payment_row_style is None:
+        original_style = styles_by_name.get(
+            row.get(f"{{{TABLE_NS}}}style-name", "")
         )
-        ET.SubElement(
-            payment_row_style,
-            f"{{{STYLE_NS}}}table-row-properties",
-            {f"{{{FO_NS}}}break-before": "page"},
+        if original_style is not None:
+            payment_row_style = deepcopy(original_style)
+            payment_row_style.set(f"{{{STYLE_NS}}}name", style_name)
+            payment_row_style.attrib.pop(
+                f"{{{STYLE_NS}}}parent-style-name", None
+            )
+            automatic_styles.append(payment_row_style)
+        else:
+            payment_row_style = ET.SubElement(
+                automatic_styles,
+                f"{{{STYLE_NS}}}style",
+                {
+                    f"{{{STYLE_NS}}}name": style_name,
+                    f"{{{STYLE_NS}}}family": "table-row",
+                },
+            )
+    row_properties = payment_row_style.find("style:table-row-properties", NS)
+    if row_properties is None:
+        row_properties = ET.SubElement(
+            payment_row_style, f"{{{STYLE_NS}}}table-row-properties"
         )
+    row_properties.attrib.pop(f"{{{STYLE_NS}}}row-height", None)
+    row_properties.set(f"{{{STYLE_NS}}}use-optimal-row-height", "true")
+    row_properties.set(f"{{{FO_NS}}}break-before", "page")
     row.set(f"{{{TABLE_NS}}}style-name", style_name)
 
 
-def _apply_advance_payment_auto_height(root: ET.Element, row: ET.Element) -> None:
-    """Let each generated payment row grow with its cell content."""
-    original_style = row.get(f"{{{TABLE_NS}}}style-name", "Default")
-    safe_original_style = re.sub(r"[^A-Za-z0-9_]", "_", original_style)
-    style_name = f"roEasyAdvanceAuto_{safe_original_style}"
+def _apply_optimal_row_heights(root: ET.Element) -> None:
+    """Remove fixed heights and enable content-based height on every row style."""
     automatic_styles = root.find("office:automatic-styles", NS)
     if automatic_styles is None:
         return
-    if not any(
-        style.get(f"{{{STYLE_NS}}}name") == style_name
-        for style in automatic_styles.findall("style:style", NS)
-    ):
-        attributes = {
-            f"{{{STYLE_NS}}}name": style_name,
-            f"{{{STYLE_NS}}}family": "table-row",
-        }
-        if original_style and original_style != "Default":
-            attributes[f"{{{STYLE_NS}}}parent-style-name"] = original_style
-        payment_row_style = ET.SubElement(
-            automatic_styles,
-            f"{{{STYLE_NS}}}style",
-            attributes,
-        )
-        ET.SubElement(
-            payment_row_style,
-            f"{{{STYLE_NS}}}table-row-properties",
-            {f"{{{STYLE_NS}}}use-optimal-row-height": "true"},
-        )
-    row.set(f"{{{TABLE_NS}}}style-name", style_name)
+    for row_style in automatic_styles.findall("style:style", NS):
+        if row_style.get(f"{{{STYLE_NS}}}family") != "table-row":
+            continue
+        row_properties = row_style.find("style:table-row-properties", NS)
+        if row_properties is None:
+            row_properties = ET.SubElement(
+                row_style, f"{{{STYLE_NS}}}table-row-properties"
+            )
+        row_properties.attrib.pop(f"{{{STYLE_NS}}}row-height", None)
+        row_properties.set(f"{{{STYLE_NS}}}use-optimal-row-height", "true")
 
 
 def _apply_subposition_styles(
@@ -1149,12 +1146,10 @@ def render_settlement_template(
             ),
         )
 
-    # A user may enter long labels or edit fields after the export.  Keep every
-    # row in the document at its optimal height instead of inheriting a fixed
-    # height from the source template.  The derived style preserves special
-    # properties such as the page break before the payment-detail title.
-    for row in sheet.findall("table:table-row", NS):
-        _apply_advance_payment_auto_height(root, row)
+    # A user may enter long labels or edit fields after the export. Keep all
+    # table-row styles content-based; explicit fixed heights otherwise take
+    # precedence in LibreOffice even when optimal height is also enabled.
+    _apply_optimal_row_heights(root)
 
     replacements = _sanitize_package_files(
         entries,
