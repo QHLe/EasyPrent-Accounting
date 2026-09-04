@@ -33,6 +33,7 @@
   const MeterSupplementalPanels = sections.MeterSupplementalPanels;
   const OverviewContent = sections.OverviewContent;
   const SettingsContent = sections.SettingsContent;
+  const SettlementRunsContent = sections.SettlementRunsContent;
   const renderManagementActiveForm = formsModule.renderManagementActiveForm;
   const buildFilteredExpenses = previews.buildFilteredExpenses || function (expenses) {
     return expenses || [];
@@ -838,6 +839,9 @@
     const [overview, setOverview] = useState(null);
     const [settlement, setSettlement] = useState(null);
     const [settlementFilters, setSettlementFilters] = useState({ property_id: "", unit_id: "", period_start: bootstrap.settlementPeriodStart, period_end: bootstrap.settlementPeriodEnd });
+    const [settlementRunTarget, setSettlementRunTarget] = useState("");
+    const [settlementRunYear, setSettlementRunYear] = useState(String(new Date().getFullYear()));
+    const [settlementRunOverview, setSettlementRunOverview] = useState(null);
     const [depreciation, setDepreciation] = useState(null);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -1346,6 +1350,47 @@
           );
         })
         .catch(function (loadError) { setError(loadError.message || "Abrechnung konnte nicht geladen werden."); })
+        .finally(function () { setLoading(false); });
+    }
+
+    function loadSettlementRun(settlementId) {
+      return fetchJson("/api/settlement-runs/" + encodeURIComponent(settlementId)).then(function (payload) {
+        setSettlementRunOverview(payload);
+        return payload;
+      });
+    }
+
+    function handleSettlementRunCreate() {
+      const separator = settlementRunTarget.indexOf(":");
+      const targetType = settlementRunTarget.slice(0, separator);
+      const targetId = settlementRunTarget.slice(separator + 1);
+      setLoading(true);
+      setError("");
+      fetchJson("/api/settlement-runs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          year: Number(settlementRunYear),
+          property_id: targetType === "property" ? Number(targetId) : null,
+          unit_id: targetType === "unit" ? Number(targetId) : null,
+        }),
+      })
+        .then(function (run) { return loadSettlementRun(run.id); })
+        .then(function () { setStatus("Abrechnung geöffnet."); })
+        .catch(function (loadError) { setError(loadError.message || "Abrechnung konnte nicht geöffnet werden."); })
+        .finally(function () { setLoading(false); });
+    }
+
+    function performSettlementPaymentAction(path, successMessage) {
+      setLoading(true);
+      setError("");
+      fetchJson(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })
+        .then(function (payload) {
+          const overviewPayload = payload.overview || payload;
+          setSettlementRunOverview(overviewPayload);
+          setStatus(successMessage);
+        })
+        .catch(function (loadError) { setError(loadError.message || "Zahlungen konnten nicht geändert werden."); })
         .finally(function () { setLoading(false); });
     }
 
@@ -3526,8 +3571,29 @@
       mainTabButton("objects", "Objektverwaltung"),
       mainTabButton("cost_management", "Kostenverwaltung"),
       mainTabButton("tenant_management", "Mieterverwaltung"),
+      mainTabButton("settlements", "Abrechnungen"),
       mainTabButton("settings", "Einstellungen"),
     ];
+    const settlementRunTargets = (overview.properties || [])
+      .filter(function (property) { return !property.is_archived; })
+      .map(function (property) {
+        return { value: "property:" + String(property.id), label: "Immobilie: " + property.name };
+      })
+      .concat((overview.units || []).filter(function (unit) {
+        return !unit.is_archived && !unit.property_id;
+      }).map(function (unit) {
+        return { value: "unit:" + String(unit.id), label: "Wohnung: " + unit.label };
+      }));
+    const settlementRunStartYears = (overview.leases || []).map(function (lease) {
+      return Number(String(lease.start_date || "").slice(0, 4));
+    }).filter(function (year) { return Number.isFinite(year); });
+    const settlementRunFirstYear = settlementRunStartYears.length
+      ? Math.min.apply(null, settlementRunStartYears)
+      : new Date().getFullYear();
+    const settlementRunYears = Array.from(
+      { length: new Date().getFullYear() + 2 - settlementRunFirstYear },
+      function (_, index) { return settlementRunFirstYear + index; }
+    );
     const managementTabButtons = [
       isCostManagementMainTab
         ? tabButton("meters", "Zähler")
@@ -3623,6 +3689,51 @@
             depreciation: depreciation,
             depreciationYear: bootstrap.depreciationYear,
           })
+        : mainTab === "settlements"
+          ? e(SettlementRunsContent, {
+              targets: settlementRunTargets,
+              years: settlementRunYears,
+              target: settlementRunTarget,
+              year: settlementRunYear,
+              overview: settlementRunOverview,
+              busy: loading || saving,
+              onTargetChange: function (event) { setSettlementRunTarget(event.target.value); },
+              onYearChange: function (event) { setSettlementRunYear(event.target.value); },
+              onCreate: handleSettlementRunCreate,
+              onRefresh: function () {
+                if (settlementRunOverview) {
+                  performSettlementPaymentAction(
+                    "/api/settlement-runs/" + encodeURIComponent(settlementRunOverview.run.id) + "/payments/refresh",
+                    "Zahlungen aktualisiert."
+                  );
+                }
+              },
+              onConsiderAll: function () {
+                if (settlementRunOverview) {
+                  performSettlementPaymentAction(
+                    "/api/settlement-runs/" + encodeURIComponent(settlementRunOverview.run.id) + "/payments/consider-all",
+                    "Alle gültigen Zahlungen berücksichtigt."
+                  );
+                }
+              },
+              onConsider: function (splitGuid) {
+                performSettlementPaymentAction(
+                  "/api/settlement-runs/" + encodeURIComponent(settlementRunOverview.run.id) + "/payments/" + encodeURIComponent(splitGuid) + "/consider",
+                  "Zahlung berücksichtigt."
+                );
+              },
+              onUnassign: function (splitGuid) {
+                performSettlementPaymentAction(
+                  "/api/settlement-runs/" + encodeURIComponent(settlementRunOverview.run.id) + "/payments/" + encodeURIComponent(splitGuid) + "/unassign",
+                  "Zahlungszuordnung aufgehoben."
+                );
+              },
+              odsUrl: function (leaseId) {
+                const run = settlementRunOverview.run;
+                return "/api/settlement-runs/" + encodeURIComponent(run.id) +
+                  "/leases/" + encodeURIComponent(String(leaseId)) + "/document.ods";
+              },
+            })
         : mainTab === "settings"
           ? e(SettingsContent, {
               onPaperlessSubmit: handlePaperlessSubmit,

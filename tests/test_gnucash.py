@@ -11,8 +11,12 @@ from unittest import mock
 from src.easyprent_accounting.db import SCHEMA, seed_demo_data
 from src.easyprent_accounting.integrations.gnucash import GnuCashPayment, PiecashGnuCashReader
 from src.easyprent_accounting.services import (
+    create_or_open_settlement_run,
     delete_lease,
+    get_settlement_run_overview,
     import_gnucash_payments_for_period,
+    refresh_settlement_run_payments,
+    set_settlement_payment_considered,
     settlement_for_period,
     update_gnucash_settings,
     update_lease,
@@ -249,6 +253,48 @@ class GnuCashPaymentImportTests(unittest.TestCase):
         )
         tenant_result = next(result for result in settlement["results"] if result["lease_id"] == 1)
         self.assertEqual(tenant_result["advances_paid"], "0.00")
+
+    def test_settlement_run_loads_all_account_payments_and_excludes_outside_ones(self) -> None:
+        settlement_run, _ = create_or_open_settlement_run(
+            self.connection, {"property_id": self.property_id, "year": 2025}
+        )
+        reader = FakeGnuCashReader(
+            [
+                GnuCashPayment(
+                    split_guid="run-inside",
+                    transaction_guid="run-inside-transaction",
+                    account_guid="nk-tenant-1",
+                    booking_date=date(2025, 1, 5),
+                    amount=Decimal("-75.00"),
+                    description="Vorauszahlung Januar",
+                ),
+                GnuCashPayment(
+                    split_guid="run-before",
+                    transaction_guid="run-before-transaction",
+                    account_guid="nk-tenant-1",
+                    booking_date=date(2024, 12, 31),
+                    amount=Decimal("-75.00"),
+                    description="Vorauszahlung davor",
+                ),
+            ]
+        )
+
+        refreshed = refresh_settlement_run_payments(
+            self.connection, settlement_run["id"], reader=reader
+        )
+        overview = get_settlement_run_overview(self.connection, settlement_run["id"])
+
+        self.assertEqual(refreshed["imported"], 2)
+        self.assertEqual(len(overview["open_payments"]), 1)
+        self.assertEqual(overview["open_payments"][0]["split_guid"], "run-inside")
+        self.assertEqual(len(overview["outside_payments"]), 1)
+        self.assertEqual(overview["outside_payments"][0]["split_guid"], "run-before")
+
+        considered = set_settlement_payment_considered(
+            self.connection, settlement_run["id"], "run-inside", True
+        )
+        self.assertEqual(len(considered["considered_payments"]), 1)
+        self.assertEqual(considered["settlement"]["totals"]["advances"], "75.00")
 
     def test_positive_reversal_reduces_paid_advances_and_increases_balance(self) -> None:
         reader = FakeGnuCashReader(

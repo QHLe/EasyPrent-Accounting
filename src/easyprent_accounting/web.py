@@ -10,6 +10,8 @@ from .openapi import build_openapi_document
 from .services import (
     archive_object,
     create_building,
+    create_or_open_settlement_run,
+    consider_all_settlement_payments,
     create_depreciation_asset,
     create_expense,
     create_lease,
@@ -21,6 +23,8 @@ from .services import (
     delete_lease,
     delete_tenant_document,
     get_paperless_status,
+    get_settlement_run_overview,
+    refresh_settlement_run_payments,
     get_application_settings,
     get_gnucash_settings,
     create_room,
@@ -47,6 +51,8 @@ from .services import (
     settlement_for_period,
     settlement_pdf_for_period,
     settlement_ods_for_period,
+    settlement_run_ods,
+    set_settlement_payment_considered,
     health_status,
     upload_lease_documents,
     upload_expense_documents,
@@ -569,6 +575,77 @@ def application(environ, start_response):
                     start_response, HTTPStatus.BAD_REQUEST, {"error": str(error)}
                 )
             return json_response(start_response, HTTPStatus.OK, settlement)
+
+        if method == "POST" and path == "/api/settlement-runs":
+            try:
+                settlement_run, created = create_or_open_settlement_run(
+                    connection, read_json(environ)
+                )
+                return json_response(
+                    start_response,
+                    HTTPStatus.CREATED if created else HTTPStatus.OK,
+                    settlement_run,
+                )
+            except (TypeError, ValueError) as error:
+                return json_response(
+                    start_response, HTTPStatus.BAD_REQUEST, {"error": str(error)}
+                )
+
+        if method == "POST" and path.startswith("/api/settlement-runs/"):
+            suffix = path.removeprefix("/api/settlement-runs/")
+            settlement_id, separator, payment_path = suffix.partition("/payments/")
+            try:
+                if separator and payment_path == "refresh":
+                    refreshed = refresh_settlement_run_payments(connection, settlement_id)
+                    return json_response(
+                        start_response,
+                        HTTPStatus.OK,
+                        {"import": refreshed, "overview": get_settlement_run_overview(connection, settlement_id)},
+                    )
+                if separator and payment_path == "consider-all":
+                    return json_response(
+                        start_response, HTTPStatus.OK, consider_all_settlement_payments(connection, settlement_id)
+                    )
+                split_guid, action_separator, action = payment_path.rpartition("/")
+                if separator and action in {"consider", "unassign"} and split_guid:
+                    return json_response(
+                        start_response,
+                        HTTPStatus.OK,
+                        set_settlement_payment_considered(
+                            connection, settlement_id, split_guid, action == "consider"
+                        ),
+                    )
+            except (TypeError, ValueError) as error:
+                return json_response(
+                    start_response, HTTPStatus.BAD_REQUEST, {"error": str(error)}
+                )
+
+        if method == "GET" and path.startswith("/api/settlement-runs/") and "/leases/" in path:
+            settlement_id, _, lease_path = path.removeprefix("/api/settlement-runs/").partition("/leases/")
+            lease_id_text, _, document_name = lease_path.partition("/")
+            if document_name == "document.ods":
+                try:
+                    document, filename = settlement_run_ods(connection, settlement_id, int(lease_id_text))
+                    return bytes_response(
+                        start_response, HTTPStatus.OK, document,
+                        "application/vnd.oasis.opendocument.spreadsheet", filename, "attachment"
+                    )
+                except (TypeError, ValueError) as error:
+                    return text_response(start_response, HTTPStatus.BAD_REQUEST, str(error), "text/plain; charset=utf-8")
+
+        if method == "GET" and path.startswith("/api/settlement-runs/"):
+            settlement_id = path.removeprefix("/api/settlement-runs/")
+            if settlement_id and "/" not in settlement_id:
+                try:
+                    return json_response(
+                        start_response,
+                        HTTPStatus.OK,
+                        get_settlement_run_overview(connection, settlement_id),
+                    )
+                except ValueError as error:
+                    return json_response(
+                        start_response, HTTPStatus.BAD_REQUEST, {"error": str(error)}
+                    )
 
         if method == "POST" and path == "/api/settlements/refresh":
             payload = read_json(environ)

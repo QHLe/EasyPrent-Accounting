@@ -471,6 +471,81 @@
     );
   }
 
+  function SettlementRunsContent(props) {
+    const run = props.overview && props.overview.run;
+    const paymentRows = function (payments, action) {
+      return (payments || []).map(function (payment) {
+        return [
+          payment.tenant_name,
+          payment.booking_date,
+          formatMoneyValue(payment.amount),
+          payment.description || "-",
+          action ? action(payment) : "",
+        ];
+      });
+    };
+    return e(
+      "div",
+      { className: "content-grid" },
+      e(
+        "section",
+        { className: "panel panel-wide" },
+        e("h2", null, "Abrechnung anlegen oder öffnen"),
+        e(
+          "div",
+          { className: "inline-form" },
+          e("label", null, "Jahr", e("select", { value: props.year, onChange: props.onYearChange },
+            props.years.map(function (year) { return e("option", { key: year, value: year }, String(year)); })
+          )),
+          e("label", null, "Objekt", e("select", { value: props.target, onChange: props.onTargetChange },
+            e("option", { value: "" }, "Objekt auswählen"),
+            props.targets.map(function (target) { return e("option", { key: target.value, value: target.value }, target.label); })
+          )),
+          e("button", { type: "button", disabled: !props.target || props.busy, onClick: props.onCreate }, "Abrechnung anlegen")
+        )
+      ),
+      run ? e(
+        React.Fragment,
+        null,
+        e(
+          "section",
+          { className: "panel panel-wide" },
+          e("h2", null, run.target_label + " · " + run.year),
+          e("p", { className: "hint" }, run.period_start + " bis " + run.period_end + " · bearbeitbarer Entwurf"),
+          e("div", { className: "inline-actions" },
+            e("button", { type: "button", disabled: props.busy, onClick: props.onRefresh }, "Zahlungen aktualisieren"),
+            e("button", { type: "button", className: "action-button secondary", disabled: props.busy || !(props.overview.open_payments || []).length, onClick: props.onConsiderAll }, "Alle gültigen Zahlungen berücksichtigen")
+          ),
+          (props.overview.missing_account_leases || []).map(function (lease) {
+            return e("p", { key: lease.lease_id, className: "status error" }, lease.tenant_name + ": Kein NK-Konto verknüpft – keine Zahlungen geladen.");
+          })
+        ),
+        e("section", { className: "panel panel-wide" },
+          e("h2", null, "Offene Zahlungen"),
+          table(["Mieter", "Buchungsdatum", "Betrag", "Beschreibung", "Aktion"], paymentRows(props.overview.open_payments, function (payment) {
+            return e("button", { type: "button", className: "action-button", disabled: props.busy, onClick: function () { props.onConsider(payment.split_guid); } }, "Berücksichtigen");
+          }))
+        ),
+        e("section", { className: "panel panel-wide" },
+          e("h2", null, "Berücksichtigte Zahlungen"),
+          table(["Mieter", "Buchungsdatum", "Betrag", "Beschreibung", "Aktion"], paymentRows(props.overview.considered_payments, function (payment) {
+            return e("button", { type: "button", className: "action-button secondary", disabled: props.busy, onClick: function () { props.onUnassign(payment.split_guid); } }, "Zuordnung aufheben");
+          }))
+        ),
+        e("details", { className: "panel panel-wide" },
+          e("summary", null, "Außerhalb berücksichtigtem Zeitraum (" + String((props.overview.outside_payments || []).length) + ")"),
+          table(["Mieter", "Buchungsdatum", "Betrag", "Beschreibung"], paymentRows(props.overview.outside_payments))
+        ),
+        e("section", { className: "panel panel-wide" },
+          e("h2", null, "Mietverträge und Dokumente"),
+          table(["Mieter", "Mietobjekt", "Kostenanteil", "Vorauszahlungen", "Saldo", "Dokument"], (props.overview.settlement.results || []).map(function (result) {
+            return [result.tenant_name, result.unit_label, formatMoneyValue(result.allocated_costs), formatMoneyValue(result.advances_paid), formatMoneyValue(result.balance), e("a", { href: props.odsUrl(result.lease_id) }, "ODS herunterladen")];
+          }))
+        )
+      ) : e("section", { className: "panel panel-wide" }, e("p", { className: "hint" }, "Wähle Jahr und Objekt und lege den Abrechnungsvorgang an."))
+    );
+  }
+
   function MeterSupplementalPanels(props) {
     const consumptionRows = (props.meterConsumptionSummary || []).map(function (period) {
       return e(
@@ -980,5 +1055,6 @@
     MeterSupplementalPanels: MeterSupplementalPanels,
     OverviewContent: OverviewContent,
     SettingsContent: SettingsContent,
+    SettlementRunsContent: SettlementRunsContent,
   };
 })();

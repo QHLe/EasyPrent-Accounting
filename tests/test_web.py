@@ -660,6 +660,33 @@ process.stdout.write(JSON.stringify({ target: !!target, options: options }));
         self.assertEqual(payload["status"], "ok")
         self.assertEqual(payload["reachable"], True)
 
+    def test_api_creates_or_reopens_one_settlement_run_per_object_and_year(self) -> None:
+        payload = json.dumps({"property_id": 1, "year": 2025}).encode("utf-8")
+
+        create_status, _, create_body = self._call_app(
+            "POST", "/api/settlement-runs", payload
+        )
+        reopen_status, _, reopen_body = self._call_app(
+            "POST", "/api/settlement-runs", payload
+        )
+
+        created = json.loads(create_body.decode("utf-8"))
+        reopened = json.loads(reopen_body.decode("utf-8"))
+        self.assertTrue(create_status.startswith("201"))
+        self.assertTrue(reopen_status.startswith("200"))
+        self.assertEqual(created["id"], reopened["id"])
+        self.assertEqual(created["period_start"], "2025-01-01")
+        self.assertEqual(created["period_end"], "2025-12-31")
+
+        detail_status, _, detail_body = self._call_app(
+            "GET", "/api/settlement-runs/" + created["id"]
+        )
+        detail = json.loads(detail_body.decode("utf-8"))
+        self.assertTrue(detail_status.startswith("200"))
+        self.assertEqual(detail["run"]["id"], created["id"])
+        self.assertIn("settlement", detail)
+        self.assertIn("open_payments", detail)
+
     def test_api_can_create_tenant_and_lease(self) -> None:
         tenant_status, _, tenant_body = self._call_app(
             "POST",
