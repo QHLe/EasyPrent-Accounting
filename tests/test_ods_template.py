@@ -504,8 +504,10 @@ class OdsTemplateTests(unittest.TestCase):
 
         with ZipFile(BytesIO(document)) as archive:
             content = archive.read("content.xml").decode("utf-8")
-        self.assertIn("05.01.2026 · Januar", content)
-        self.assertIn("05.02.2026 · Februar", content)
+        self.assertIn("05.01.2026", content)
+        self.assertIn("05.02.2026", content)
+        self.assertNotIn("Januar", content)
+        self.assertNotIn("Februar", content)
         self.assertIn("80,00 €", content)
         self.assertIn("100,00 €", content)
 

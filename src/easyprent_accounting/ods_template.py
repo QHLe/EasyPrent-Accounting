@@ -998,12 +998,10 @@ def render_settlement_template(
             for offset, payment in enumerate(advance_payments):
                 rendered_row = deepcopy(payment_prototype)
                 booking_date = str(payment.get("booking_date") or "")
-                description = str(payment.get("description") or "").strip()
-                label = " · ".join(part for part in (booking_date, description) if part)
                 _set_cell(
                     rendered_row,
                     payment_period_column,
-                    label or "Vorauszahlung",
+                    booking_date or "Vorauszahlung",
                 )
                 amount = Decimal(str(payment["amount"]))
                 _set_cell(
