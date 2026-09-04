@@ -382,10 +382,44 @@
         e(
           "form",
           { onSubmit: props.onApplicationSettingsSubmit },
-          e("h3", null, "Darstellung"),
+          e("h3", null, "Darstellung und Absender"),
           e(
             "div",
             { className: "form-grid" },
+            e(
+              "label",
+              null,
+              "Absendername",
+              e("input", {
+                value: props.applicationSettingsForm.sender_name,
+                onChange: function (event) {
+                  props.onApplicationSettingsFieldChange("sender_name", event.target.value);
+                },
+              })
+            ),
+            e(
+              "label",
+              null,
+              "Absenderstraße",
+              e("input", {
+                value: props.applicationSettingsForm.sender_street,
+                onChange: function (event) {
+                  props.onApplicationSettingsFieldChange("sender_street", event.target.value);
+                },
+              })
+            ),
+            e(
+              "label",
+              null,
+              "Absenderort",
+              e("input", {
+                value: props.applicationSettingsForm.sender_city,
+                placeholder: "PLZ Ort",
+                onChange: function (event) {
+                  props.onApplicationSettingsFieldChange("sender_city", event.target.value);
+                },
+              })
+            ),
             e(
               "label",
               null,
@@ -411,7 +445,7 @@
             e(
               "button",
               { type: "submit", disabled: props.isActionDisabled },
-              props.saving ? "Speichert ..." : "Darstellung speichern"
+              props.saving ? "Speichert ..." : "Einstellungen speichern"
             )
           )
         ),

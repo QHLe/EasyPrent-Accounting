@@ -938,6 +938,9 @@
     const [gnucashAccounts, setGnuCashAccounts] = useState([]);
     const [applicationSettings, setApplicationSettings] = useState({
       show_delete_actions: true,
+      sender_name: "",
+      sender_street: "",
+      sender_city: "",
       updated_at: null,
     });
     const [paperlessForm, setPaperlessForm] = useState({
@@ -946,6 +949,9 @@
     });
     const [applicationSettingsForm, setApplicationSettingsForm] = useState({
       show_delete_actions: true,
+      sender_name: "",
+      sender_street: "",
+      sender_city: "",
     });
     const [applicationImportFile, setApplicationImportFile] = useState(null);
     const [applicationImportFileName, setApplicationImportFileName] = useState("");
@@ -1288,6 +1294,9 @@
               !results[5] || typeof results[5].show_delete_actions === "undefined"
                 ? true
                 : !!results[5].show_delete_actions,
+            sender_name: (results[5] && results[5].sender_name) || "",
+            sender_street: (results[5] && results[5].sender_street) || "",
+            sender_city: (results[5] && results[5].sender_city) || "",
           });
           setGnuCashForm({
             host: (results[6] && results[6].host) || "",
@@ -2992,14 +3001,20 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           show_delete_actions: !!applicationSettingsForm.show_delete_actions,
+          sender_name: applicationSettingsForm.sender_name,
+          sender_street: applicationSettingsForm.sender_street,
+          sender_city: applicationSettingsForm.sender_city,
         }),
       })
         .then(function (payload) {
           setApplicationSettings(payload);
           setApplicationSettingsForm({
             show_delete_actions: !!payload.show_delete_actions,
+            sender_name: payload.sender_name || "",
+            sender_street: payload.sender_street || "",
+            sender_city: payload.sender_city || "",
           });
-          setStatus("Darstellungseinstellungen gespeichert.");
+          setStatus("Einstellungen gespeichert.");
         })
         .catch(function (saveError) {
           setError(saveError.message || "Darstellungseinstellungen konnten nicht gespeichert werden.");

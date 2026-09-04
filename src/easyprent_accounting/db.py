@@ -162,6 +162,9 @@ CREATE TABLE IF NOT EXISTS paperless_settings (
 CREATE TABLE IF NOT EXISTS application_settings (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     show_delete_actions INTEGER NOT NULL DEFAULT 1,
+    sender_name TEXT NOT NULL DEFAULT '',
+    sender_street TEXT NOT NULL DEFAULT '',
+    sender_city TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -867,19 +870,31 @@ def _ensure_application_settings_table(connection: sqlite3.Connection) -> None:
             "SELECT name FROM sqlite_master WHERE type = 'table'"
         ).fetchall()
     }
-    if "application_settings" in existing_tables:
+    if "application_settings" not in existing_tables:
+        connection.execute(
+            """
+            CREATE TABLE application_settings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                show_delete_actions INTEGER NOT NULL DEFAULT 1,
+                sender_name TEXT NOT NULL DEFAULT '',
+                sender_street TEXT NOT NULL DEFAULT '',
+                sender_city TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
         return
 
-    connection.execute(
-        """
-        CREATE TABLE application_settings (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            show_delete_actions INTEGER NOT NULL DEFAULT 1,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-        )
-        """
-    )
+    columns = {
+        row["name"]
+        for row in connection.execute("PRAGMA table_info(application_settings)").fetchall()
+    }
+    for column in ("sender_name", "sender_street", "sender_city"):
+        if column not in columns:
+            connection.execute(
+                f"ALTER TABLE application_settings ADD COLUMN {column} TEXT NOT NULL DEFAULT ''"
+            )
 
 
 def _ensure_buildings_have_addresses(connection: sqlite3.Connection) -> None:

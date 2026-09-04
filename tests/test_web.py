@@ -1095,16 +1095,58 @@ process.stdout.write(JSON.stringify({ target: !!target, options: options }));
         save_status, _, save_body = self._call_app(
             "PUT",
             "/api/application-settings",
-            json.dumps({"show_delete_actions": False}).encode("utf-8"),
+            json.dumps(
+                {
+                    "show_delete_actions": False,
+                    "sender_name": "Musterverwaltung GmbH",
+                    "sender_street": "Musterstraße 1",
+                    "sender_city": "12345 Musterstadt",
+                }
+            ).encode("utf-8"),
         )
         save_payload = json.loads(save_body.decode("utf-8"))
         self.assertTrue(save_status.startswith("200"))
         self.assertEqual(save_payload["show_delete_actions"], False)
+        self.assertEqual(save_payload["sender_name"], "Musterverwaltung GmbH")
+        self.assertEqual(save_payload["sender_street"], "Musterstraße 1")
+        self.assertEqual(save_payload["sender_city"], "12345 Musterstadt")
 
         load_status, _, load_body = self._call_app("GET", "/api/application-settings")
         load_payload = json.loads(load_body.decode("utf-8"))
         self.assertTrue(load_status.startswith("200"))
         self.assertEqual(load_payload["show_delete_actions"], False)
+        self.assertEqual(load_payload["sender_name"], "Musterverwaltung GmbH")
+
+    def test_settlement_document_uses_sender_details_from_application_settings(self) -> None:
+        settings_status, _, _ = self._call_app(
+            "PUT",
+            "/api/application-settings",
+            json.dumps(
+                {
+                    "show_delete_actions": True,
+                    "sender_name": "Eigentümerverwaltung Test",
+                    "sender_street": "Absenderweg 42",
+                    "sender_city": "12345 Musterstadt",
+                }
+            ).encode("utf-8"),
+        )
+        self.assertTrue(settings_status.startswith("200"))
+
+        status, _, body = self._call_app(
+            "GET",
+            "/api/settlements/document.ods",
+            query_string=(
+                "property_id=1&lease_id=1"
+                "&period_start=2025-01-01&period_end=2025-12-31"
+            ),
+        )
+
+        with ZipFile(BytesIO(body)) as archive:
+            content = archive.read("content.xml").decode("utf-8")
+        self.assertTrue(status.startswith("200"))
+        self.assertIn("Eigentümerverwaltung Test", content)
+        self.assertIn("Absenderweg 42", content)
+        self.assertIn("12345 Musterstadt", content)
 
     def test_api_application_export_and_import_restores_data_but_not_paperless_secrets(self) -> None:
         settings_status, _, _ = self._call_app(

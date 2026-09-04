@@ -209,7 +209,7 @@ def get_paperless_settings(connection: sqlite3.Connection) -> dict:
 def get_application_settings(connection: sqlite3.Connection) -> dict:
     row = connection.execute(
         """
-        SELECT show_delete_actions, updated_at
+        SELECT show_delete_actions, sender_name, sender_street, sender_city, updated_at
         FROM application_settings
         ORDER BY id DESC
         LIMIT 1
@@ -218,11 +218,17 @@ def get_application_settings(connection: sqlite3.Connection) -> dict:
     if row is None:
         return {
             "show_delete_actions": True,
+            "sender_name": "",
+            "sender_street": "",
+            "sender_city": "",
             "updated_at": None,
         }
 
     return {
         "show_delete_actions": bool(int(row["show_delete_actions"] or 0)),
+        "sender_name": str(row["sender_name"] or ""),
+        "sender_street": str(row["sender_street"] or ""),
+        "sender_city": str(row["sender_city"] or ""),
         "updated_at": row["updated_at"],
     }
 
@@ -359,29 +365,48 @@ def update_application_settings(connection: sqlite3.Connection, payload: dict) -
     )
     existing_row = connection.execute(
         """
-        SELECT id
+        SELECT id, sender_name, sender_street, sender_city
         FROM application_settings
         ORDER BY id DESC
         LIMIT 1
         """
     ).fetchone()
+    def text_value(field: str) -> str:
+        value = payload.get(field)
+        if value is None:
+            return str(existing_row[field] or "") if existing_row is not None else ""
+        if not isinstance(value, str):
+            raise ValueError(f"{field} must be text")
+        return value.strip()
+
+    sender_name = text_value("sender_name")
+    sender_street = text_value("sender_street")
+    sender_city = text_value("sender_city")
     timestamp = datetime.now(UTC).replace(microsecond=0).isoformat()
     if existing_row is None:
         connection.execute(
             """
-            INSERT INTO application_settings (show_delete_actions, created_at, updated_at)
-            VALUES (?, ?, ?)
+            INSERT INTO application_settings (
+                show_delete_actions, sender_name, sender_street, sender_city, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (1 if show_delete_actions else 0, timestamp, timestamp),
+            (1 if show_delete_actions else 0, sender_name, sender_street, sender_city, timestamp, timestamp),
         )
     else:
         connection.execute(
             """
             UPDATE application_settings
-            SET show_delete_actions = ?, updated_at = ?
+            SET show_delete_actions = ?, sender_name = ?, sender_street = ?, sender_city = ?, updated_at = ?
             WHERE id = ?
             """,
-            (1 if show_delete_actions else 0, timestamp, int(existing_row["id"])),
+            (
+                1 if show_delete_actions else 0,
+                sender_name,
+                sender_street,
+                sender_city,
+                timestamp,
+                int(existing_row["id"]),
+            ),
         )
     connection.commit()
     return get_application_settings(connection)
@@ -4341,12 +4366,20 @@ def settlement_ods_for_period(
             payment_params,
         ).fetchall()
     ]
+    application_settings = get_application_settings(connection)
     document_bytes = render_settlement_template(
-        sender_name=os.environ.get(
-            "EASYPRENT_SENDER_NAME", str(details["organization_name"] or "")
+        sender_name=(
+            application_settings["sender_name"]
+            or os.environ.get("EASYPRENT_SENDER_NAME", str(details["organization_name"] or ""))
         ),
-        sender_street=os.environ.get("EASYPRENT_SENDER_STREET", ""),
-        sender_city_line=os.environ.get("EASYPRENT_SENDER_CITY", ""),
+        sender_street=(
+            application_settings["sender_street"]
+            or os.environ.get("EASYPRENT_SENDER_STREET", "")
+        ),
+        sender_city_line=(
+            application_settings["sender_city"]
+            or os.environ.get("EASYPRENT_SENDER_CITY", "")
+        ),
         tenant_name=result["tenant_name"],
         tenant_street=street,
         tenant_city_line=city_line,
