@@ -24,6 +24,7 @@ from .services import (
     delete_tenant_document,
     get_paperless_status,
     get_settlement_run_overview,
+    find_settlement_run_id,
     refresh_settlement_run_payments,
     get_application_settings,
     get_gnucash_settings,
@@ -575,6 +576,19 @@ def application(environ, start_response):
                     start_response, HTTPStatus.BAD_REQUEST, {"error": str(error)}
                 )
             return json_response(start_response, HTTPStatus.OK, settlement)
+
+        if method == "GET" and path == "/api/settlement-runs":
+            params = parse_qs(environ.get("QUERY_STRING", ""))
+            try:
+                property_id = _optional_query_int(params, "property_id")
+                unit_id = _optional_query_int(params, "unit_id")
+                year = int(params.get("year", [""])[0])
+                if (property_id is None) == (unit_id is None):
+                    raise ValueError("settlement run requires exactly one property or standalone unit")
+                settlement_id = find_settlement_run_id(connection, property_id, unit_id, year)
+                return json_response(start_response, HTTPStatus.OK, {"id": settlement_id})
+            except (TypeError, ValueError) as error:
+                return json_response(start_response, HTTPStatus.BAD_REQUEST, {"error": str(error)})
 
         if method == "POST" and path == "/api/settlement-runs":
             try:

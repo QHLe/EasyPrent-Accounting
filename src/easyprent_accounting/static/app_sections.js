@@ -479,7 +479,11 @@
           payment.tenant_name,
           payment.booking_date,
           formatMoneyValue(payment.amount),
-          payment.description || "-",
+          [
+            payment.description || "-",
+            payment.warning ? " · Warnung: " + payment.warning : "",
+            payment.assigned_settlement_id ? " · Bereits berücksichtigt in Vorgang " + payment.assigned_settlement_id : "",
+          ].join(""),
           action ? action(payment) : "",
         ];
       });

@@ -1381,6 +1381,27 @@
         .finally(function () { setLoading(false); });
     }
 
+    function openExistingSettlementRun(target, year) {
+      const separator = target.indexOf(":");
+      if (separator < 0) {
+        setSettlementRunOverview(null);
+        return;
+      }
+      const targetType = target.slice(0, separator);
+      const targetId = target.slice(separator + 1);
+      fetchJson("/api/settlement-runs?" + new URLSearchParams({
+        year: String(year),
+        property_id: targetType === "property" ? targetId : "",
+        unit_id: targetType === "unit" ? targetId : "",
+      }).toString()).then(function (payload) {
+        if (payload.id) {
+          return loadSettlementRun(payload.id);
+        }
+        setSettlementRunOverview(null);
+        return null;
+      }).catch(function () { setSettlementRunOverview(null); });
+    }
+
     function performSettlementPaymentAction(path, successMessage) {
       setLoading(true);
       setError("");
@@ -3697,8 +3718,14 @@
               year: settlementRunYear,
               overview: settlementRunOverview,
               busy: loading || saving,
-              onTargetChange: function (event) { setSettlementRunTarget(event.target.value); },
-              onYearChange: function (event) { setSettlementRunYear(event.target.value); },
+              onTargetChange: function (event) {
+                setSettlementRunTarget(event.target.value);
+                openExistingSettlementRun(event.target.value, settlementRunYear);
+              },
+              onYearChange: function (event) {
+                setSettlementRunYear(event.target.value);
+                openExistingSettlementRun(settlementRunTarget, event.target.value);
+              },
               onCreate: handleSettlementRunCreate,
               onRefresh: function () {
                 if (settlementRunOverview) {

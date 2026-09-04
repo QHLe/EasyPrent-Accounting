@@ -3826,9 +3826,12 @@ def _settlement_run_payment_groups(connection: sqlite3.Connection, run: sqlite3.
             "amount": str(payment["amount"]),
             "description": payment["description"],
         }
+        const_in_run = _payment_is_in_settlement_run(payment, lease, run)
         if assignments.get(str(payment["split_guid"])) == "considered":
+            if not const_in_run:
+                item["warning"] = "Außerhalb berücksichtigtem Zeitraum"
             groups["considered_payments"].append(item)
-        elif not _payment_is_in_settlement_run(payment, lease, run):
+        elif not const_in_run:
             groups["outside_payments"].append(item)
         elif str(payment["split_guid"]) in elsewhere:
             item["assigned_settlement_id"] = elsewhere[str(payment["split_guid"])]
@@ -4034,6 +4037,19 @@ def create_or_open_settlement_run(connection: sqlite3.Connection, payload: dict)
         "period_end": existing["period_end"],
         "status": existing["status"],
     }, created
+
+
+def find_settlement_run_id(
+    connection: sqlite3.Connection, property_id: int | None, unit_id: int | None, year: int
+) -> str | None:
+    row = connection.execute(
+        """
+        SELECT id FROM settlement_runs
+        WHERE property_id IS ? AND unit_id IS ? AND period_start = ? AND period_end = ?
+        """,
+        (property_id, unit_id, f"{year:04d}-01-01", f"{year:04d}-12-31"),
+    ).fetchone()
+    return str(row["id"]) if row is not None else None
 
 
 def _format_settlement_money(value: str) -> str:
