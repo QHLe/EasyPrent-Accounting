@@ -251,6 +251,65 @@ Zeitraums und berechnet das Ergebnis live neu. Ein heruntergeladenes
 ODS-Dokument ist lediglich ein Stand zum Exportzeitpunkt und wird im System
 nicht versioniert oder eingefroren.
 
+## #6: Wie werden Abrechnungsvorgänge und Zahlungen bedient?
+
+Blocked by: #5
+Type: Grilling
+
+### Question
+
+Wie entsteht ein dauerhafter Abrechnungsvorgang für ein Objekt und Jahr, wie
+werden Zahlungen außerhalb des berücksichtigten Zeitraums sichtbar, und wie
+werden gültige Zahlungen einer Abrechnung zugeordnet?
+
+### Answer
+
+EasyPrent erhält einen eigenen Hauptreiter **„Abrechnungen“** neben Objekt-,
+Kosten- und Mieter-/Vertragsverwaltung.
+
+- Ein Abrechnungsvorgang gehört zu genau einer gesamten Immobilie oder einer
+  alleinstehenden Wohnung und zu genau einem Kalenderjahr. Einzelne Wohnungen
+  innerhalb einer Immobilie sind keine auswählbaren Abrechnungsobjekte.
+- Die Auswahl enthält aktive Objekte sowie Kalenderjahre ab dem ersten
+  Mietvertrag beziehungsweise der ersten Buchung bis einschließlich Folgejahr.
+  Bereits vorhandene Vorgänge archivierter Objekte bleiben lesbar, neue werden
+  dafür nicht angelegt.
+- Es existiert höchstens ein Vorgang je Objekt und Jahr. Eine Auswahl öffnet
+  einen vorhandenen Vorgang; ein neuer wird erst über **„Abrechnung anlegen“**
+  angelegt, damit keine leeren Entwürfe entstehen.
+- Der Vorgang bleibt im MVP stets veränderbar. Es gibt noch keinen Abschluss,
+  keine Sperre und keine Versionierung.
+- **„Zahlungen aktualisieren“** liest alle Buchungen der beim Objekt
+  verknüpften GnuCash-NK-Unterkonten. GnuCash bleibt dabei vollständig
+  unverändert und wird ausschließlich lesend genutzt; KVPs werden nicht
+  verwendet.
+- Der berücksichtigte Zeitraum ist die Überschneidung aus Kalenderjahr und
+  Laufzeit des verknüpften Mietvertrags. Alle anderen Buchungen werden
+  einheitlich als **„außerhalb berücksichtigtem Zeitraum“** ausgeschlossen.
+  Der konkrete Grund (vor/nach Jahr oder Vertragslaufzeit) wird weder angezeigt
+  noch als getrennte Entscheidung behandelt.
+- Die Oberfläche trennt offene beziehungsweise berücksichtigte Zahlungen von
+  einem einklappbaren Bereich **„Außerhalb berücksichtigtem Zeitraum“**.
+  Verträge ohne NK-Kontoverknüpfung zeigen eine Warnung; es gibt keine
+  Heuristik anhand von Mietername, Betrag oder Verwendungszweck.
+- Gültige Splits werden einzeln über **„Berücksichtigen“** oder gesammelt über
+  **„Alle gültigen Zahlungen berücksichtigen“** zugeordnet. In der ersten
+  Version wird ein Split nur vollständig berücksichtigt oder ausgeschlossen;
+  Teilbeträge sind noch keine Bedienfunktion.
+- Eine berücksichtigte Zahlung darf nur einem Abrechnungsvorgang angehören.
+  In anderen Vorgängen wird der bestehende Verweis angezeigt. Eine explizite
+  Aktion **„Zuordnung aufheben“** ist erforderlich, bevor der Split anderswo
+  berücksichtigt werden kann.
+- Eine manuelle Berücksichtigung bleibt beim Aktualisieren erhalten. Wenn
+  veränderte Vertrags- oder Zeitdaten ihr widersprechen, zeigt EasyPrent eine
+  Warnung statt die Entscheidung still zu löschen.
+- Bei einem GnuCash-Fehler bleiben bestehende Daten sichtbar. Die Oberfläche
+  zeigt nur eine neutrale Aktualisierungsfehlermeldung und niemals
+  Zugangsdaten oder Verbindungszeichenketten.
+- Der Vorgang enthält alle betroffenen Mietverträge samt Kosten,
+  Vorauszahlungen und Saldo. Das ODS wird je Mietvertrag heruntergeladen; ein
+  Sammel-Download folgt gegebenenfalls später.
+
 ## Umsetzungsplan
 
 1. `piecash` mit PostgreSQL-Treiber als Server-Abhängigkeit ergänzen und eine
@@ -271,3 +330,8 @@ nicht versioniert oder eingefroren.
    genau diesen aktuellen Stand.
 7. Tests für Kontoauswahl, Zeitraumgrenzen, Split-Deduplizierung, nicht
    erreichbares GnuCash und Live-Neuberechnung ergänzen.
+8. Hauptreiter „Abrechnungen“ mit Jahres-/Objektauswahl, einmaligem
+   Abrechnungsvorgang und Vertragsübersicht implementieren.
+9. Alle NK-Splits der verknüpften Konten laden, nach berücksichtigtem Zeitraum
+   gruppieren und die lokale Entscheidung „berücksichtigt“ beziehungsweise
+   „ausgeschlossen“ bedienen.
