@@ -268,6 +268,32 @@ def _apply_object_row_style(root: ET.Element, row: ET.Element) -> None:
     row.set(f"{{{TABLE_NS}}}style-name", style_name)
 
 
+def _apply_advance_payment_page_break(root: ET.Element, row: ET.Element) -> None:
+    """Start the advance-payment detail table on its own printed page."""
+    style_name = "roEasyAdvancePayments"
+    automatic_styles = root.find("office:automatic-styles", NS)
+    if automatic_styles is None:
+        return
+    if not any(
+        style.get(f"{{{STYLE_NS}}}name") == style_name
+        for style in automatic_styles.findall("style:style", NS)
+    ):
+        payment_row_style = ET.SubElement(
+            automatic_styles,
+            f"{{{STYLE_NS}}}style",
+            {
+                f"{{{STYLE_NS}}}name": style_name,
+                f"{{{STYLE_NS}}}family": "table-row",
+            },
+        )
+        ET.SubElement(
+            payment_row_style,
+            f"{{{STYLE_NS}}}table-row-properties",
+            {f"{{{FO_NS}}}break-before": "page"},
+        )
+    row.set(f"{{{TABLE_NS}}}style-name", style_name)
+
+
 def _apply_subposition_styles(
     root: ET.Element,
     row: ET.Element,
@@ -969,6 +995,10 @@ def render_settlement_template(
     payment_period_row, payment_period_column = _find_marker(
         sheet, "{{VORAUSZAHLUNG_ZEITRAUM}}"
     )
+    payment_header = _find_row_containing(
+        sheet.findall("table:table-row", NS), "Betrag"
+    )
+    _apply_advance_payment_page_break(root, payment_header)
     payment_row, payment_column = _find_marker(sheet, "{{VORAUSZAHLUNGEN}}")
     advance_row, advance_column = _find_marker(sheet, "{{VORAUSZAHLUNGEN_SUMME}}")
     balance_label_row, balance_label_column = _find_marker(sheet, "{{SALDO_BEZEICHNUNG}}")

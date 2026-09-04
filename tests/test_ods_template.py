@@ -503,13 +503,24 @@ class OdsTemplateTests(unittest.TestCase):
             )
 
         with ZipFile(BytesIO(document)) as archive:
-            content = archive.read("content.xml").decode("utf-8")
+            root = ET.fromstring(archive.read("content.xml"))
+            content = ET.tostring(root, encoding="unicode")
         self.assertIn("05.01.2026", content)
         self.assertIn("05.02.2026", content)
         self.assertNotIn("Januar", content)
         self.assertNotIn("Februar", content)
         self.assertIn("80,00 €", content)
         self.assertIn("100,00 €", content)
+        payment_style = next(
+            style
+            for style in root.findall(f".//{{{STYLE_NS}}}style")
+            if style.get(f"{{{STYLE_NS}}}name") == "roEasyAdvancePayments"
+        )
+        row_properties = payment_style.find(
+            f"{{{STYLE_NS}}}table-row-properties"
+        )
+        self.assertIsNotNone(row_properties)
+        self.assertEqual(row_properties.get(f"{{{FO_NS}}}break-before"), "page")
 
     def test_formulas_follow_relocated_marker_columns(self) -> None:
         document = _render(_with_relocated_formula_markers(_template_bytes()))
