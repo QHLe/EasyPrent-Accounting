@@ -49,6 +49,30 @@ Plausibilitätsprüfung.
   Buchungsdatum sowohl in den angefragten Abrechnungszeitraum als auch in die
   Laufzeit des verknüpften Mietvertrags fällt. Buchungen vor Vertragsbeginn oder
   nach Vertragsende bleiben vorerst unberücksichtigt.
+- **Zukünftige Zahlungsentscheidung:** EasyPrent bereitet je
+  Abrechnungsvorgang eine lokale Zuordnung eines GnuCash-Splits vor. Sie hält
+  fest, ob ein Split berücksichtigt oder ausgeschlossen wurde, einschließlich
+  Betrag und Begründung. Der GnuCash-Split bleibt dabei unverändert die
+  Buchungsquelle. Eine spätere KVP-Rückschreibung in GnuCash ist optional und
+  benötigt eine gesonderte Schreibberechtigung; sie ist nicht Teil des aktuellen
+  Imports.
+
+## Vorbereitetes Datenmodell für Zahlungszuordnungen
+
+`settlement_runs` beschreibt einen Abrechnungsvorgang mit stabiler UUID,
+Abrechnungszeitraum, Zielobjekt und Status. Die Tabelle
+`settlement_payment_assignments` verbindet diesen Vorgang mit einem importierten
+GnuCash-Split (`split_guid`) und dessen Mietvertrag.
+
+- `status = considered`: Die Zahlung zählt für genau einen Abrechnungsvorgang.
+- `status = excluded`: Die Zahlung ist für diesen Vorgang sichtbar, aber nicht
+  eingerechnet; `reason` kann etwa `before-period`, `after-period` oder
+  `outside-lease` enthalten.
+- `assigned_amount` ist für eine spätere Teilzahlungszuordnung vorgesehen.
+
+Die Tabellen werden bereits mit der Datenbank angelegt und in Sicherungen
+einbezogen. Die Bedienoberfläche zum Anlegen von Abrechnungsvorgängen und zum
+manuellen Entscheiden über Zahlungen folgt in einem eigenen Schritt.
 
 ## #1: Wo wird das GnuCash-Buch gelesen?
 

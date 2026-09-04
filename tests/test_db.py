@@ -31,6 +31,49 @@ class DatabaseInitializationTests(unittest.TestCase):
 
         self.assertEqual(organization_count, 0)
 
+    def test_initialize_database_prepares_settlement_payment_assignment_storage(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            database_path = os.path.join(temp_dir, "easyprent_accounting.db")
+            original_database_path = os.environ.get("EASYPRENT_DB_PATH")
+            os.environ["EASYPRENT_DB_PATH"] = database_path
+            try:
+                initialize_database()
+                connection = sqlite3.connect(database_path)
+                try:
+                    tables = {
+                        row[0]
+                        for row in connection.execute(
+                            "SELECT name FROM sqlite_master WHERE type = 'table'"
+                        ).fetchall()
+                    }
+                    assignment_columns = {
+                        row[1]
+                        for row in connection.execute(
+                            "PRAGMA table_info(settlement_payment_assignments)"
+                        ).fetchall()
+                    }
+                finally:
+                    connection.close()
+            finally:
+                if original_database_path is None:
+                    os.environ.pop("EASYPRENT_DB_PATH", None)
+                else:
+                    os.environ["EASYPRENT_DB_PATH"] = original_database_path
+
+        self.assertIn("settlement_runs", tables)
+        self.assertIn("settlement_payment_assignments", tables)
+        self.assertTrue(
+            {
+                "settlement_id",
+                "split_guid",
+                "lease_id",
+                "status",
+                "reason",
+                "assigned_amount",
+            }
+            <= assignment_columns
+        )
+
     def test_migrates_legacy_tenant_gnucash_account_to_lease(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             database_path = os.path.join(temp_dir, "easyprent_accounting.db")

@@ -55,6 +55,8 @@ APP_DATA_EXPORT_TABLES = [
     "expense_items",
     "application_settings",
     "gnucash_payments",
+    "settlement_runs",
+    "settlement_payment_assignments",
     "expense_documents",
     "tenant_documents",
     "lease_documents",

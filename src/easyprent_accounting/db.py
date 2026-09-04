@@ -194,6 +194,42 @@ CREATE TABLE IF NOT EXISTS gnucash_payments (
     FOREIGN KEY (lease_id) REFERENCES leases(id)
 );
 
+CREATE TABLE IF NOT EXISTS settlement_runs (
+    id TEXT PRIMARY KEY,
+    property_id INTEGER,
+    unit_id INTEGER,
+    period_start TEXT NOT NULL,
+    period_end TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'draft',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    CHECK (status IN ('draft', 'finalized', 'cancelled')),
+    CHECK (property_id IS NOT NULL OR unit_id IS NOT NULL),
+    FOREIGN KEY (property_id) REFERENCES properties(id),
+    FOREIGN KEY (unit_id) REFERENCES units(id)
+);
+
+CREATE TABLE IF NOT EXISTS settlement_payment_assignments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    settlement_id TEXT NOT NULL,
+    split_guid TEXT NOT NULL,
+    lease_id INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    reason TEXT,
+    assigned_amount NUMERIC,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    CHECK (status IN ('considered', 'excluded')),
+    UNIQUE (settlement_id, split_guid),
+    FOREIGN KEY (settlement_id) REFERENCES settlement_runs(id),
+    FOREIGN KEY (split_guid) REFERENCES gnucash_payments(split_guid),
+    FOREIGN KEY (lease_id) REFERENCES leases(id)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_settlement_assignments_considered_split
+ON settlement_payment_assignments(split_guid)
+WHERE status = 'considered';
+
 CREATE TABLE IF NOT EXISTS expense_documents (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     expense_id INTEGER NOT NULL,
@@ -301,6 +337,7 @@ def ensure_schema_updates(connection: sqlite3.Connection) -> None:
     _ensure_tenant_alternate_address_columns(connection)
     _ensure_gnucash_settings_table(connection)
     _ensure_gnucash_payments_table(connection)
+    _ensure_settlement_payment_assignment_tables(connection)
     _ensure_lease_gnucash_account_columns(connection)
 
 
@@ -351,6 +388,48 @@ def _ensure_gnucash_payments_table(connection: sqlite3.Connection) -> None:
     columns = {row["name"] for row in connection.execute("PRAGMA table_info(gnucash_payments)").fetchall()}
     if "lease_id" not in columns:
         connection.execute("ALTER TABLE gnucash_payments ADD COLUMN lease_id INTEGER")
+
+
+def _ensure_settlement_payment_assignment_tables(connection: sqlite3.Connection) -> None:
+    connection.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS settlement_runs (
+            id TEXT PRIMARY KEY,
+            property_id INTEGER,
+            unit_id INTEGER,
+            period_start TEXT NOT NULL,
+            period_end TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'draft',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            CHECK (status IN ('draft', 'finalized', 'cancelled')),
+            CHECK (property_id IS NOT NULL OR unit_id IS NOT NULL),
+            FOREIGN KEY (property_id) REFERENCES properties(id),
+            FOREIGN KEY (unit_id) REFERENCES units(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS settlement_payment_assignments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            settlement_id TEXT NOT NULL,
+            split_guid TEXT NOT NULL,
+            lease_id INTEGER NOT NULL,
+            status TEXT NOT NULL,
+            reason TEXT,
+            assigned_amount NUMERIC,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            CHECK (status IN ('considered', 'excluded')),
+            UNIQUE (settlement_id, split_guid),
+            FOREIGN KEY (settlement_id) REFERENCES settlement_runs(id),
+            FOREIGN KEY (split_guid) REFERENCES gnucash_payments(split_guid),
+            FOREIGN KEY (lease_id) REFERENCES leases(id)
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_settlement_assignments_considered_split
+        ON settlement_payment_assignments(split_guid)
+        WHERE status = 'considered';
+        """
+    )
 
 
 def _ensure_lease_gnucash_account_columns(connection: sqlite3.Connection) -> None:

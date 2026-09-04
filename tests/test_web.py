@@ -1105,6 +1105,8 @@ process.stdout.write(JSON.stringify({ target: !!target, options: options }));
         self.assertIn("tenants", export_payload["tables"])
         self.assertIn("tenant_documents", export_payload["tables"])
         self.assertIn("application_settings", export_payload["tables"])
+        self.assertIn("settlement_runs", export_payload["tables"])
+        self.assertIn("settlement_payment_assignments", export_payload["tables"])
         self.assertNotIn("paperless_settings", export_payload["tables"])
         self.assertTrue(
             any(row["full_name"] == "Backup-Mieter" for row in export_payload["tables"]["tenants"])
