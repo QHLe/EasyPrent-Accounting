@@ -4309,6 +4309,38 @@ def settlement_ods_for_period(
         f"{parse_date(result['billing_period_start']).strftime('%d.%m.%Y')} – "
         f"{parse_date(result['billing_period_end']).strftime('%d.%m.%Y')}"
     )
+    payment_filter = ""
+    payment_params: list[object] = [lease_id, period_start, period_end]
+    if payment_split_guids is not None:
+        if not payment_split_guids:
+            payment_filter = " AND 1 = 0"
+        else:
+            payment_filter = " AND gp.split_guid IN (" + ", ".join(
+                "?" for _ in payment_split_guids
+            ) + ")"
+            payment_params.extend(sorted(payment_split_guids))
+    advance_payments = [
+        {
+            "booking_date": parse_date(row["booking_date"]).strftime("%d.%m.%Y"),
+            "description": str(row["description"] or ""),
+            # GnuCash stores incoming payments on the tenant account as credits.
+            "amount": f"{-Decimal(str(row['amount'])):.2f}",
+        }
+        for row in connection.execute(
+            """
+            SELECT gp.booking_date, gp.description, gp.amount
+            FROM gnucash_payments gp
+            JOIN leases l ON l.id = gp.lease_id
+            WHERE gp.lease_id = ?
+              AND gp.booking_date >= ? AND gp.booking_date <= ?
+              AND gp.booking_date >= l.start_date
+              AND (l.end_date IS NULL OR gp.booking_date <= l.end_date)
+            """ + payment_filter + """
+            ORDER BY gp.booking_date, gp.split_guid
+            """,
+            payment_params,
+        ).fetchall()
+    ]
     document_bytes = render_settlement_template(
         sender_name=os.environ.get(
             "EASYPRENT_SENDER_NAME", str(details["organization_name"] or "")
@@ -4329,6 +4361,7 @@ def settlement_ods_for_period(
         allocated_costs=result["allocated_costs"],
         advances_paid=result["advances_paid"],
         balance=result["balance"],
+        advance_payments=advance_payments,
     )
     safe_tenant = "".join(char if char.isalnum() else "-" for char in result["tenant_name"])
     return document_bytes, f"Nebenkostenabrechnung-{safe_tenant}-{period_start[:4]}.ods"

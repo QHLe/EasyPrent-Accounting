@@ -768,6 +768,7 @@ def render_settlement_template(
     allocated_costs: str,
     advances_paid: str | None,
     balance: str | None,
+    advance_payments: list[dict] | None = None,
 ) -> bytes:
     """Fill the editable master ODS while retaining its styles and merged cells."""
     entries = _archive_entries(_read_template_bytes(template_path))
@@ -989,15 +990,44 @@ def render_settlement_template(
         ):
             _set_cell(row, column, "")
     else:
-        _set_cell(payment_period_row, payment_period_column, period_label)
-        _set_cell(
-            payment_row,
-            payment_column,
-            _format_money(advances_paid),
-            number=Decimal(advances_paid),
-            currency=True,
-        )
-        payment_row_number = _row_number(sheet, payment_row)
+        rendered_payment_rows: list[ET.Element] = []
+        if advance_payments:
+            payment_prototype = deepcopy(payment_row)
+            payment_insert_index = list(sheet).index(payment_row)
+            sheet.remove(payment_row)
+            for offset, payment in enumerate(advance_payments):
+                rendered_row = deepcopy(payment_prototype)
+                booking_date = str(payment.get("booking_date") or "")
+                description = str(payment.get("description") or "").strip()
+                label = " · ".join(part for part in (booking_date, description) if part)
+                _set_cell(
+                    rendered_row,
+                    payment_period_column,
+                    label or "Vorauszahlung",
+                )
+                amount = Decimal(str(payment["amount"]))
+                _set_cell(
+                    rendered_row,
+                    payment_column,
+                    _format_money(amount),
+                    number=amount,
+                    currency=True,
+                )
+                sheet.insert(payment_insert_index + offset, rendered_row)
+                rendered_payment_rows.append(rendered_row)
+        else:
+            _set_cell(payment_period_row, payment_period_column, period_label)
+            _set_cell(
+                payment_row,
+                payment_column,
+                _format_money(advances_paid),
+                number=Decimal(advances_paid),
+                currency=True,
+            )
+            rendered_payment_rows.append(payment_row)
+
+        first_payment_row_number = _row_number(sheet, rendered_payment_rows[0])
+        last_payment_row_number = _row_number(sheet, rendered_payment_rows[-1])
         payment_column_name = _column_name(payment_column)
         _set_cell(
             advance_row,
@@ -1005,7 +1035,10 @@ def render_settlement_template(
             _format_money(advances_paid),
             number=Decimal(advances_paid),
             currency=True,
-            formula=f"of:=[.{payment_column_name}{payment_row_number}]",
+            formula=(
+                f"of:=SUM([.{payment_column_name}{first_payment_row_number}:"
+                f".{payment_column_name}{last_payment_row_number}])"
+            ),
         )
 
         balance_value = Decimal(balance)

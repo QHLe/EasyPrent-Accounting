@@ -477,6 +477,38 @@ class OdsTemplateTests(unittest.TestCase):
                 "start",
             )
 
+    def test_render_lists_each_advance_payment_in_the_template(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            template_path = Path(directory) / "template.ods"
+            template_path.write_bytes(_template_bytes())
+            document = render_settlement_template(
+                template_path,
+                sender_name="Vermieter",
+                sender_street="Absenderweg 1",
+                sender_city_line="12345 Musterstadt",
+                tenant_name="Testmieter",
+                tenant_street="Mieterweg 2",
+                tenant_city_line="54321 Beispielstadt",
+                object_lines=["WE 1"],
+                created_on="01.09.2026",
+                period_label="01.01.2026 – 31.12.2026",
+                line_items=[{"label": "Testkosten", "period_amount": "300.00", "share": "300.00"}],
+                allocated_costs="300.00",
+                advances_paid="180.00",
+                balance="120.00",
+                advance_payments=[
+                    {"booking_date": "05.01.2026", "description": "Januar", "amount": "80.00"},
+                    {"booking_date": "05.02.2026", "description": "Februar", "amount": "100.00"},
+                ],
+            )
+
+        with ZipFile(BytesIO(document)) as archive:
+            content = archive.read("content.xml").decode("utf-8")
+        self.assertIn("05.01.2026 · Januar", content)
+        self.assertIn("05.02.2026 · Februar", content)
+        self.assertIn("80,00 €", content)
+        self.assertIn("100,00 €", content)
+
     def test_formulas_follow_relocated_marker_columns(self) -> None:
         document = _render(_with_relocated_formula_markers(_template_bytes()))
 
@@ -493,7 +525,12 @@ class OdsTemplateTests(unittest.TestCase):
         self.assertTrue(
             any(re.fullmatch(r"of:=SUM\(\[\.C\d+:\.C\d+\]\)", formula) for formula in formulas)
         )
-        self.assertTrue(any(re.fullmatch(r"of:=\[\.A\d+\]", formula) for formula in formulas))
+        self.assertTrue(
+            any(
+                re.fullmatch(r"of:=SUM\(\[\.A\d+:\.A\d+\]\)", formula)
+                for formula in formulas
+            )
+        )
         self.assertTrue(
             any(
                 re.fullmatch(r"of:=ABS\(\[\.C\d+\]-\[\.A\d+\]\)", formula)
