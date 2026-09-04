@@ -424,7 +424,10 @@ const tree = window.EasyPrentAppSections.OverviewContent({
   expenseRows: emptyRows,
   depreciationRows: emptyRows,
   properties: [{ id: 1, name: "Haus", is_archived: 0 }],
-  units: [{ id: 77, label: "Solo", property_id: null, is_archived: 0 }],
+  units: [
+    { id: 77, label: "Solo", property_id: null, building_id: null, is_archived: 0 },
+    { id: 78, label: "Wohnung 02", property_id: null, building_id: 1, is_archived: 0 },
+  ],
   settlementFilters: {
     property_id: "1",
     unit_id: "",
@@ -487,6 +490,9 @@ process.stdout.write(JSON.stringify({ target: !!target, options: options }));
         )
         self.assertIn(
             {"value": "unit:77", "label": "Wohnung: Solo"}, payload["options"]
+        )
+        self.assertNotIn(
+            {"value": "unit:78", "label": "Wohnung: Wohnung 02"}, payload["options"]
         )
 
     def test_local_react_vendor_files_are_served(self) -> None:

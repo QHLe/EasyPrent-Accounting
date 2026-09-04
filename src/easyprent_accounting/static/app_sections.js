@@ -47,7 +47,7 @@
       return !property.is_archived;
     });
     const standaloneSettlementUnits = (props.units || []).filter(function (unit) {
-      return !unit.is_archived && !unit.property_id;
+      return !unit.is_archived && !unit.building_id;
     });
     const settlementTargetValue = props.settlementFilters.unit_id
       ? "unit:" + String(props.settlementFilters.unit_id)
