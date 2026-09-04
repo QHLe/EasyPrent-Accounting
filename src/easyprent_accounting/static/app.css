@@ -309,6 +309,101 @@ table {
   white-space: nowrap;
 }
 
+.settlement-run-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 1rem 0;
+}
+
+.settlement-run-summary > div {
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.settlement-run-summary span,
+.settlement-warning {
+  display: block;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.settlement-run-summary strong {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 1.35rem;
+}
+
+.settlement-run-table-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.settlement-run-table {
+  min-width: 760px;
+}
+
+.settlement-run-table th {
+  padding: 0.72rem 0.8rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  background: rgba(15, 118, 110, 0.06);
+}
+
+.settlement-run-table td {
+  padding: 0.8rem;
+}
+
+.settlement-run-table tbody tr:nth-child(even) {
+  background: rgba(15, 118, 110, 0.035);
+}
+
+.settlement-run-table tbody tr:hover {
+  background: rgba(15, 118, 110, 0.08);
+}
+
+.settlement-person {
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.settlement-date,
+.settlement-money {
+  white-space: nowrap;
+}
+
+.settlement-money {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.settlement-credit {
+  color: #087f5b;
+}
+
+.settlement-balance {
+  font-weight: 700;
+}
+
+.settlement-description {
+  min-width: 14rem;
+}
+
+.settlement-warning {
+  margin-top: 0.28rem;
+  color: #b45309;
+}
+
+.settlement-action {
+  white-space: nowrap;
+  text-align: right;
+}
+
 th,
 td {
   text-align: left;
@@ -387,5 +482,9 @@ ul {
 
   .hero h1 {
     max-width: none;
+  }
+
+  .settlement-run-summary {
+    grid-template-columns: 1fr;
   }
 }

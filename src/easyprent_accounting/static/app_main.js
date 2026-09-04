@@ -3601,7 +3601,7 @@
         return { value: "property:" + String(property.id), label: "Immobilie: " + property.name };
       })
       .concat((overview.units || []).filter(function (unit) {
-        return !unit.is_archived && !unit.property_id;
+        return !unit.is_archived && !unit.building_id;
       }).map(function (unit) {
         return { value: "unit:" + String(unit.id), label: "Wohnung: " + unit.label };
       }));

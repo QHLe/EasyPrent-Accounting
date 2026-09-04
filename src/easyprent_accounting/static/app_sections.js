@@ -473,21 +473,46 @@
 
   function SettlementRunsContent(props) {
     const run = props.overview && props.overview.run;
+    const settlementTable = function (headers, rows, className) {
+      return e(
+        "div",
+        { className: "settlement-run-table-scroll" },
+        e(
+          "table",
+          { className: "settlement-run-table " + (className || "") },
+          e("thead", null, e("tr", null, headers.map(function (header) {
+            return e("th", { key: header.key || header.label, className: header.className || "" }, header.label);
+          }))),
+          e("tbody", null, rows)
+        )
+      );
+    };
     const paymentRows = function (payments, action) {
       return (payments || []).map(function (payment) {
-        return [
-          payment.tenant_name,
-          payment.booking_date,
-          formatMoneyValue(payment.amount),
-          [
-            payment.description || "-",
-            payment.warning ? " · Warnung: " + payment.warning : "",
-            payment.assigned_settlement_id ? " · Bereits berücksichtigt in Vorgang " + payment.assigned_settlement_id : "",
-          ].join(""),
-          action ? action(payment) : "",
-        ];
+        return e(
+          "tr",
+          { key: payment.split_guid },
+          e("td", { className: "settlement-person" }, payment.tenant_name || "-"),
+          e("td", { className: "settlement-date" }, payment.booking_date),
+          e("td", { className: "settlement-money" }, formatMoneyValue(payment.amount)),
+          e(
+            "td",
+            { className: "settlement-description" },
+            e("span", null, payment.description || "Keine Beschreibung"),
+            payment.warning ? e("span", { className: "settlement-warning" }, "Warnung: " + payment.warning) : null,
+            payment.assigned_settlement_id ? e("span", { className: "settlement-warning" }, "Bereits in einem anderen Vorgang berücksichtigt") : null
+          ),
+          action ? e("td", { className: "settlement-action" }, action(payment)) : null
+        );
       });
     };
+    const paymentHeaders = [
+      { key: "tenant", label: "Mieter" },
+      { key: "date", label: "Buchungsdatum", className: "settlement-date" },
+      { key: "amount", label: "Betrag", className: "settlement-money" },
+      { key: "description", label: "Beschreibung" },
+      { key: "action", label: "Aktion", className: "settlement-action" },
+    ];
     return e(
       "div",
       { className: "content-grid" },
@@ -516,6 +541,11 @@
           { className: "panel panel-wide" },
           e("h2", null, run.target_label + " · " + run.year),
           e("p", { className: "hint" }, run.period_start + " bis " + run.period_end + " · bearbeitbarer Entwurf"),
+          e("div", { className: "settlement-run-summary" },
+            e("div", null, e("span", null, "Offen"), e("strong", null, String((props.overview.open_payments || []).length))),
+            e("div", null, e("span", null, "Berücksichtigt"), e("strong", null, String((props.overview.considered_payments || []).length))),
+            e("div", null, e("span", null, "Außerhalb Zeitraum"), e("strong", null, String((props.overview.outside_payments || []).length)))
+          ),
           e("div", { className: "inline-actions" },
             e("button", { type: "button", disabled: props.busy, onClick: props.onRefresh }, "Zahlungen aktualisieren"),
             e("button", { type: "button", className: "action-button secondary", disabled: props.busy || !(props.overview.open_payments || []).length, onClick: props.onConsiderAll }, "Alle gültigen Zahlungen berücksichtigen")
@@ -526,24 +556,40 @@
         ),
         e("section", { className: "panel panel-wide" },
           e("h2", null, "Offene Zahlungen"),
-          table(["Mieter", "Buchungsdatum", "Betrag", "Beschreibung", "Aktion"], paymentRows(props.overview.open_payments, function (payment) {
+          e("p", { className: "hint" }, "Gültige Zahlungen können einzeln oder gesammelt berücksichtigt werden."),
+          settlementTable(paymentHeaders, paymentRows(props.overview.open_payments, function (payment) {
             return e("button", { type: "button", className: "action-button", disabled: props.busy, onClick: function () { props.onConsider(payment.split_guid); } }, "Berücksichtigen");
           }))
         ),
         e("section", { className: "panel panel-wide" },
           e("h2", null, "Berücksichtigte Zahlungen"),
-          table(["Mieter", "Buchungsdatum", "Betrag", "Beschreibung", "Aktion"], paymentRows(props.overview.considered_payments, function (payment) {
+          e("p", { className: "hint" }, "Diese Zahlungen fließen in die Abrechnung ein."),
+          settlementTable(paymentHeaders, paymentRows(props.overview.considered_payments, function (payment) {
             return e("button", { type: "button", className: "action-button secondary", disabled: props.busy, onClick: function () { props.onUnassign(payment.split_guid); } }, "Zuordnung aufheben");
           }))
         ),
         e("details", { className: "panel panel-wide" },
           e("summary", null, "Außerhalb berücksichtigtem Zeitraum (" + String((props.overview.outside_payments || []).length) + ")"),
-          table(["Mieter", "Buchungsdatum", "Betrag", "Beschreibung"], paymentRows(props.overview.outside_payments))
+          settlementTable(paymentHeaders.slice(0, 4), paymentRows(props.overview.outside_payments))
         ),
         e("section", { className: "panel panel-wide" },
           e("h2", null, "Mietverträge und Dokumente"),
-          table(["Mieter", "Mietobjekt", "Kostenanteil", "Vorauszahlungen", "Saldo", "Dokument"], (props.overview.settlement.results || []).map(function (result) {
-            return [result.tenant_name, result.unit_label, formatMoneyValue(result.allocated_costs), formatMoneyValue(result.advances_paid), formatMoneyValue(result.balance), e("a", { href: props.odsUrl(result.lease_id) }, "ODS herunterladen")];
+          settlementTable([
+            { key: "tenant", label: "Mieter" },
+            { key: "unit", label: "Mietobjekt" },
+            { key: "costs", label: "Kostenanteil", className: "settlement-money" },
+            { key: "advances", label: "Vorauszahlungen", className: "settlement-money" },
+            { key: "balance", label: "Saldo", className: "settlement-money" },
+            { key: "document", label: "Dokument", className: "settlement-action" },
+          ], (props.overview.settlement.results || []).map(function (result) {
+            return e("tr", { key: result.lease_id },
+              e("td", { className: "settlement-person" }, result.tenant_name),
+              e("td", null, result.unit_label),
+              e("td", { className: "settlement-money" }, formatMoneyValue(result.allocated_costs)),
+              e("td", { className: "settlement-money settlement-credit" }, formatMoneyValue(result.advances_paid)),
+              e("td", { className: "settlement-money settlement-balance" }, formatMoneyValue(result.balance)),
+              e("td", { className: "settlement-action" }, e("a", { className: "settlement-document-download", href: props.odsUrl(result.lease_id) }, "ODS herunterladen"))
+            );
           }))
         )
       ) : e("section", { className: "panel panel-wide" }, e("p", { className: "hint" }, "Wähle Jahr und Objekt und lege den Abrechnungsvorgang an."))
