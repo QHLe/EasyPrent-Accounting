@@ -1077,7 +1077,6 @@ def render_settlement_template(
                     number=amount,
                     currency=True,
                 )
-                _apply_advance_payment_auto_height(root, rendered_row)
                 sheet.insert(payment_insert_index + offset, rendered_row)
                 rendered_payment_rows.append(rendered_row)
         else:
@@ -1089,7 +1088,6 @@ def render_settlement_template(
                 number=Decimal(advances_paid),
                 currency=True,
             )
-            _apply_advance_payment_auto_height(root, payment_row)
             rendered_payment_rows.append(payment_row)
 
         first_payment_row_number = _row_number(sheet, rendered_payment_rows[0])
@@ -1150,6 +1148,13 @@ def render_settlement_template(
                 '"Die Abrechnung ist ausgeglichen."))'
             ),
         )
+
+    # A user may enter long labels or edit fields after the export.  Keep every
+    # row in the document at its optimal height instead of inheriting a fixed
+    # height from the source template.  The derived style preserves special
+    # properties such as the page break before the payment-detail title.
+    for row in sheet.findall("table:table-row", NS):
+        _apply_advance_payment_auto_height(root, row)
 
     replacements = _sanitize_package_files(
         entries,

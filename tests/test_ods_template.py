@@ -521,7 +521,8 @@ class OdsTemplateTests(unittest.TestCase):
             )
         )
         self.assertEqual(
-            title_row.get(f"{{{TABLE_NS}}}style-name"), "roEasyAdvancePayments"
+            title_row.get(f"{{{TABLE_NS}}}style-name"),
+            "roEasyAdvanceAuto_roEasyAdvancePayments",
         )
         payment_style = next(
             style
@@ -545,6 +546,16 @@ class OdsTemplateTests(unittest.TestCase):
                     f"{{{STYLE_NS}}}use-optimal-row-height"
                 ) == "true"
                 for style in auto_height_styles
+            )
+        )
+        rendered_rows = root.findall(f".//{{{TABLE_NS}}}table-row")
+        self.assertTrue(rendered_rows)
+        self.assertTrue(
+            all(
+                (row.get(f"{{{TABLE_NS}}}style-name") or "").startswith(
+                    "roEasyAdvanceAuto_"
+                )
+                for row in rendered_rows
             )
         )
 
