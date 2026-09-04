@@ -3993,7 +3993,7 @@ def create_or_open_settlement_run(connection: sqlite3.Connection, payload: dict)
         target = connection.execute(
             """
             SELECT id, label FROM units
-            WHERE id = ? AND property_id IS NULL AND is_archived = 0
+            WHERE id = ? AND building_id IS NULL AND is_archived = 0
             """,
             (unit_id,),
         ).fetchone()

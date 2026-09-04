@@ -687,6 +687,32 @@ process.stdout.write(JSON.stringify({ target: !!target, options: options }));
         self.assertIn("settlement", detail)
         self.assertIn("open_payments", detail)
 
+    def test_api_creates_settlement_run_for_standalone_unit(self) -> None:
+        connection = sqlite3.connect(self.db_path)
+        try:
+            cursor = connection.execute(
+                """
+                INSERT INTO units (
+                    building_id, label, area_sqm, room_count, street, city, postal_code
+                ) VALUES (NULL, 'WE 206', 60, 1, 'Teststraße 1', 'Berlin', '10115')
+                """
+            )
+            connection.commit()
+            unit_id = cursor.lastrowid
+        finally:
+            connection.close()
+
+        status, _, body = self._call_app(
+            "POST",
+            "/api/settlement-runs",
+            json.dumps({"unit_id": unit_id, "year": 2025}).encode("utf-8"),
+        )
+
+        payload = json.loads(body.decode("utf-8"))
+        self.assertTrue(status.startswith("201"))
+        self.assertEqual(payload["unit_id"], unit_id)
+        self.assertEqual(payload["target_label"], "Wohnung: WE 206")
+
     def test_api_can_create_tenant_and_lease(self) -> None:
         tenant_status, _, tenant_body = self._call_app(
             "POST",
