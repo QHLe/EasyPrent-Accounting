@@ -269,7 +269,7 @@ def _apply_object_row_style(root: ET.Element, row: ET.Element) -> None:
 
 
 def _apply_advance_payment_page_break(root: ET.Element, row: ET.Element) -> None:
-    """Start the advance-payment detail table on its own printed page."""
+    """Start the advance-payment section on its own printed page."""
     style_name = "roEasyAdvancePayments"
     automatic_styles = root.find("office:automatic-styles", NS)
     if automatic_styles is None:
@@ -284,12 +284,48 @@ def _apply_advance_payment_page_break(root: ET.Element, row: ET.Element) -> None
             {
                 f"{{{STYLE_NS}}}name": style_name,
                 f"{{{STYLE_NS}}}family": "table-row",
+                **(
+                    {f"{{{STYLE_NS}}}parent-style-name": row.get(f"{{{TABLE_NS}}}style-name")}
+                    if row.get(f"{{{TABLE_NS}}}style-name")
+                    else {}
+                ),
             },
         )
         ET.SubElement(
             payment_row_style,
             f"{{{STYLE_NS}}}table-row-properties",
             {f"{{{FO_NS}}}break-before": "page"},
+        )
+    row.set(f"{{{TABLE_NS}}}style-name", style_name)
+
+
+def _apply_advance_payment_auto_height(root: ET.Element, row: ET.Element) -> None:
+    """Let each generated payment row grow with its cell content."""
+    original_style = row.get(f"{{{TABLE_NS}}}style-name", "Default")
+    safe_original_style = re.sub(r"[^A-Za-z0-9_]", "_", original_style)
+    style_name = f"roEasyAdvanceAuto_{safe_original_style}"
+    automatic_styles = root.find("office:automatic-styles", NS)
+    if automatic_styles is None:
+        return
+    if not any(
+        style.get(f"{{{STYLE_NS}}}name") == style_name
+        for style in automatic_styles.findall("style:style", NS)
+    ):
+        attributes = {
+            f"{{{STYLE_NS}}}name": style_name,
+            f"{{{STYLE_NS}}}family": "table-row",
+        }
+        if original_style and original_style != "Default":
+            attributes[f"{{{STYLE_NS}}}parent-style-name"] = original_style
+        payment_row_style = ET.SubElement(
+            automatic_styles,
+            f"{{{STYLE_NS}}}style",
+            attributes,
+        )
+        ET.SubElement(
+            payment_row_style,
+            f"{{{STYLE_NS}}}table-row-properties",
+            {f"{{{STYLE_NS}}}use-optimal-row-height": "true"},
         )
     row.set(f"{{{TABLE_NS}}}style-name", style_name)
 
@@ -995,10 +1031,10 @@ def render_settlement_template(
     payment_period_row, payment_period_column = _find_marker(
         sheet, "{{VORAUSZAHLUNG_ZEITRAUM}}"
     )
-    payment_header = _find_row_containing(
-        sheet.findall("table:table-row", NS), "Betrag"
+    payment_title = _find_row_containing(
+        sheet.findall("table:table-row", NS), "Geleistete Vorauszahlungen"
     )
-    _apply_advance_payment_page_break(root, payment_header)
+    _apply_advance_payment_page_break(root, payment_title)
     payment_row, payment_column = _find_marker(sheet, "{{VORAUSZAHLUNGEN}}")
     advance_row, advance_column = _find_marker(sheet, "{{VORAUSZAHLUNGEN_SUMME}}")
     balance_label_row, balance_label_column = _find_marker(sheet, "{{SALDO_BEZEICHNUNG}}")
@@ -1041,6 +1077,7 @@ def render_settlement_template(
                     number=amount,
                     currency=True,
                 )
+                _apply_advance_payment_auto_height(root, rendered_row)
                 sheet.insert(payment_insert_index + offset, rendered_row)
                 rendered_payment_rows.append(rendered_row)
         else:
@@ -1052,6 +1089,7 @@ def render_settlement_template(
                 number=Decimal(advances_paid),
                 currency=True,
             )
+            _apply_advance_payment_auto_height(root, payment_row)
             rendered_payment_rows.append(payment_row)
 
         first_payment_row_number = _row_number(sheet, rendered_payment_rows[0])

@@ -511,6 +511,18 @@ class OdsTemplateTests(unittest.TestCase):
         self.assertNotIn("Februar", content)
         self.assertIn("80,00 €", content)
         self.assertIn("100,00 €", content)
+        title_row = next(
+            row
+            for row in root.findall(f".//{{{TABLE_NS}}}table-row")
+            if "Geleistete Vorauszahlungen"
+            in " ".join(
+                "".join(paragraph.itertext())
+                for paragraph in row.findall(f".//{{{TEXT_NS}}}p")
+            )
+        )
+        self.assertEqual(
+            title_row.get(f"{{{TABLE_NS}}}style-name"), "roEasyAdvancePayments"
+        )
         payment_style = next(
             style
             for style in root.findall(f".//{{{STYLE_NS}}}style")
@@ -521,6 +533,20 @@ class OdsTemplateTests(unittest.TestCase):
         )
         self.assertIsNotNone(row_properties)
         self.assertEqual(row_properties.get(f"{{{FO_NS}}}break-before"), "page")
+        auto_height_styles = [
+            style
+            for style in root.findall(f".//{{{STYLE_NS}}}style")
+            if (style.get(f"{{{STYLE_NS}}}name") or "").startswith("roEasyAdvanceAuto_")
+        ]
+        self.assertTrue(auto_height_styles)
+        self.assertTrue(
+            all(
+                style.find(f"{{{STYLE_NS}}}table-row-properties").get(
+                    f"{{{STYLE_NS}}}use-optimal-row-height"
+                ) == "true"
+                for style in auto_height_styles
+            )
+        )
 
     def test_formulas_follow_relocated_marker_columns(self) -> None:
         document = _render(_with_relocated_formula_markers(_template_bytes()))
