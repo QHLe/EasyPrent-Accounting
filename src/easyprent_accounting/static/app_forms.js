@@ -322,7 +322,7 @@
                 props.setField("allocation_method", event.target.value);
               },
             },
-            e("option", { value: "area" }, "Nach Fläche"),
+            e("option", { value: "area" }, "Nach Miteigentumsanteilen (MEA)"),
             e("option", { value: "unit_count" }, "Nach Einheiten"),
             e("option", { value: "occupants" }, "Nach Personen")
           )
@@ -752,6 +752,22 @@
               value: forms.unit.area_sqm,
               onChange: function (event) {
                 props.setFormField("unit", "area_sqm", event.target.value);
+              },
+              required: true,
+            })
+          ),
+          e(
+            "label",
+            null,
+            "Miteigentumsanteil (MEA) in %",
+            e("input", {
+              type: "number",
+              min: "0",
+              max: "100",
+              step: "0.0001",
+              value: forms.unit.mea_percent,
+              onChange: function (event) {
+                props.setFormField("unit", "mea_percent", event.target.value);
               },
               required: true,
             })

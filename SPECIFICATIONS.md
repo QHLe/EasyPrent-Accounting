@@ -334,7 +334,7 @@ Mietverträgen, Nebenkosten und abschreibungsrelevanten Objektdaten.
 - `REQ-NKA-003`
   Das System muss Verteilerschlüssel auf Kostenpositionen anwenden können.
 - `REQ-NKA-004`
-  Im MVP müssen mindestens die Verteilerschlüssel `area`, `unit_count` und `occupants` unterstützt werden.
+  Im MVP müssen mindestens die Verteilerschlüssel `area`, `unit_count` und `occupants` unterstützt werden. Der Schlüssel `area` verteilt auf Wohnungen nach ihren Miteigentumsanteilen (MEA), nicht nach der informativen Wohnfläche.
 - `REQ-NKA-005`
   Das System muss für einen definierten Zeitraum eine Nebenkostenabrechnung pro Mietverhältnis erzeugen können.
 - `REQ-NKA-006`

@@ -1151,6 +1151,84 @@ class ExpenseServiceTests(unittest.TestCase):
             ["181.00", "184.00"],
         )
 
+    def test_settlement_uses_room_area_shares_for_area_allocation(self) -> None:
+        self.connection.execute("DELETE FROM expense_items")
+        first_room = create_room(
+            self.connection,
+            {"unit_id": 1, "label": "Zimmer Nord", "area_share_percent": "25"},
+        )
+        second_room = create_room(
+            self.connection,
+            {"unit_id": 1, "label": "Zimmer Süd", "area_share_percent": "75"},
+        )
+        self.connection.execute(
+            "UPDATE leases SET room_id = ? WHERE id = ?", (first_room["id"], 1)
+        )
+        self.connection.execute(
+            """
+            UPDATE leases
+            SET unit_id = 1, room_id = ?, start_date = '2025-01-01'
+            WHERE id = 2
+            """,
+            (second_room["id"],),
+        )
+        self.connection.execute(
+            """
+            INSERT INTO expense_items (
+                property_id, object_type, object_id, expense_category,
+                beneficiary_name, label, amount, allocation_method,
+                charge_type, recurrence, period_start, period_end
+            ) VALUES (1, 'property', 1, 'Flächenkosten', 'Dienstleister',
+                      'Flächenkosten', '100.00', 'area', 'one_time',
+                      'one_time', '2025-01-01', '2025-12-31')
+            """
+        )
+        self.connection.commit()
+
+        settlement = settlement_for_period(
+            self.connection, 1, "2025-01-01", "2025-12-31"
+        )
+
+        self.assertEqual(
+            [result["allocated_costs"] for result in settlement["results"]],
+            ["25.00", "75.00"],
+        )
+        self.assertEqual(
+            [result["line_items"][0]["basis_value"] for result in settlement["results"]],
+            ["8.524025", "25.572075"],
+        )
+
+    def test_settlement_uses_mea_instead_of_informative_unit_area(self) -> None:
+        self.connection.execute("DELETE FROM expense_items")
+        self.connection.execute("UPDATE units SET mea_percent = 20 WHERE id = 1")
+        self.connection.execute("UPDATE units SET mea_percent = 80 WHERE id = 2")
+        self.connection.execute("UPDATE leases SET start_date = '2025-01-01' WHERE id = 2")
+        self.connection.execute(
+            """
+            INSERT INTO expense_items (
+                property_id, object_type, object_id, expense_category,
+                beneficiary_name, label, amount, allocation_method,
+                charge_type, recurrence, period_start, period_end
+            ) VALUES (1, 'property', 1, 'Gemeinschaftskosten', 'Verwaltung',
+                      'Gemeinschaftskosten', '100.00', 'area', 'one_time',
+                      'one_time', '2025-01-01', '2025-12-31')
+            """
+        )
+        self.connection.commit()
+
+        settlement = settlement_for_period(
+            self.connection, 1, "2025-01-01", "2025-12-31"
+        )
+
+        self.assertEqual(
+            [result["allocated_costs"] for result in settlement["results"]],
+            ["20.00", "80.00"],
+        )
+        self.assertEqual(
+            [result["line_items"][0]["basis_value"] for result in settlement["results"]],
+            ["20", "80"],
+        )
+
     def test_settlement_includes_monthly_and_consumption_expenses(self) -> None:
         create_expense(
             self.connection,
@@ -1399,6 +1477,7 @@ class PropertyRelationshipTests(unittest.TestCase):
                 "building_id": None,
                 "label": "Whg-Solo-1",
                 "area_sqm": "58.5",
+                "mea_percent": "12.5",
                 "room_count": 2,
                 "street": "Sonnenallee 10",
                 "city": "Berlin",
@@ -1406,14 +1485,32 @@ class PropertyRelationshipTests(unittest.TestCase):
             },
         )
         row = self.connection.execute(
-            "SELECT building_id, label, street, city, postal_code FROM units WHERE id = ?",
+            "SELECT building_id, label, mea_percent, street, city, postal_code FROM units WHERE id = ?",
             (created["id"],),
         ).fetchone()
         self.assertIsNone(row["building_id"])
         self.assertEqual(row["label"], "Whg-Solo-1")
+        self.assertEqual(row["mea_percent"], 12.5)
         self.assertEqual(row["street"], "Sonnenallee 10")
         self.assertEqual(row["city"], "Berlin")
         self.assertEqual(row["postal_code"], "12045")
+
+    def test_create_unit_requires_mea_percent(self) -> None:
+        with self.assertRaises(ValueError) as error:
+            create_unit(
+                self.connection,
+                {
+                    "building_id": None,
+                    "label": "Whg-Solo-1",
+                    "area_sqm": "58.5",
+                    "room_count": 2,
+                    "street": "Sonnenallee 10",
+                    "city": "Berlin",
+                    "postal_code": "12045",
+                },
+            )
+
+        self.assertIn("mea_percent", str(error.exception))
 
     def test_create_unit_inherits_address_from_building(self) -> None:
         created = create_unit(
@@ -1422,6 +1519,7 @@ class PropertyRelationshipTests(unittest.TestCase):
                 "building_id": 1,
                 "label": "A-04",
                 "area_sqm": "56.0",
+                "mea_percent": "10",
                 "room_count": 2,
                 "street": "Abweichende Straße 1",
                 "city": "Hamburg",
@@ -1454,6 +1552,7 @@ class PropertyRelationshipTests(unittest.TestCase):
                 "building_id": building["id"],
                 "label": "A-01",
                 "area_sqm": "74.5",
+                "mea_percent": "34.1",
                 "room_count": 3,
                 "street": "Abweichende Straße 1",
                 "city": "Hamburg",

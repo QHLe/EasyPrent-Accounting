@@ -1598,11 +1598,12 @@ def build_openapi_document() -> dict:
                 },
                 "UnitCreateRequest": {
                     "type": "object",
-                    "required": ["label", "area_sqm", "room_count", "street", "city", "postal_code"],
+                    "required": ["label", "area_sqm", "mea_percent", "room_count", "street", "city", "postal_code"],
                     "properties": {
                         "building_id": {"type": ["integer", "null"]},
                         "label": {"type": "string"},
                         "area_sqm": {"type": "string"},
+                        "mea_percent": {"type": "string", "description": "Miteigentumsanteil gemäß Teilungserklärung in Prozent"},
                         "room_count": {"type": "integer"},
                         "street": {"type": "string"},
                         "city": {"type": "string"},
@@ -1616,6 +1617,7 @@ def build_openapi_document() -> dict:
                         "building_id": {"type": ["integer", "null"]},
                         "label": {"type": "string"},
                         "area_sqm": {"type": "string"},
+                        "mea_percent": {"type": "string"},
                         "room_count": {"type": "integer"},
                         "street": {"type": "string"},
                         "city": {"type": "string"},

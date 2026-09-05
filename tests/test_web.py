@@ -603,6 +603,7 @@ process.stdout.write(JSON.stringify({ target: !!target, options: options }));
         self.assertIn("meter_unit", payload["components"]["schemas"]["ExpenseResponse"]["properties"])
         self.assertIn("street", payload["components"]["schemas"]["BuildingCreateRequest"]["properties"])
         self.assertIn("street", payload["components"]["schemas"]["UnitCreateRequest"]["properties"])
+        self.assertIn("mea_percent", payload["components"]["schemas"]["UnitCreateRequest"]["properties"])
         self.assertIn("PaperlessSettingsResponse", payload["components"]["schemas"])
         self.assertIn("PaperlessSettingsUpdateRequest", payload["components"]["schemas"])
         self.assertIn("PaperlessStatusResponse", payload["components"]["schemas"])
@@ -3167,6 +3168,7 @@ process.stdout.write(JSON.stringify({ target: !!target, options: options }));
                     "building_id": building_payload["id"],
                     "label": "B-01",
                     "area_sqm": "71.5",
+                    "mea_percent": "15.25",
                     "room_count": 3,
                     "street": "Parkstrasse 1",
                     "city": "Berlin",
@@ -3177,6 +3179,7 @@ process.stdout.write(JSON.stringify({ target: !!target, options: options }));
         unit_payload = json.loads(unit_body.decode("utf-8"))
         self.assertTrue(unit_status.startswith("201"))
         self.assertEqual(unit_payload["label"], "B-01")
+        self.assertEqual(unit_payload["mea_percent"], "15.25")
         self.assertEqual(unit_payload["street"], "Parkstrasse 1")
 
         room_status, _, room_body = self._call_app(

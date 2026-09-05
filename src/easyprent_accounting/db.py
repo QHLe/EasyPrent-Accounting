@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS units (
     building_id INTEGER,
     label TEXT NOT NULL,
     area_sqm NUMERIC NOT NULL,
+    mea_percent NUMERIC,
     room_count INTEGER NOT NULL,
     street TEXT NOT NULL,
     city TEXT NOT NULL,
@@ -323,6 +324,7 @@ def initialize_database() -> None:
 def ensure_schema_updates(connection: sqlite3.Connection) -> None:
     _ensure_buildings_table_supports_standalone(connection)
     _ensure_units_table_supports_standalone(connection)
+    _ensure_units_have_mea_percent(connection)
     _ensure_rooms_table_exists(connection)
     _ensure_rooms_have_area_sqm(connection)
     _ensure_rooms_have_area_share_percent(connection)
@@ -700,6 +702,7 @@ def _ensure_units_table_supports_standalone(connection: sqlite3.Connection) -> N
             building_id INTEGER,
             label TEXT NOT NULL,
             area_sqm NUMERIC NOT NULL,
+            mea_percent NUMERIC,
             room_count INTEGER NOT NULL,
             street TEXT,
             city TEXT,
@@ -740,6 +743,14 @@ def _ensure_rooms_table_exists(connection: sqlite3.Connection) -> None:
         )
         """
     )
+
+
+def _ensure_units_have_mea_percent(connection: sqlite3.Connection) -> None:
+    unit_columns = {
+        row["name"] for row in connection.execute("PRAGMA table_info(units)").fetchall()
+    }
+    if "mea_percent" not in unit_columns:
+        connection.execute("ALTER TABLE units ADD COLUMN mea_percent NUMERIC")
 
 
 def _ensure_rooms_have_area_sqm(connection: sqlite3.Connection) -> None:
@@ -1028,18 +1039,18 @@ def seed_demo_data(connection: sqlite3.Connection) -> None:
     building_id = connection.execute("SELECT last_insert_rowid()").fetchone()[0]
 
     units = [
-        ("A-01", Decimal("74.5"), 3, "Lindenweg 12", "Berlin", "10439"),
-        ("A-02", Decimal("61.0"), 2, "Lindenweg 12", "Berlin", "10439"),
-        ("A-03", Decimal("83.0"), 4, "Lindenweg 12", "Berlin", "10439"),
+        ("A-01", Decimal("74.5"), Decimal("34.0961"), 3, "Lindenweg 12", "Berlin", "10439"),
+        ("A-02", Decimal("61.0"), Decimal("27.9176"), 2, "Lindenweg 12", "Berlin", "10439"),
+        ("A-03", Decimal("83.0"), Decimal("37.9863"), 4, "Lindenweg 12", "Berlin", "10439"),
     ]
     unit_ids = []
-    for label, area_sqm, room_count, street, city, postal_code in units:
+    for label, area_sqm, mea_percent, room_count, street, city, postal_code in units:
         connection.execute(
             """
-            INSERT INTO units (building_id, label, area_sqm, room_count, street, city, postal_code)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO units (building_id, label, area_sqm, mea_percent, room_count, street, city, postal_code)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (building_id, label, str(area_sqm), room_count, street, city, postal_code),
+            (building_id, label, str(area_sqm), str(mea_percent), room_count, street, city, postal_code),
         )
         unit_ids.append(connection.execute("SELECT last_insert_rowid()").fetchone()[0])
 

@@ -566,6 +566,9 @@
       if (areaLabel) {
         details.push(areaLabel);
       }
+      if (entity.mea_percent != null && entity.mea_percent !== "") {
+        details.push("MEA: " + String(entity.mea_percent) + " %");
+      }
       details.push(
         "Zimmer: " + String(entity.actual_room_count || 0) + "/" + String(entity.room_count || 0)
       );

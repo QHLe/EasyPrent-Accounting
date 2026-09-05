@@ -150,12 +150,16 @@ def _normalize_optional_decimal_string(value: object, field_name: str) -> str | 
 
 
 def _normalize_area_share_percent(value: object) -> str | None:
-    normalized = _normalize_optional_decimal_string(value, "area_share_percent")
+    return _normalize_percentage(value, "area_share_percent")
+
+
+def _normalize_percentage(value: object, field_name: str) -> str | None:
+    normalized = _normalize_optional_decimal_string(value, field_name)
     if normalized is None:
         return None
     percentage = Decimal(normalized)
     if percentage < 0 or percentage > 100:
-        raise ValueError("area_share_percent must be between 0 and 100")
+        raise ValueError(f"{field_name} must be between 0 and 100")
     return normalized
 
 
@@ -2437,15 +2441,19 @@ def _unit_address(connection: sqlite3.Connection, payload: dict) -> tuple[str, s
 
 def create_unit(connection: sqlite3.Connection, payload: dict) -> dict:
     street, city, postal_code = _unit_address(connection, payload)
+    mea_percent = _normalize_percentage(
+        _require_payload_value(payload, "mea_percent"), "mea_percent"
+    )
     cursor = connection.execute(
         """
-        INSERT INTO units (building_id, label, area_sqm, room_count, street, city, postal_code)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO units (building_id, label, area_sqm, mea_percent, room_count, street, city, postal_code)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             payload.get("building_id"),
             payload["label"],
             str(Decimal(str(payload["area_sqm"]))),
+            mea_percent,
             payload["room_count"],
             street,
             city,
@@ -2987,16 +2995,20 @@ def update_unit(connection: sqlite3.Connection, unit_id: int, payload: dict) -> 
         raise ValueError("room_count cannot be lower than existing rooms")
 
     street, city, postal_code = _unit_address(connection, payload)
+    mea_percent = _normalize_percentage(
+        _require_payload_value(payload, "mea_percent"), "mea_percent"
+    )
     connection.execute(
         """
         UPDATE units
-        SET building_id = ?, label = ?, area_sqm = ?, room_count = ?, street = ?, city = ?, postal_code = ?
+        SET building_id = ?, label = ?, area_sqm = ?, mea_percent = ?, room_count = ?, street = ?, city = ?, postal_code = ?
         WHERE id = ?
         """,
         (
             payload.get("building_id"),
             payload["label"],
             str(Decimal(str(payload["area_sqm"]))),
+            mea_percent,
             requested_room_count,
             street,
             city,
@@ -3399,7 +3411,10 @@ def create_depreciation_asset(connection: sqlite3.Connection, payload: dict) -> 
 
 def _allocation_basis_for_lease(lease_row: sqlite3.Row, method: str) -> Decimal:
     if method == "area":
-        return Decimal(str(lease_row["area_sqm"]))
+        mea_percent = Decimal(str(lease_row["mea_percent"]))
+        if lease_row["room_id"] is not None:
+            return mea_percent * Decimal(str(lease_row["area_share_percent"])) / Decimal("100")
+        return mea_percent
     if method == "occupants":
         return Decimal(str(lease_row["occupant_count"]))
     return Decimal("1")
@@ -3495,7 +3510,9 @@ def settlement_for_period(
                    WHEN l.room_id IS NOT NULL THEN r.label || ' (' || u.label || ')'
                    ELSE u.label
                END AS unit_label,
-               u.area_sqm, u.building_id,
+               u.mea_percent,
+               r.area_share_percent,
+               u.building_id,
                l.occupant_count, l.additional_charges_advance, l.start_date, l.end_date
         FROM leases l
         JOIN tenants t ON t.id = l.tenant_id
@@ -3558,12 +3575,24 @@ def settlement_for_period(
         ),
     ).fetchall()
 
+    uses_mea_allocation = any(row["allocation_method"] == "area" for row in expense_rows)
+    if uses_mea_allocation:
+        for row in lease_rows:
+            if row["mea_percent"] is None:
+                raise ValueError("unit requires mea_percent for allocation by MEA")
+            if row["room_id"] is not None and row["area_share_percent"] is None:
+                raise ValueError("room lease requires area_share_percent for allocation by MEA")
+
     leases = [
         SettlementLease(
             lease_id=row["id"],
             tenant_name=row["tenant_name"],
             unit_label=row["unit_label"],
-            unit_area_sqm=Decimal(str(row["area_sqm"])),
+            unit_area_sqm=(
+                _allocation_basis_for_lease(row, "area")
+                if uses_mea_allocation
+                else Decimal("1")
+            ),
             occupant_count=row["occupant_count"],
             additional_charges_advance=Decimal(str(row["additional_charges_advance"])),
             lease_start=parse_date(row["start_date"]),
@@ -4142,7 +4171,7 @@ def settlement_document_for_period(
         return html.escape(str(value or ""))
 
     allocation_labels = {
-        "area": "Wohnfläche",
+        "area": "Miteigentumsanteile (MEA)",
         "unit_count": "Einheiten",
         "occupants": "Personen",
     }
@@ -4212,7 +4241,7 @@ def settlement_pdf_for_period(
     if details is None:
         raise ValueError("lease not found for property")
 
-    labels = {"area": "Wohnfläche", "unit_count": "Einheiten", "occupants": "Personen"}
+    labels = {"area": "Miteigentumsanteile (MEA)", "unit_count": "Einheiten", "occupants": "Personen"}
     has_alternate_address = all(
         details[field] for field in ("alternate_street", "alternate_postal_code", "alternate_city")
     )
