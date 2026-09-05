@@ -179,7 +179,11 @@ def expense_amount_for_period(expense: SettlementExpense, period_start: date, pe
         occurrences = quarterly_occurrences(expense_start, expense_end, period_start, period_end)
         return quantize_money(expense.amount * Decimal(occurrences))
 
-    return quantize_money(expense.amount)
+    overlap_start = max(expense_start, period_start)
+    overlap_end = min(expense_end, period_end)
+    expense_days = Decimal((expense_end - expense_start).days + 1)
+    overlap_days = Decimal((overlap_end - overlap_start).days + 1)
+    return quantize_money(expense.amount * overlap_days / expense_days)
 
 
 def calculate_settlement(

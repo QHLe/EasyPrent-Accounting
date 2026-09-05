@@ -3485,7 +3485,19 @@ def _exact_expense_shares_for_period(
             shares[lease_row["id"]] += (
                 segment_amount * basis_values[lease_row["id"]] / basis_total
             )
-    return {lease_id: quantize_money(share) for lease_id, share in shares.items()}
+    rounded_shares = {
+        lease_id: quantize_money(share) for lease_id, share in shares.items()
+    }
+    rounding_difference = quantize_money(sum(shares.values())) - sum(
+        rounded_shares.values(), start=Decimal("0")
+    )
+    if rounding_difference and rounded_shares:
+        largest_share_lease_id = max(
+            rounded_shares,
+            key=lambda lease_id: (shares[lease_id], -lease_id),
+        )
+        rounded_shares[largest_share_lease_id] += rounding_difference
+    return rounded_shares
 
 
 def settlement_for_period(
@@ -3685,6 +3697,27 @@ def settlement_for_period(
             period_end,
         ).items()
     }
+    for expense_row in expense_rows:
+        eligible_lease_ids = eligible_lease_ids_by_expense[expense_row["id"]]
+        if not eligible_lease_ids:
+            continue
+        _, period_amount_text = _total_amount_for_expense_period(
+            connection, dict(expense_row), period_start, period_end
+        )
+        if period_amount_text is None:
+            continue
+        period_amount = Decimal(period_amount_text)
+        allocated_amount = sum(
+            (exact_shares[(expense_row["id"], lease_id)] for lease_id in eligible_lease_ids),
+            start=Decimal("0"),
+        )
+        rounding_difference = period_amount - allocated_amount
+        if Decimal("0") < abs(rounding_difference) <= Decimal("0.01"):
+            lease_id = max(
+                eligible_lease_ids,
+                key=lambda candidate: (exact_shares[(expense_row["id"], candidate)], -candidate),
+            )
+            exact_shares[(expense_row["id"], lease_id)] += rounding_difference
     adjusted_total_costs = Decimal("0")
     for lease_result in result["results"]:
         lease_row = lease_by_id[lease_result["lease_id"]]

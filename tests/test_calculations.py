@@ -235,6 +235,22 @@ class SettlementTests(unittest.TestCase):
         self.assertEqual(inside, Decimal("250.00"))
         self.assertEqual(outside, Decimal("0"))
 
+    def test_one_time_expense_with_a_period_is_prorated_to_billing_period(self) -> None:
+        expense = SettlementExpense(
+            label="Warmwasser",
+            amount=Decimal("865.92"),
+            allocation_method="occupants",
+            charge_type="one_time",
+            expense_start=date(2024, 12, 1),
+            expense_end=date(2025, 11, 30),
+        )
+
+        amount = expense_amount_for_period(
+            expense, date(2025, 1, 1), date(2025, 12, 31)
+        )
+
+        self.assertEqual(amount, Decimal("792.38"))
+
 
 class DepreciationTests(unittest.TestCase):
     def test_depreciation_schedule_prorates_by_month(self) -> None:

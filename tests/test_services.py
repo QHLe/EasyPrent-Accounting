@@ -316,6 +316,33 @@ class ExpenseServiceTests(unittest.TestCase):
         )
         self.assertEqual(amount, "184.00")
 
+    def test_settlement_reconciles_rounded_shares_with_period_amount(self) -> None:
+        self.connection.execute("DELETE FROM expense_items")
+        self.connection.execute("UPDATE leases SET start_date = '2025-01-01' WHERE id = 2")
+        self.connection.execute(
+            """
+            INSERT INTO expense_items (
+                property_id, object_type, object_id, expense_category,
+                beneficiary_name, label, amount, allocation_method,
+                charge_type, recurrence, period_start, period_end
+            ) VALUES (1, 'property', 1, 'Warmwasser', 'Versorger',
+                      'Warmwasser', '100.00', 'occupants', 'one_time',
+                      'one_time', '2024-12-01', '2025-11-30')
+            """
+        )
+        self.connection.commit()
+
+        settlement = settlement_for_period(
+            self.connection, 1, "2025-01-01", "2025-12-31"
+        )
+        line_items = [result["line_items"][0] for result in settlement["results"]]
+
+        self.assertEqual(line_items[0]["period_amount"], "91.51")
+        self.assertEqual(
+            sum((Decimal(item["share"]) for item in line_items), start=Decimal("0")),
+            Decimal("91.51"),
+        )
+
     def test_manual_consumption_is_prorated_when_no_meter_curve_exists(self) -> None:
         unit, amount = _total_amount_for_expense_period(
             self.connection,
