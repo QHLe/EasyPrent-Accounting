@@ -1262,7 +1262,13 @@
                   period_start: bootstrap.settlementPeriodStart,
                   period_end: bootstrap.settlementPeriodEnd,
                 }).toString()
-            ),
+            ).catch(function (settlementError) {
+              return {
+                error: settlementError.message || "Abrechnung konnte nicht geladen werden.",
+                property_id: fallbackPropertyId,
+                unit_id: fallbackUnitId,
+              };
+            }),
             fetchJson(
               "/api/depreciation-schedule?" +
                 new URLSearchParams({
@@ -1277,13 +1283,18 @@
         })
         .then(function (results) {
           setOverview(results[0]);
-          setSettlement(results[1]);
+          setSettlement(results[1].error ? null : results[1]);
           setSettlementFilters({
             property_id: results[1].property_id == null ? "" : String(results[1].property_id),
             unit_id: results[1].unit_id == null ? "" : String(results[1].unit_id),
             period_start: bootstrap.settlementPeriodStart,
             period_end: bootstrap.settlementPeriodEnd,
           });
+          if (results[1].error) {
+            setStatus(
+              "Abrechnung noch nicht geladen: Bitte fehlende Miteigentumsanteile (MEA) in der Objektverwaltung ergänzen."
+            );
+          }
           setDepreciation(results[2]);
           setPaperlessSettings(results[3]);
           setPaperlessStatus(results[4]);

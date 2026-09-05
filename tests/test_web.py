@@ -78,6 +78,28 @@ class WebApiAndUiTests(unittest.TestCase):
         self.assertIn('/openapi.json', content)
         self.assertNotIn("unpkg.com", content)
 
+    def test_startup_keeps_object_management_available_when_mea_is_missing(self) -> None:
+        connection = sqlite3.connect(self.db_path)
+        try:
+            connection.execute("UPDATE units SET mea_percent = NULL WHERE id = 1")
+            connection.commit()
+        finally:
+            connection.close()
+
+        overview_status, _, _ = self._call_app("GET", "/api/overview")
+        settlement_status, _, settlement_body = self._call_app(
+            "GET",
+            "/api/settlements",
+            query_string="property_id=1&period_start=2025-01-01&period_end=2025-12-31",
+        )
+        main_status, _, main_body = self._call_app("GET", "/static/app_main.js")
+
+        self.assertTrue(overview_status.startswith("200"))
+        self.assertTrue(settlement_status.startswith("400"))
+        self.assertIn("mea_percent", settlement_body.decode("utf-8"))
+        self.assertTrue(main_status.startswith("200"))
+        self.assertIn("catch(function (settlementError)", main_body.decode("utf-8"))
+
     def test_static_app_uses_react_and_api_endpoints(self) -> None:
         status, headers, body = self._call_app("GET", "/static/app.js")
         helpers_status, helpers_headers, helpers_body = self._call_app("GET", "/static/app_helpers.js")
