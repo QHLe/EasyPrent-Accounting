@@ -507,6 +507,7 @@
 
   function SettlementRunsContent(props) {
     const run = props.overview && props.overview.run;
+    const [expandedLeaseId, setExpandedLeaseId] = useState(null);
     const settlementTable = function (headers, rows, className) {
       return e(
         "div",
@@ -547,6 +548,63 @@
       { key: "description", label: "Beschreibung" },
       { key: "action", label: "Aktion", className: "settlement-action" },
     ];
+    const allocationLabels = {
+      area: "Flächenanteil",
+      unit_count: "Einheiten",
+      occupants: "Personen",
+    };
+    const leaseRows = ((((props.overview || {}).settlement || {}).results) || []).reduce(function (rows, result) {
+      const isExpanded = String(expandedLeaseId) === String(result.lease_id);
+      rows.push(
+        e("tr", {
+          key: "lease-" + result.lease_id,
+          className: "settlement-lease-row",
+          onClick: function () {
+            setExpandedLeaseId(isExpanded ? null : result.lease_id);
+          },
+          "aria-expanded": isExpanded,
+        },
+          e("td", { className: "settlement-person" }, result.tenant_name),
+          e("td", null, result.unit_label),
+          e("td", { className: "settlement-money" }, formatMoneyValue(result.allocated_costs)),
+          e("td", { className: "settlement-money settlement-credit" }, formatMoneyValue(result.advances_paid)),
+          e("td", { className: "settlement-money settlement-balance" }, formatMoneyValue(result.balance)),
+          e("td", { className: "settlement-action" }, e("a", {
+            className: "settlement-document-download",
+            href: props.odsUrl(result.lease_id),
+            onClick: function (event) { event.stopPropagation(); },
+          }, "ODS herunterladen"))
+        )
+      );
+      if (isExpanded) {
+        rows.push(
+          e("tr", { key: "lease-details-" + result.lease_id, className: "settlement-lease-details" },
+            e("td", { colSpan: 6 },
+              e("h3", null, "Kostenaufstellung"),
+              e("table", { className: "settlement-cost-breakdown" },
+                e("thead", null, e("tr", null,
+                  e("th", null, "Kostenart"),
+                  e("th", null, "Schlüssel"),
+                  e("th", { className: "settlement-money" }, "Zeitraumkosten"),
+                  e("th", null, "Verteilungsbasis"),
+                  e("th", { className: "settlement-money" }, "Ihr Anteil")
+                )),
+                e("tbody", null, (result.line_items || []).map(function (item, index) {
+                  return e("tr", { key: String(item.source_id || index) },
+                    e("td", null, item.expense_category || item.label),
+                    e("td", null, allocationLabels[item.allocation_method] || item.allocation_method),
+                    e("td", { className: "settlement-money" }, formatMoneyValue(item.period_amount)),
+                    e("td", null, String(item.basis_value) + " / " + String(item.basis_total)),
+                    e("td", { className: "settlement-money" }, formatMoneyValue(item.share))
+                  );
+                }))
+              )
+            )
+          )
+        );
+      }
+      return rows;
+    }, []);
     return e(
       "div",
       { className: "content-grid" },
@@ -595,13 +653,6 @@
             return e("button", { type: "button", className: "action-button", disabled: props.busy, onClick: function () { props.onConsider(payment.split_guid); } }, "Berücksichtigen");
           }))
         ),
-        e("section", { className: "panel panel-wide" },
-          e("h2", null, "Berücksichtigte Zahlungen"),
-          e("p", { className: "hint" }, "Diese Zahlungen fließen in die Abrechnung ein."),
-          settlementTable(paymentHeaders, paymentRows(props.overview.considered_payments, function (payment) {
-            return e("button", { type: "button", className: "action-button secondary", disabled: props.busy, onClick: function () { props.onUnassign(payment.split_guid); } }, "Zuordnung aufheben");
-          }))
-        ),
         e("details", { className: "panel panel-wide" },
           e("summary", null, "Außerhalb berücksichtigtem Zeitraum (" + String((props.overview.outside_payments || []).length) + ")"),
           settlementTable(paymentHeaders.slice(0, 4), paymentRows(props.overview.outside_payments))
@@ -615,15 +666,13 @@
             { key: "advances", label: "Vorauszahlungen", className: "settlement-money" },
             { key: "balance", label: "Saldo", className: "settlement-money" },
             { key: "document", label: "Dokument", className: "settlement-action" },
-          ], (props.overview.settlement.results || []).map(function (result) {
-            return e("tr", { key: result.lease_id },
-              e("td", { className: "settlement-person" }, result.tenant_name),
-              e("td", null, result.unit_label),
-              e("td", { className: "settlement-money" }, formatMoneyValue(result.allocated_costs)),
-              e("td", { className: "settlement-money settlement-credit" }, formatMoneyValue(result.advances_paid)),
-              e("td", { className: "settlement-money settlement-balance" }, formatMoneyValue(result.balance)),
-              e("td", { className: "settlement-action" }, e("a", { className: "settlement-document-download", href: props.odsUrl(result.lease_id) }, "ODS herunterladen"))
-            );
+          ], leaseRows)
+        ),
+        e("section", { className: "panel panel-wide" },
+          e("h2", null, "Berücksichtigte Zahlungen"),
+          e("p", { className: "hint" }, "Diese Zahlungen fließen in die Abrechnung ein."),
+          settlementTable(paymentHeaders, paymentRows(props.overview.considered_payments, function (payment) {
+            return e("button", { type: "button", className: "action-button secondary", disabled: props.busy, onClick: function () { props.onUnassign(payment.split_guid); } }, "Zuordnung aufheben");
           }))
         )
       ) : e("section", { className: "panel panel-wide" }, e("p", { className: "hint" }, "Wähle Jahr und Objekt und lege den Abrechnungsvorgang an."))

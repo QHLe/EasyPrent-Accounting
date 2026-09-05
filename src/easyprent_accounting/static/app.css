@@ -372,6 +372,32 @@ table {
   background: rgba(15, 118, 110, 0.08);
 }
 
+.settlement-lease-row {
+  cursor: pointer;
+}
+
+.settlement-lease-details > td {
+  padding: 0;
+  background: rgba(15, 118, 110, 0.05);
+}
+
+.settlement-lease-details h3 {
+  margin: 0;
+  padding: 1rem 1rem 0.5rem;
+  font-size: 1rem;
+}
+
+.settlement-cost-breakdown {
+  width: 100%;
+  min-width: 640px;
+  border-top: 1px solid var(--line);
+}
+
+.settlement-cost-breakdown th,
+.settlement-cost-breakdown td {
+  padding: 0.55rem 0.8rem;
+}
+
 .settlement-person {
   font-weight: 650;
   white-space: nowrap;

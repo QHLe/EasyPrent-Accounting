@@ -162,6 +162,9 @@ class WebApiAndUiTests(unittest.TestCase):
         self.assertIn("Flächenanteil in %", content)
         self.assertIn("Warnung: Flächenanteile", content)
         self.assertIn("area-share-warning", content)
+        self.assertIn("Kostenaufstellung", content)
+        self.assertIn("expandedLeaseId", content)
+        self.assertLess(content.index("Mietverträge und Dokumente"), content.index("Berücksichtigte Zahlungen"))
         self.assertIn("/api/meters", content)
         self.assertIn("/api/meter-readings", content)
         self.assertIn("/api/tenants", content)
@@ -519,6 +522,48 @@ process.stdout.write(JSON.stringify({ target: !!target, options: options }));
         self.assertNotIn(
             {"value": "unit:78", "label": "Wohnung: Wohnung 02"}, payload["options"]
         )
+
+    def test_settlement_runs_content_renders_before_a_run_is_selected(self) -> None:
+        if shutil.which("node") is None:
+            self.skipTest("node is required for JavaScript component validation")
+
+        repo_root = os.path.dirname(os.path.dirname(__file__))
+        sections_path = os.path.join(
+            repo_root, "src", "easyprent_accounting", "static", "app_sections.js"
+        )
+        script = r"""
+const fs = require("fs");
+const vm = require("vm");
+global.window = {};
+global.React = window.React = {
+  Fragment: "fragment",
+  useState: function () { return [null, function () {}]; },
+  createElement: function (type, props) {
+    return { type: type, props: props || {}, children: Array.prototype.slice.call(arguments, 2) };
+  },
+};
+window.EasyPrentAppDomain = {
+  summaryCards: function () { return []; }, table: function () { return null; },
+  formatMoneyValue: function (value) { return value; },
+  formatDisplayName: function (value) { return value; },
+  formatNumericLabel: function (value) { return value; },
+};
+window.EasyPrentAppCharts = {};
+vm.runInThisContext(fs.readFileSync(process.argv[1], "utf8"));
+window.EasyPrentAppSections.SettlementRunsContent({
+  overview: null, targets: [], years: [2025], target: "", year: "2025", busy: false,
+  onTargetChange: function () {}, onYearChange: function () {}, onCreate: function () {},
+  onRefresh: function () {}, onConsiderAll: function () {}, onConsider: function () {},
+  onUnassign: function () {}, odsUrl: function () { return "#"; },
+});
+"""
+        result = subprocess.run(
+            ["node", "-e", script, sections_path],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_local_react_vendor_files_are_served(self) -> None:
         react_status, react_headers, react_body = self._call_app("GET", "/static/vendor/react.production.min.js")
