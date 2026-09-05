@@ -548,10 +548,43 @@
       { key: "description", label: "Beschreibung" },
       { key: "action", label: "Aktion", className: "settlement-action" },
     ];
-    const allocationLabels = {
-      area: "Flächenanteil",
-      unit_count: "Einheiten",
-      occupants: "Personen",
+    const settlementMoneyTotal = function (values) {
+      const cents = values.reduce(function (total, value) {
+        return total + Math.round(Number(value || 0) * 100);
+      }, 0);
+      return (cents / 100).toFixed(2);
+    };
+    const periodLabel = function (period) {
+      if (!period.period_start || !period.period_end) return "Gesamter Abrechnungszeitraum";
+      return period.period_start + " bis " + period.period_end;
+    };
+    const costGroups = function (lineItems) {
+      const groups = {};
+      (lineItems || []).forEach(function (item, itemIndex) {
+        const category = item.expense_category || item.label || "Ohne Kostenart";
+        const key = String(category).toLocaleLowerCase();
+        if (!groups[key]) groups[key] = { category: category, positions: [] };
+        const periods = item.allocation_periods && item.allocation_periods.length
+          ? item.allocation_periods
+          : [{ period_amount: item.period_amount, share: item.share }];
+        periods.forEach(function (period, periodIndex) {
+          groups[key].positions.push({
+            key: String(item.source_id || itemIndex) + "-" + periodIndex,
+            label: item.label || category,
+            period: period,
+          });
+        });
+      });
+      return Object.keys(groups).map(function (key) {
+        const group = groups[key];
+        group.periodAmount = settlementMoneyTotal(group.positions.map(function (position) {
+          return position.period.period_amount;
+        }));
+        group.share = settlementMoneyTotal(group.positions.map(function (position) {
+          return position.period.share;
+        }));
+        return group;
+      });
     };
     const leaseRows = ((((props.overview || {}).settlement || {}).results) || []).reduce(function (rows, result) {
       const isExpanded = String(expandedLeaseId) === String(result.lease_id);
@@ -584,20 +617,32 @@
               e("table", { className: "settlement-cost-breakdown" },
                 e("thead", null, e("tr", null,
                   e("th", null, "Kostenart"),
-                  e("th", null, "Schlüssel"),
-                  e("th", { className: "settlement-money" }, "Zeitraumkosten"),
-                  e("th", null, "Verteilungsbasis"),
+                  e("th", null, "Unterposition"),
+                  e("th", null, "Zeitraum"),
+                  e("th", { className: "settlement-money" }, "Kosten im Abschnitt"),
                   e("th", { className: "settlement-money" }, "Ihr Anteil")
                 )),
-                e("tbody", null, (result.line_items || []).map(function (item, index) {
-                  return e("tr", { key: String(item.source_id || index) },
-                    e("td", null, item.expense_category || item.label),
-                    e("td", null, allocationLabels[item.allocation_method] || item.allocation_method),
-                    e("td", { className: "settlement-money" }, formatMoneyValue(item.period_amount)),
-                    e("td", null, String(item.basis_value) + " / " + String(item.basis_total)),
-                    e("td", { className: "settlement-money" }, formatMoneyValue(item.share))
+                e("tbody", null, costGroups(result.line_items).reduce(function (rows, group) {
+                  rows.push(
+                    e("tr", { key: "category-" + group.category, className: "settlement-cost-category" },
+                      e("td", { colSpan: 3 }, group.category),
+                      e("td", { className: "settlement-money" }, formatMoneyValue(group.periodAmount)),
+                      e("td", { className: "settlement-money" }, formatMoneyValue(group.share))
+                    )
                   );
-                }))
+                  group.positions.forEach(function (position) {
+                    rows.push(
+                      e("tr", { key: position.key, className: "settlement-cost-position" },
+                        e("td", null),
+                        e("td", null, position.label),
+                        e("td", { className: "settlement-period" }, periodLabel(position.period)),
+                        e("td", { className: "settlement-money" }, formatMoneyValue(position.period.period_amount)),
+                        e("td", { className: "settlement-money" }, formatMoneyValue(position.period.share))
+                      )
+                    );
+                  });
+                  return rows;
+                }, []))
               )
             )
           )

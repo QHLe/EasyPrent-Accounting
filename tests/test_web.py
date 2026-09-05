@@ -565,6 +565,61 @@ window.EasyPrentAppSections.SettlementRunsContent({
         )
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_settlement_cost_breakdown_groups_positions_by_category_and_period(self) -> None:
+        if shutil.which("node") is None:
+            self.skipTest("node is required for JavaScript component validation")
+
+        repo_root = os.path.dirname(os.path.dirname(__file__))
+        sections_path = os.path.join(
+            repo_root, "src", "easyprent_accounting", "static", "app_sections.js"
+        )
+        script = r"""
+const fs = require("fs");
+const vm = require("vm");
+global.window = {};
+global.React = window.React = {
+  Fragment: "fragment",
+  useState: function () { return [77, function () {}]; },
+  createElement: function (type, props) {
+    return { type: type, props: props || {}, children: Array.prototype.slice.call(arguments, 2) };
+  },
+};
+window.EasyPrentAppDomain = {
+  summaryCards: function () { return []; }, table: function () { return null; },
+  formatMoneyValue: function (value) { return value; },
+  formatDisplayName: function (value) { return value; },
+  formatNumericLabel: function (value) { return value; },
+};
+window.EasyPrentAppCharts = {};
+vm.runInThisContext(fs.readFileSync(process.argv[1], "utf8"));
+const tree = window.EasyPrentAppSections.SettlementRunsContent({
+  overview: {
+    run: { target_label: "Wohnung: 02", year: 2025, period_start: "2025-01-01", period_end: "2025-12-31" },
+    settlement: { results: [{
+      lease_id: 77, tenant_name: "Saloone", unit_label: "Wohnung 02", allocated_costs: "100.00",
+      advances_paid: "0.00", balance: "100.00", line_items: [{
+        source_id: 1, expense_category: "Heizung", label: "Gasabschlag", period_amount: "100.00", share: "100.00",
+        allocation_periods: [{ period_start: "2025-01-01", period_end: "2025-03-31", period_amount: "25.00", share: "25.00" }, { period_start: "2025-04-01", period_end: "2025-12-31", period_amount: "75.00", share: "75.00" }]
+      }]
+    }] }, open_payments: [], considered_payments: [], outside_payments: [], missing_account_leases: []
+  }, targets: [], years: [2025], target: "unit:2", year: "2025", busy: false,
+  onTargetChange: function () {}, onYearChange: function () {}, onCreate: function () {},
+  onRefresh: function () {}, onConsiderAll: function () {}, onConsider: function () {},
+  onUnassign: function () {}, odsUrl: function () { return "#"; },
+});
+const rendered = JSON.stringify(tree);
+for (const text of ["Heizung", "Gasabschlag", "2025-01-01 bis 2025-03-31", "Kosten im Abschnitt", "Ihr Anteil"]) {
+  if (!rendered.includes(text)) throw new Error("Missing rendered text: " + text);
+}
+"""
+        result = subprocess.run(
+            ["node", "-e", script, sections_path],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_local_react_vendor_files_are_served(self) -> None:
         react_status, react_headers, react_body = self._call_app("GET", "/static/vendor/react.production.min.js")
         dom_status, dom_headers, dom_body = self._call_app("GET", "/static/vendor/react-dom.production.min.js")

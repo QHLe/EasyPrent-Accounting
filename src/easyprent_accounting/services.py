@@ -3426,13 +3426,44 @@ def _exact_expense_shares_for_period(
     eligible_leases: list[sqlite3.Row],
     period_start: str,
     period_end: str,
+    allocation_segments: list[dict] | None = None,
 ) -> dict[int, Decimal]:
     """Allocate exact cost-curve segments without counting sequential leases twice."""
+    if allocation_segments is None:
+        allocation_segments = _allocation_segments_for_expense_period(
+            connection, expense_row, eligible_leases, period_start, period_end
+        )
     shares = {lease_row["id"]: Decimal("0") for lease_row in eligible_leases}
+    for segment in allocation_segments:
+        for lease_id, share in segment["shares"].items():
+            shares[lease_id] += share
+    rounded_shares = {
+        lease_id: quantize_money(share) for lease_id, share in shares.items()
+    }
+    rounding_difference = quantize_money(sum(shares.values())) - sum(
+        rounded_shares.values(), start=Decimal("0")
+    )
+    if rounding_difference and rounded_shares:
+        largest_share_lease_id = max(
+            rounded_shares,
+            key=lambda lease_id: (shares[lease_id], -lease_id),
+        )
+        rounded_shares[largest_share_lease_id] += rounding_difference
+    return rounded_shares
+
+
+def _allocation_segments_for_expense_period(
+    connection: sqlite3.Connection,
+    expense_row: sqlite3.Row,
+    eligible_leases: list[sqlite3.Row],
+    period_start: str,
+    period_end: str,
+) -> list[dict]:
+    """Return the time sections used to allocate one expense."""
     coverage_start = max(parse_date(expense_row["period_start"]), parse_date(period_start))
     coverage_end = min(parse_date(expense_row["period_end"]), parse_date(period_end))
     if coverage_start > coverage_end:
-        return shares
+        return []
 
     boundaries = {coverage_start, coverage_end + timedelta(days=1)}
     for lease_row in eligible_leases:
@@ -3448,6 +3479,7 @@ def _exact_expense_shares_for_period(
             boundaries.add(lease_end + timedelta(days=1))
 
     sorted_boundaries = sorted(boundaries)
+    allocation_segments: list[dict] = []
     for segment_start, next_segment_start in zip(
         sorted_boundaries, sorted_boundaries[1:]
     ):
@@ -3481,23 +3513,52 @@ def _exact_expense_shares_for_period(
         basis_total = sum(basis_values.values(), start=Decimal("0"))
         if basis_total <= 0:
             continue
+        shares = {}
         for lease_row in active_leases:
-            shares[lease_row["id"]] += (
+            shares[lease_row["id"]] = (
                 segment_amount * basis_values[lease_row["id"]] / basis_total
             )
-    rounded_shares = {
-        lease_id: quantize_money(share) for lease_id, share in shares.items()
-    }
-    rounding_difference = quantize_money(sum(shares.values())) - sum(
-        rounded_shares.values(), start=Decimal("0")
-    )
-    if rounding_difference and rounded_shares:
-        largest_share_lease_id = max(
-            rounded_shares,
-            key=lambda lease_id: (shares[lease_id], -lease_id),
+        allocation_segments.append(
+            {
+                "period_start": segment_start.isoformat(),
+                "period_end": segment_end.isoformat(),
+                "period_amount": segment_amount,
+                "shares": shares,
+            }
         )
-        rounded_shares[largest_share_lease_id] += rounding_difference
-    return rounded_shares
+    return allocation_segments
+
+
+def _allocation_periods_for_lease(
+    allocation_segments: list[dict], lease_id: int, total_share: Decimal
+) -> list[dict[str, str]]:
+    """Format a lease's time sections and reconcile their rounding to its total."""
+    periods = [
+        {
+            "period_start": segment["period_start"],
+            "period_end": segment["period_end"],
+            "period_amount": f"{segment['period_amount']:.2f}",
+            "share": quantize_money(segment["shares"][lease_id]),
+            "raw_share": segment["shares"][lease_id],
+        }
+        for segment in allocation_segments
+        if lease_id in segment["shares"]
+    ]
+    rounding_difference = total_share - sum(
+        (period["share"] for period in periods), start=Decimal("0")
+    )
+    if rounding_difference and periods:
+        period = max(periods, key=lambda item: item["raw_share"])
+        period["share"] += rounding_difference
+    return [
+        {
+            "period_start": period["period_start"],
+            "period_end": period["period_end"],
+            "period_amount": period["period_amount"],
+            "share": f"{period['share']:.2f}",
+        }
+        for period in periods
+    ]
 
 
 def settlement_for_period(
@@ -3683,20 +3744,26 @@ def settlement_for_period(
     )
     expense_by_id = {row["id"]: row for row in expense_rows}
     lease_by_id = {row["id"]: row for row in lease_rows}
-    exact_shares = {
-        (expense_row["id"], lease_id): share
-        for expense_row in expense_rows
+    allocation_segments_by_expense = {}
+    exact_shares = {}
+    for expense_row in expense_rows:
+        eligible_leases = [
+            lease_by_id[eligible_lease_id]
+            for eligible_lease_id in eligible_lease_ids_by_expense[expense_row["id"]]
+        ]
+        allocation_segments = _allocation_segments_for_expense_period(
+            connection, expense_row, eligible_leases, period_start, period_end
+        )
+        allocation_segments_by_expense[expense_row["id"]] = allocation_segments
         for lease_id, share in _exact_expense_shares_for_period(
             connection,
             expense_row,
-            [
-                lease_by_id[eligible_lease_id]
-                for eligible_lease_id in eligible_lease_ids_by_expense[expense_row["id"]]
-            ],
+            eligible_leases,
             period_start,
             period_end,
-        ).items()
-    }
+            allocation_segments,
+        ).items():
+            exact_shares[(expense_row["id"], lease_id)] = share
     for expense_row in expense_rows:
         eligible_lease_ids = eligible_lease_ids_by_expense[expense_row["id"]]
         if not eligible_lease_ids:
@@ -3748,6 +3815,11 @@ def settlement_for_period(
                 )
             tenant_share = exact_shares[(line_item["source_id"], lease_result["lease_id"])]
             line_item["share"] = f"{tenant_share:.2f}"
+            line_item["allocation_periods"] = _allocation_periods_for_lease(
+                allocation_segments_by_expense[line_item["source_id"]],
+                lease_result["lease_id"],
+                tenant_share,
+            )
             line_item["tenant_consumption_value"] = _decimal_to_string(tenant_consumption)
             adjusted_total_costs += tenant_share
         lease_result["allocated_costs"] = (

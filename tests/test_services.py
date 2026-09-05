@@ -1177,6 +1177,28 @@ class ExpenseServiceTests(unittest.TestCase):
             [result["allocated_costs"] for result in settlement["results"]],
             ["181.00", "184.00"],
         )
+        self.assertEqual(
+            settlement["results"][0]["line_items"][0]["allocation_periods"],
+            [
+                {
+                    "period_start": "2025-01-01",
+                    "period_end": "2025-06-30",
+                    "period_amount": "181.00",
+                    "share": "181.00",
+                }
+            ],
+        )
+        self.assertEqual(
+            settlement["results"][1]["line_items"][0]["allocation_periods"],
+            [
+                {
+                    "period_start": "2025-07-01",
+                    "period_end": "2025-12-31",
+                    "period_amount": "184.00",
+                    "share": "184.00",
+                }
+            ],
+        )
 
     def test_settlement_uses_room_area_shares_for_area_allocation(self) -> None:
         self.connection.execute("DELETE FROM expense_items")

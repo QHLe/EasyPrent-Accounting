@@ -398,6 +398,25 @@ table {
   padding: 0.55rem 0.8rem;
 }
 
+.settlement-cost-category td {
+  border-top: 1px solid var(--line);
+  background: rgba(15, 118, 110, 0.08);
+  font-weight: 700;
+}
+
+.settlement-cost-position td {
+  color: var(--ink-muted);
+}
+
+.settlement-cost-position td:nth-child(2) {
+  color: var(--ink);
+  padding-left: 1.3rem;
+}
+
+.settlement-period {
+  white-space: nowrap;
+}
+
 .settlement-person {
   font-weight: 650;
   white-space: nowrap;
