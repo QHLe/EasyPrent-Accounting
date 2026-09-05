@@ -149,6 +149,16 @@ def _normalize_optional_decimal_string(value: object, field_name: str) -> str | 
     return _decimal_to_string(_parse_decimal(value, field_name))
 
 
+def _normalize_area_share_percent(value: object) -> str | None:
+    normalized = _normalize_optional_decimal_string(value, "area_share_percent")
+    if normalized is None:
+        return None
+    percentage = Decimal(normalized)
+    if percentage < 0 or percentage > 100:
+        raise ValueError("area_share_percent must be between 0 and 100")
+    return normalized
+
+
 def _mask_token_last4(token: str | None) -> str | None:
     normalized = str(token or "")
     if normalized == "":
@@ -2137,6 +2147,9 @@ def list_overview(connection: sqlite3.Connection) -> dict:
     )
     for room in rooms:
         room["area_sqm"] = _normalize_optional_decimal_string(room.get("area_sqm"), "area_sqm")
+        room["area_share_percent"] = _normalize_area_share_percent(
+            room.get("area_share_percent")
+        )
     tenants = _row_dicts(
         connection.execute(
             """
@@ -2453,6 +2466,7 @@ def create_room(connection: sqlite3.Connection, payload: dict) -> dict:
     unit_id = _parse_int(payload.get("unit_id"), "unit_id")
     label = _require_payload_value(payload, "label")
     area_sqm = _normalize_optional_decimal_string(payload.get("area_sqm"), "area_sqm")
+    area_share_percent = _normalize_area_share_percent(payload.get("area_share_percent"))
 
     unit_row = connection.execute(
         """
@@ -2470,8 +2484,8 @@ def create_room(connection: sqlite3.Connection, payload: dict) -> dict:
         raise ValueError("room_count limit reached for unit")
 
     cursor = connection.execute(
-        "INSERT INTO rooms (unit_id, label, area_sqm) VALUES (?, ?, ?)",
-        (unit_id, label, area_sqm),
+        "INSERT INTO rooms (unit_id, label, area_sqm, area_share_percent) VALUES (?, ?, ?, ?)",
+        (unit_id, label, area_sqm, area_share_percent),
     )
     connection.commit()
     return {
@@ -2479,6 +2493,7 @@ def create_room(connection: sqlite3.Connection, payload: dict) -> dict:
         "unit_id": unit_id,
         "label": label,
         "area_sqm": area_sqm,
+        "area_share_percent": area_share_percent,
     }
 
 
@@ -3012,6 +3027,7 @@ def update_room(connection: sqlite3.Connection, room_id: int, payload: dict) -> 
     unit_id = _parse_int(payload.get("unit_id"), "unit_id")
     label = _require_payload_value(payload, "label")
     area_sqm = _normalize_optional_decimal_string(payload.get("area_sqm"), "area_sqm")
+    area_share_percent = _normalize_area_share_percent(payload.get("area_share_percent"))
     unit_row = connection.execute(
         """
         SELECT u.room_count, COUNT(r.id) AS actual_room_count
@@ -3028,8 +3044,8 @@ def update_room(connection: sqlite3.Connection, room_id: int, payload: dict) -> 
         raise ValueError("room_count limit reached for unit")
 
     connection.execute(
-        "UPDATE rooms SET unit_id = ?, label = ?, area_sqm = ? WHERE id = ?",
-        (unit_id, label, area_sqm, room_id),
+        "UPDATE rooms SET unit_id = ?, label = ?, area_sqm = ?, area_share_percent = ? WHERE id = ?",
+        (unit_id, label, area_sqm, area_share_percent, room_id),
     )
     connection.commit()
     return {
@@ -3037,6 +3053,7 @@ def update_room(connection: sqlite3.Connection, room_id: int, payload: dict) -> 
         "unit_id": unit_id,
         "label": label,
         "area_sqm": area_sqm,
+        "area_share_percent": area_share_percent,
     }
 
 

@@ -1629,6 +1629,7 @@ def build_openapi_document() -> dict:
                         "unit_id": {"type": "integer"},
                         "label": {"type": "string"},
                         "area_sqm": {"type": ["string", "null"]},
+                        "area_share_percent": {"type": ["string", "null"]},
                     },
                 },
                 "RoomResponse": {
@@ -1638,6 +1639,7 @@ def build_openapi_document() -> dict:
                         "unit_id": {"type": "integer"},
                         "label": {"type": "string"},
                         "area_sqm": {"type": ["string", "null"]},
+                        "area_share_percent": {"type": ["string", "null"]},
                     },
                 },
                 "TenantCreateRequest": {

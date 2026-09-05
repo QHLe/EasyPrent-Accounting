@@ -1491,6 +1491,37 @@ class PropertyRelationshipTests(unittest.TestCase):
         self.assertEqual(row["unit_id"], 1)
         self.assertEqual(row["label"], "Zimmer links")
 
+    def test_create_room_stores_area_share_percent(self) -> None:
+        created = create_room(
+            self.connection,
+            {
+                "unit_id": 1,
+                "label": "Zimmer links",
+                "area_share_percent": "37.5",
+            },
+        )
+
+        row = self.connection.execute(
+            "SELECT area_share_percent FROM rooms WHERE id = ?",
+            (created["id"],),
+        ).fetchone()
+
+        self.assertEqual(created["area_share_percent"], "37.5")
+        self.assertEqual(row["area_share_percent"], 37.5)
+
+    def test_create_room_rejects_area_share_outside_percentage_range(self) -> None:
+        with self.assertRaises(ValueError) as error:
+            create_room(
+                self.connection,
+                {
+                    "unit_id": 1,
+                    "label": "Zimmer links",
+                    "area_share_percent": "100.01",
+                },
+            )
+
+        self.assertIn("between 0 and 100", str(error.exception))
+
     def test_create_room_rejects_more_rooms_than_unit_allows(self) -> None:
         create_room(
             self.connection,

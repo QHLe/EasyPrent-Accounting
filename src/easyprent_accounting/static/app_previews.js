@@ -177,6 +177,13 @@
           "td",
           null,
           room.area_sqm == null || room.area_sqm === "" ? "-" : String(room.area_sqm) + " m²"
+        ),
+        e(
+          "td",
+          null,
+          room.area_share_percent == null || room.area_share_percent === ""
+            ? "-"
+            : String(room.area_share_percent) + " %"
         )
       );
     });
@@ -484,7 +491,66 @@
     return "Keine";
   }
 
-  function formatObjectDetailsLabel(tabKey, entity) {
+  function buildUnitAreaShareSummaries(rooms) {
+    const summaries = {};
+    (rooms || []).forEach(function (room) {
+      if (room.is_archived) {
+        return;
+      }
+      const key = String(room.unit_id);
+      if (!summaries[key]) {
+        summaries[key] = { total: 0, hasMissingValue: false, roomCount: 0 };
+      }
+      const summary = summaries[key];
+      summary.roomCount += 1;
+      if (room.area_share_percent == null || room.area_share_percent === "") {
+        summary.hasMissingValue = true;
+        return;
+      }
+      const share = Number(room.area_share_percent);
+      if (!Number.isFinite(share)) {
+        summary.hasMissingValue = true;
+        return;
+      }
+      summary.total += share;
+    });
+    return summaries;
+  }
+
+  function formatAreaShareValue(value) {
+    return Number(value).toFixed(2).replace(".", ",") + " %";
+  }
+
+  function formatUnitAreaShareWarning(summary) {
+    if (!summary || !summary.roomCount) {
+      return "";
+    }
+    if (summary.hasMissingValue) {
+      return "Warnung: Flächenanteile unvollständig";
+    }
+    const difference = Number((100 - summary.total).toFixed(2));
+    if (difference === 0) {
+      return "Flächenanteile: 100,00 %";
+    }
+    if (difference > 0) {
+      return (
+        "Warnung: Flächenanteile " +
+        formatAreaShareValue(summary.total) +
+        " (" +
+        formatAreaShareValue(difference) +
+        " fehlen)"
+      );
+    }
+    return (
+      "Warnung: Flächenanteile " +
+      formatAreaShareValue(summary.total) +
+      " (" +
+      formatAreaShareValue(Math.abs(difference)) +
+      " zu viel)"
+    );
+  }
+
+  function formatObjectDetailsLabel(tabKey, entity, unitAreaShareSummaries) {
     const details = [];
     if (tabKey === "properties") {
       details.push(formatAddress(entity));
@@ -508,11 +574,39 @@
       if (roomAreaLabel) {
         details.push(roomAreaLabel);
       }
+      if (entity.area_share_percent != null && entity.area_share_percent !== "") {
+        details.push("Flächenanteil: " + String(entity.area_share_percent) + " %");
+      }
       if (entity.unit_label) {
         details.push("Wohnung: " + entity.unit_label);
       }
     }
     return details.filter(Boolean).join(" | ") || "-";
+  }
+
+  function renderObjectDetailsLabel(tabKey, entity, unitAreaShareSummaries) {
+    const detailsLabel = formatObjectDetailsLabel(tabKey, entity, unitAreaShareSummaries);
+    if (tabKey !== "units") {
+      return detailsLabel;
+    }
+    const areaShareMessage = formatUnitAreaShareWarning(
+      (unitAreaShareSummaries || {})[String(entity.id)]
+    );
+    if (!areaShareMessage) {
+      return detailsLabel;
+    }
+    return e(
+      Fragment,
+      null,
+      detailsLabel === "-" ? "" : detailsLabel + " | ",
+      e(
+        "span",
+        {
+          className: areaShareMessage.indexOf("Warnung:") === 0 ? "area-share-warning" : "",
+        },
+        areaShareMessage
+      )
+    );
   }
 
   function objectHierarchyName(label, level) {
@@ -852,6 +946,7 @@
 
     if (["properties", "buildings", "units", "rooms"].indexOf(props.activeTab) >= 0) {
       const objectEntries = buildHierarchicalObjectEntries(overview);
+      const unitAreaShareSummaries = buildUnitAreaShareSummaries(overview.rooms);
       previewTitle = "Objektliste";
       previewDescription =
         "Alle Anlagen, Gebäude, Wohnungen und Zimmer in gemeinsamer Hierarchie mit Eltern- und Kindbezug.";
@@ -873,7 +968,10 @@
             entry.entity.label,
             formatObjectParentLabel(entry.tabKey, entry.entity),
             formatObjectChildrenLabel(entry.tabKey, entry.entity),
-            formatObjectDetailsLabel(entry.tabKey, entry.entity),
+            formatObjectDetailsLabel(entry.tabKey, entry.entity, unitAreaShareSummaries),
+            entry.tabKey === "units"
+              ? formatUnitAreaShareWarning(unitAreaShareSummaries[String(entry.entity.id)])
+              : "",
             entry.entity.organization_name,
             entry.entity.property_name,
             entry.entity.building_name,
@@ -905,7 +1003,7 @@
               e("td", null, objectHierarchyName(formatDisplayName(entity), entry.level)),
               e("td", null, formatObjectParentLabel(entry.tabKey, entity)),
               e("td", null, formatObjectChildrenLabel(entry.tabKey, entity)),
-              e("td", null, formatObjectDetailsLabel(entry.tabKey, entity)),
+              e("td", null, renderObjectDetailsLabel(entry.tabKey, entity, unitAreaShareSummaries)),
               e("td", null, objectStatusLabel(entity)),
               objectActionCell(entry.tabKey, entity)
             ),

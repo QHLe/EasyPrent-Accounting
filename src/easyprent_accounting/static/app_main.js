@@ -995,6 +995,7 @@
         unit_id: "",
         label: "",
         area_sqm: "",
+        area_share_percent: "",
       },
       meter: {
         object_type: "unit",
@@ -1133,6 +1134,7 @@
                 : (firstUnit ? String(firstUnit.id) : ""),
             label: current.room.label,
             area_sqm: current.room.area_sqm,
+            area_share_percent: current.room.area_share_percent,
           },
           meter: {
             object_type: meterObjectType,
@@ -1859,6 +1861,7 @@
             unit_id: current.unit_id,
             label: "",
             area_sqm: "",
+            area_share_percent: "",
           };
         });
         return;
@@ -2495,6 +2498,8 @@
         unit_id: Number(forms.room.unit_id),
         label: forms.room.label,
         area_sqm: forms.room.area_sqm === "" ? null : forms.room.area_sqm,
+        area_share_percent:
+          forms.room.area_share_percent === "" ? null : forms.room.area_share_percent,
       };
       submitToApi(
         isEditing ? "/api/rooms/" + editingId : "/api/rooms",
@@ -2508,6 +2513,7 @@
               unit_id: current.unit_id,
               label: "",
               area_sqm: "",
+              area_share_percent: "",
             };
           });
         },
@@ -2687,6 +2693,8 @@
             unit_id: room.unit_id == null ? "" : String(room.unit_id),
             label: room.label || "",
             area_sqm: room.area_sqm == null ? "" : String(room.area_sqm),
+            area_share_percent:
+              room.area_share_percent == null ? "" : String(room.area_share_percent),
           },
         });
       });

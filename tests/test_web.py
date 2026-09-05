@@ -137,6 +137,9 @@ class WebApiAndUiTests(unittest.TestCase):
         self.assertIn("/api/buildings", content)
         self.assertIn("/api/units", content)
         self.assertIn("/api/rooms", content)
+        self.assertIn("Flächenanteil in %", content)
+        self.assertIn("Warnung: Flächenanteile", content)
+        self.assertIn("area-share-warning", content)
         self.assertIn("/api/meters", content)
         self.assertIn("/api/meter-readings", content)
         self.assertIn("/api/tenants", content)
@@ -573,7 +576,9 @@ process.stdout.write(JSON.stringify({ target: !!target, options: options }));
         self.assertIn("conversion_factor", payload["components"]["schemas"]["ExpenseCreateRequest"]["properties"])
         self.assertIn("expense_category", payload["components"]["schemas"]["ExpenseCreateRequest"]["properties"])
         self.assertIn("area_sqm", payload["components"]["schemas"]["RoomCreateRequest"]["properties"])
+        self.assertIn("area_share_percent", payload["components"]["schemas"]["RoomCreateRequest"]["properties"])
         self.assertIn("area_sqm", payload["components"]["schemas"]["RoomResponse"]["properties"])
+        self.assertIn("area_share_percent", payload["components"]["schemas"]["RoomResponse"]["properties"])
         self.assertIn("beneficiary_name", payload["components"]["schemas"]["ExpenseCreateRequest"]["properties"])
         self.assertIn("MeterCreateRequest", payload["components"]["schemas"])
         self.assertIn("MeterReadingCreateRequest", payload["components"]["schemas"])
@@ -3182,6 +3187,7 @@ process.stdout.write(JSON.stringify({ target: !!target, options: options }));
                     "unit_id": unit_payload["id"],
                     "label": "Wohnzimmer",
                     "area_sqm": "18.5",
+                    "area_share_percent": "30",
                 }
             ).encode("utf-8"),
         )
@@ -3189,6 +3195,7 @@ process.stdout.write(JSON.stringify({ target: !!target, options: options }));
         self.assertTrue(room_status.startswith("201"))
         self.assertEqual(room_payload["label"], "Wohnzimmer")
         self.assertEqual(room_payload["area_sqm"], "18.5")
+        self.assertEqual(room_payload["area_share_percent"], "30")
 
         room_update_status, _, room_update_body = self._call_app(
             "PUT",
@@ -3198,6 +3205,7 @@ process.stdout.write(JSON.stringify({ target: !!target, options: options }));
                     "unit_id": unit_payload["id"],
                     "label": "Wohnzimmer Nord",
                     "area_sqm": "19.25",
+                    "area_share_percent": "32.5",
                 }
             ).encode("utf-8"),
         )
@@ -3205,6 +3213,7 @@ process.stdout.write(JSON.stringify({ target: !!target, options: options }));
         self.assertTrue(room_update_status.startswith("200"))
         self.assertEqual(room_update_payload["label"], "Wohnzimmer Nord")
         self.assertEqual(room_update_payload["area_sqm"], "19.25")
+        self.assertEqual(room_update_payload["area_share_percent"], "32.5")
 
         overview_status, _, overview_body = self._call_app("GET", "/api/overview")
         overview_payload = json.loads(overview_body.decode("utf-8"))
@@ -3214,6 +3223,7 @@ process.stdout.write(JSON.stringify({ target: !!target, options: options }));
         self.assertTrue(overview_status.startswith("200"))
         self.assertEqual(persisted_room["label"], "Wohnzimmer Nord")
         self.assertEqual(persisted_room["area_sqm"], "19.25")
+        self.assertEqual(persisted_room["area_share_percent"], "32.5")
 
     def test_api_rejects_room_creation_above_unit_room_count(self) -> None:
         first_status, _, _ = self._call_app(

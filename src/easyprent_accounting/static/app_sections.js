@@ -89,7 +89,7 @@
           "section",
           { className: "panel" },
           e("h2", null, "Zimmer"),
-          table(["ID", "Name", "Wohnung", "Wohnfläche"], props.roomRows)
+          table(["ID", "Name", "Wohnung", "Wohnfläche", "Flächenanteil"], props.roomRows)
         ),
         e(
           "section",

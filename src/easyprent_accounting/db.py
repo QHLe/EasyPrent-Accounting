@@ -71,6 +71,7 @@ CREATE TABLE IF NOT EXISTS rooms (
     unit_id INTEGER NOT NULL,
     label TEXT NOT NULL,
     area_sqm NUMERIC,
+    area_share_percent NUMERIC,
     is_archived INTEGER NOT NULL DEFAULT 0,
     archived_at TEXT,
     FOREIGN KEY (unit_id) REFERENCES units(id)
@@ -324,6 +325,7 @@ def ensure_schema_updates(connection: sqlite3.Connection) -> None:
     _ensure_units_table_supports_standalone(connection)
     _ensure_rooms_table_exists(connection)
     _ensure_rooms_have_area_sqm(connection)
+    _ensure_rooms_have_area_share_percent(connection)
     _ensure_leases_support_room_targets(connection)
     _ensure_buildings_have_addresses(connection)
     _ensure_units_have_addresses(connection)
@@ -731,6 +733,7 @@ def _ensure_rooms_table_exists(connection: sqlite3.Connection) -> None:
             unit_id INTEGER NOT NULL,
             label TEXT NOT NULL,
             area_sqm NUMERIC,
+            area_share_percent NUMERIC,
             is_archived INTEGER NOT NULL DEFAULT 0,
             archived_at TEXT,
             FOREIGN KEY (unit_id) REFERENCES units(id)
@@ -745,6 +748,14 @@ def _ensure_rooms_have_area_sqm(connection: sqlite3.Connection) -> None:
     }
     if "area_sqm" not in room_columns:
         connection.execute("ALTER TABLE rooms ADD COLUMN area_sqm NUMERIC")
+
+
+def _ensure_rooms_have_area_share_percent(connection: sqlite3.Connection) -> None:
+    room_columns = {
+        row["name"] for row in connection.execute("PRAGMA table_info(rooms)").fetchall()
+    }
+    if "area_share_percent" not in room_columns:
+        connection.execute("ALTER TABLE rooms ADD COLUMN area_share_percent NUMERIC")
 
 
 def _ensure_paperless_settings_table(connection: sqlite3.Connection) -> None:

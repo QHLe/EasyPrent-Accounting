@@ -887,6 +887,21 @@
             })
           ),
           e(
+            "label",
+            null,
+            "Flächenanteil in %",
+            e("input", {
+              type: "number",
+              min: "0",
+              max: "100",
+              step: "0.01",
+              value: forms.room.area_share_percent,
+              onChange: function (event) {
+                props.setFormField("room", "area_share_percent", event.target.value);
+              },
+            })
+          ),
+          e(
             "div",
             { className: "inline-actions" },
             e(

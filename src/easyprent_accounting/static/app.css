@@ -206,6 +206,11 @@ a {
   color: var(--danger);
 }
 
+.area-share-warning {
+  color: var(--danger);
+  font-weight: 700;
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));

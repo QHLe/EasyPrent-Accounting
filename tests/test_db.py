@@ -74,6 +74,37 @@ class DatabaseInitializationTests(unittest.TestCase):
             <= assignment_columns
         )
 
+    def test_initialize_database_adds_area_share_percent_to_existing_rooms(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            database_path = os.path.join(temp_dir, "easyprent_accounting.db")
+            connection = sqlite3.connect(database_path)
+            try:
+                connection.execute(
+                    "CREATE TABLE rooms (id INTEGER PRIMARY KEY, unit_id INTEGER, label TEXT, area_sqm NUMERIC)"
+                )
+                connection.commit()
+            finally:
+                connection.close()
+
+            original_database_path = os.environ.get("EASYPRENT_DB_PATH")
+            os.environ["EASYPRENT_DB_PATH"] = database_path
+            try:
+                initialize_database()
+                connection = sqlite3.connect(database_path)
+                try:
+                    columns = {
+                        row[1] for row in connection.execute("PRAGMA table_info(rooms)").fetchall()
+                    }
+                finally:
+                    connection.close()
+            finally:
+                if original_database_path is None:
+                    os.environ.pop("EASYPRENT_DB_PATH", None)
+                else:
+                    os.environ["EASYPRENT_DB_PATH"] = original_database_path
+
+        self.assertIn("area_share_percent", columns)
+
     def test_migrates_legacy_tenant_gnucash_account_to_lease(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             database_path = os.path.join(temp_dir, "easyprent_accounting.db")
