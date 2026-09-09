@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import sqlite3
 import unittest
 from decimal import Decimal
 
-from src.easyprent_accounting.db import SCHEMA, seed_demo_data
 from src.easyprent_accounting.services import (
     archive_object,
     create_building,
@@ -23,14 +21,12 @@ from src.easyprent_accounting.services import (
     update_unit,
     _total_amount_for_expense_period,
 )
+from tests.support import in_memory_database
 
 
 class ExpenseServiceTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.connection = sqlite3.connect(":memory:")
-        self.connection.row_factory = sqlite3.Row
-        self.connection.executescript(SCHEMA)
-        seed_demo_data(self.connection)
+        self.connection = in_memory_database()
 
     def tearDown(self) -> None:
         self.connection.close()
@@ -1512,10 +1508,7 @@ if __name__ == "__main__":
 
 class PropertyRelationshipTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.connection = sqlite3.connect(":memory:")
-        self.connection.row_factory = sqlite3.Row
-        self.connection.executescript(SCHEMA)
-        seed_demo_data(self.connection)
+        self.connection = in_memory_database()
 
     def tearDown(self) -> None:
         self.connection.close()

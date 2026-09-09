@@ -7,38 +7,21 @@ import re
 import shutil
 import sqlite3
 import subprocess
-import tempfile
 import unittest
 import xml.etree.ElementTree as ET
 from importlib import resources
-from zipfile import ZIP_STORED, ZipFile
 from io import BytesIO
+from zipfile import ZIP_STORED, ZipFile
 from unittest import mock
 
-from src.easyprent_accounting.db import initialize_database, seed_demo_data
 from src.easyprent_accounting.web import application
+from tests.support import call_wsgi_application, temporary_database
 
 
 class WebApiAndUiTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.temp_dir = tempfile.TemporaryDirectory()
-        self.db_path = os.path.join(self.temp_dir.name, "test.db")
-        self.original_db_path = os.environ.get("EASYPRENT_DB_PATH")
-        os.environ["EASYPRENT_DB_PATH"] = self.db_path
-        initialize_database()
-        connection = sqlite3.connect(self.db_path)
-        try:
-            seed_demo_data(connection)
-            connection.commit()
-        finally:
-            connection.close()
-
-    def tearDown(self) -> None:
-        if self.original_db_path is None:
-            os.environ.pop("EASYPRENT_DB_PATH", None)
-        else:
-            os.environ["EASYPRENT_DB_PATH"] = self.original_db_path
-        self.temp_dir.cleanup()
+        self.database = self.enterContext(temporary_database(seeded=True))
+        self.db_path = str(self.database.path)
 
     def _call_app(
         self,
@@ -48,22 +31,15 @@ class WebApiAndUiTests(unittest.TestCase):
         query_string: str = "",
         content_type: str = "application/json",
     ):
-        status_headers: dict = {}
-
-        def start_response(status, headers):
-            status_headers["status"] = status
-            status_headers["headers"] = headers
-
-        environ = {
-            "REQUEST_METHOD": method,
-            "PATH_INFO": path,
-            "QUERY_STRING": query_string,
-            "CONTENT_LENGTH": str(len(body)),
-            "CONTENT_TYPE": content_type,
-            "wsgi.input": BytesIO(body),
-        }
-        response = b"".join(application(environ, start_response))
-        return status_headers["status"], dict(status_headers["headers"]), response
+        response = call_wsgi_application(
+            application,
+            method=method,
+            path=path,
+            body=body,
+            query_string=query_string,
+            content_type=content_type,
+        )
+        return response.status, response.headers, response.body
 
     def test_root_serves_react_shell(self) -> None:
         status, _, body = self._call_app("GET", "/")

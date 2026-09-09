@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sqlite3
 import sys
 import unittest
 from datetime import date
@@ -8,7 +7,6 @@ from decimal import Decimal
 from types import SimpleNamespace
 from unittest import mock
 
-from src.easyprent_accounting.db import SCHEMA, seed_demo_data
 from src.easyprent_accounting.integrations.gnucash import GnuCashPayment, PiecashGnuCashReader
 from src.easyprent_accounting.services import (
     create_or_open_settlement_run,
@@ -21,6 +19,7 @@ from src.easyprent_accounting.services import (
     update_gnucash_settings,
     update_lease,
 )
+from tests.support import in_memory_database
 
 
 class FakeGnuCashReader:
@@ -46,10 +45,7 @@ class FakeGnuCashReader:
 
 class GnuCashPaymentImportTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.connection = sqlite3.connect(":memory:")
-        self.connection.row_factory = sqlite3.Row
-        self.connection.executescript(SCHEMA)
-        seed_demo_data(self.connection)
+        self.connection = in_memory_database()
 
         lease = self.connection.execute("SELECT * FROM leases ORDER BY id LIMIT 1").fetchone()
         assert lease is not None

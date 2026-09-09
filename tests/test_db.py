@@ -1,64 +1,41 @@
 from __future__ import annotations
 
-import os
-import sqlite3
-import tempfile
 import unittest
 
-from src.easyprent_accounting.db import initialize_database
+from tests.support import temporary_database
 
 
 class DatabaseInitializationTests(unittest.TestCase):
     def test_initialize_database_creates_an_empty_database(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            database_path = os.path.join(temp_dir, "easyprent_accounting.db")
-            original_database_path = os.environ.get("EASYPRENT_DB_PATH")
-            os.environ["EASYPRENT_DB_PATH"] = database_path
+        with temporary_database() as database:
+            connection = database.connect()
             try:
-                initialize_database()
-                connection = sqlite3.connect(database_path)
-                try:
-                    organization_count = connection.execute(
-                        "SELECT COUNT(*) FROM organizations"
-                    ).fetchone()[0]
-                finally:
-                    connection.close()
+                organization_count = connection.execute(
+                    "SELECT COUNT(*) FROM organizations"
+                ).fetchone()[0]
             finally:
-                if original_database_path is None:
-                    os.environ.pop("EASYPRENT_DB_PATH", None)
-                else:
-                    os.environ["EASYPRENT_DB_PATH"] = original_database_path
+                connection.close()
 
         self.assertEqual(organization_count, 0)
 
     def test_initialize_database_prepares_settlement_payment_assignment_storage(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            database_path = os.path.join(temp_dir, "easyprent_accounting.db")
-            original_database_path = os.environ.get("EASYPRENT_DB_PATH")
-            os.environ["EASYPRENT_DB_PATH"] = database_path
+        with temporary_database() as database:
+            connection = database.connect()
             try:
-                initialize_database()
-                connection = sqlite3.connect(database_path)
-                try:
-                    tables = {
-                        row[0]
-                        for row in connection.execute(
-                            "SELECT name FROM sqlite_master WHERE type = 'table'"
-                        ).fetchall()
-                    }
-                    assignment_columns = {
-                        row[1]
-                        for row in connection.execute(
-                            "PRAGMA table_info(settlement_payment_assignments)"
-                        ).fetchall()
-                    }
-                finally:
-                    connection.close()
+                tables = {
+                    row[0]
+                    for row in connection.execute(
+                        "SELECT name FROM sqlite_master WHERE type = 'table'"
+                    ).fetchall()
+                }
+                assignment_columns = {
+                    row[1]
+                    for row in connection.execute(
+                        "PRAGMA table_info(settlement_payment_assignments)"
+                    ).fetchall()
+                }
             finally:
-                if original_database_path is None:
-                    os.environ.pop("EASYPRENT_DB_PATH", None)
-                else:
-                    os.environ["EASYPRENT_DB_PATH"] = original_database_path
+                connection.close()
 
         self.assertIn("settlement_runs", tables)
         self.assertIn("settlement_payment_assignments", tables)
@@ -75,9 +52,8 @@ class DatabaseInitializationTests(unittest.TestCase):
         )
 
     def test_initialize_database_adds_area_share_percent_to_existing_rooms(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            database_path = os.path.join(temp_dir, "easyprent_accounting.db")
-            connection = sqlite3.connect(database_path)
+        with temporary_database(initialized=False) as database:
+            connection = database.connect()
             try:
                 connection.execute(
                     "CREATE TABLE rooms (id INTEGER PRIMARY KEY, unit_id INTEGER, label TEXT, area_sqm NUMERIC)"
@@ -86,29 +62,20 @@ class DatabaseInitializationTests(unittest.TestCase):
             finally:
                 connection.close()
 
-            original_database_path = os.environ.get("EASYPRENT_DB_PATH")
-            os.environ["EASYPRENT_DB_PATH"] = database_path
+            database.initialize()
+            connection = database.connect()
             try:
-                initialize_database()
-                connection = sqlite3.connect(database_path)
-                try:
-                    columns = {
-                        row[1] for row in connection.execute("PRAGMA table_info(rooms)").fetchall()
-                    }
-                finally:
-                    connection.close()
+                columns = {
+                    row[1] for row in connection.execute("PRAGMA table_info(rooms)").fetchall()
+                }
             finally:
-                if original_database_path is None:
-                    os.environ.pop("EASYPRENT_DB_PATH", None)
-                else:
-                    os.environ["EASYPRENT_DB_PATH"] = original_database_path
+                connection.close()
 
         self.assertIn("area_share_percent", columns)
 
     def test_migrates_legacy_tenant_gnucash_account_to_lease(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            database_path = os.path.join(temp_dir, "easyprent_accounting.db")
-            connection = sqlite3.connect(database_path)
+        with temporary_database(initialized=False) as database:
+            connection = database.connect()
             connection.executescript(
                 """
                 CREATE TABLE tenants (
@@ -140,26 +107,17 @@ class DatabaseInitializationTests(unittest.TestCase):
             connection.commit()
             connection.close()
 
-            original_database_path = os.environ.get("EASYPRENT_DB_PATH")
-            os.environ["EASYPRENT_DB_PATH"] = database_path
+            database.initialize()
+            connection = database.connect(rows=True)
             try:
-                initialize_database()
-                connection = sqlite3.connect(database_path)
-                connection.row_factory = sqlite3.Row
-                try:
-                    lease = connection.execute(
-                        "SELECT gnucash_nk_account_guid, gnucash_nk_account_name FROM leases WHERE id = 1"
-                    ).fetchone()
-                    tenant = connection.execute(
-                        "SELECT gnucash_nk_account_guid, gnucash_nk_account_name FROM tenants WHERE id = 1"
-                    ).fetchone()
-                finally:
-                    connection.close()
+                lease = connection.execute(
+                    "SELECT gnucash_nk_account_guid, gnucash_nk_account_name FROM leases WHERE id = 1"
+                ).fetchone()
+                tenant = connection.execute(
+                    "SELECT gnucash_nk_account_guid, gnucash_nk_account_name FROM tenants WHERE id = 1"
+                ).fetchone()
             finally:
-                if original_database_path is None:
-                    os.environ.pop("EASYPRENT_DB_PATH", None)
-                else:
-                    os.environ["EASYPRENT_DB_PATH"] = original_database_path
+                connection.close()
 
         self.assertEqual(lease["gnucash_nk_account_guid"], "legacy-nk-account")
         self.assertEqual(lease["gnucash_nk_account_name"], "Alt:Nebenkosten")
