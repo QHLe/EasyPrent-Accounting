@@ -201,12 +201,11 @@ def _format_allocation_period(value: object) -> str:
         return raw
 
 
-def _allocation_kind(item: dict) -> str:
-    if item.get("allocation_kind"):
-        return str(item["allocation_kind"])
-    if item.get("charge_type") == "consumption":
-        return "consumption"
-    return str(item.get("allocation_method") or "direct")
+def _allocation_method(item: dict) -> str:
+    method = str(item.get("allocation_method") or "").strip()
+    if not method:
+        raise ValueError("settlement line item is missing allocation_method")
+    return method
 
 
 def _render_allocation_keys(
@@ -241,7 +240,7 @@ def _render_allocation_keys(
     }
     rendered_rows: list[ET.Element] = []
     for item in line_items:
-        kind = _allocation_kind(item)
+        kind = _allocation_method(item)
         periods = item.get("allocation_periods") or [{}]
         item_references: list[int] = []
         for period in periods:

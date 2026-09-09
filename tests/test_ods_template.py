@@ -281,6 +281,7 @@ def _render(
             or [
                 {
                     "label": "Testkosten",
+                    "allocation_method": "unit_count",
                     "period_amount": "1200.00",
                     "share": "300.00",
                 }
@@ -375,12 +376,14 @@ class OdsTemplateTests(unittest.TestCase):
                 {
                     "expense_category": "Heizung",
                     "label": "Grundkosten",
+                    "allocation_method": "occupants",
                     "period_amount": "10.00",
                     "share": "2.00",
                 },
                 {
                     "expense_category": "Heizung",
                     "label": "Verbrauch",
+                    "allocation_method": "occupants",
                     "period_amount": "20.00",
                     "share": "3.00",
                 },
@@ -493,7 +496,7 @@ class OdsTemplateTests(unittest.TestCase):
                 {
                     "label": "Hausreinigung",
                     "allocation_method": "occupants",
-                    "allocation_kind": "occupants",
+                    "charge_type": "consumption",
                     "period_amount": "300.00",
                     "basis_total": "99",
                     "basis_value": "9",
@@ -510,7 +513,6 @@ class OdsTemplateTests(unittest.TestCase):
                 {
                     "label": "Grundsteuer",
                     "allocation_method": "area",
-                    "allocation_kind": "area",
                     "period_amount": "324.00",
                     "basis_total": "999",
                     "basis_value": "999",
@@ -526,8 +528,7 @@ class OdsTemplateTests(unittest.TestCase):
                 },
                 {
                     "label": "Wohnungswartung",
-                    "allocation_method": "unit_count",
-                    "allocation_kind": "direct",
+                    "allocation_method": "direct",
                     "period_amount": "50.00",
                     "basis_total": "1",
                     "basis_value": "1",
@@ -541,8 +542,7 @@ class OdsTemplateTests(unittest.TestCase):
                 },
                 {
                     "label": "Wasser",
-                    "allocation_method": "occupants",
-                    "allocation_kind": "consumption",
+                    "allocation_method": "consumption",
                     "charge_type": "consumption",
                     "period_amount": "45.02",
                     "basis_total": "3",
@@ -561,27 +561,34 @@ class OdsTemplateTests(unittest.TestCase):
 
         with ZipFile(BytesIO(document)) as archive:
             root = ET.fromstring(archive.read("content.xml"))
-        row_texts = [
-            " | ".join(
-                _cell_text(cell)
+        row_values = [
+            tuple(
+                value
                 for cell in row
                 if cell.tag in CELL_TAGS
+                if (value := _cell_text(cell))
             )
             for row in root.findall(f".//{{{TABLE_NS}}}table-row")
         ]
 
         expected_allocation_rows = (
-            "1 | Personen |  | 01.01.2026 – 31.12.2026 | 365 |  | 3 | 1",
-            "2 | Flächenanteil |  | 01.01.2026 – 31.12.2026 | 365 |  | 100 % | 32,4 %",
-            "3 | Direkt |  | 01.01.2026 – 31.12.2026 | 365 |  |  | ",
-            "4 | Verbrauchsabhängig |  | 01.01.2026 – 31.12.2026 | 365 |  |  | ",
+            ("1", "Personen", "01.01.2026 – 31.12.2026", "365", "3", "1"),
+            ("2", "Flächenanteil", "01.01.2026 – 31.12.2026", "365", "100 %", "32,4 %"),
+            ("3", "Direkt", "01.01.2026 – 31.12.2026", "365"),
+            ("4", "Verbrauchsabhängig", "01.01.2026 – 31.12.2026", "365"),
         )
         for expected in expected_allocation_rows:
-            self.assertTrue(any(text.startswith(expected) for text in row_texts))
-        self.assertTrue(any(text.startswith("Hausreinigung |  | 300,00 € |  | 1 |") for text in row_texts))
-        self.assertTrue(any(text.startswith("Grundsteuer |  | 324,00 € |  | 2 |") for text in row_texts))
-        self.assertTrue(any(text.startswith("Wohnungswartung |  | 50,00 € |  | 3 |") for text in row_texts))
-        self.assertTrue(any(text.startswith("Wasser |  | 45,02 € |  | 4 |") for text in row_texts))
+            self.assertIn(expected, row_values)
+        self.assertIn(
+            ("Hausreinigung", "300,00 €", "1", "100,00 €"), row_values
+        )
+        self.assertIn(
+            ("Grundsteuer", "324,00 €", "2", "104,98 €"), row_values
+        )
+        self.assertIn(
+            ("Wohnungswartung", "50,00 €", "3", "50,00 €"), row_values
+        )
+        self.assertIn(("Wasser", "45,02 €", "4", "45,02 €"), row_values)
 
     def test_render_lists_each_advance_payment_in_the_template(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -598,7 +605,14 @@ class OdsTemplateTests(unittest.TestCase):
                 object_lines=["WE 1"],
                 created_on="01.09.2026",
                 period_label="01.01.2026 – 31.12.2026",
-                line_items=[{"label": "Testkosten", "period_amount": "300.00", "share": "300.00"}],
+                line_items=[
+                    {
+                        "label": "Testkosten",
+                        "allocation_method": "unit_count",
+                        "period_amount": "300.00",
+                        "share": "300.00",
+                    }
+                ],
                 allocated_costs="300.00",
                 advances_paid="180.00",
                 balance="120.00",
@@ -790,6 +804,7 @@ class OdsTemplateTests(unittest.TestCase):
                 {
                     "expense_category": "Versicherung",
                     "label": "Gebäudeversicherung Police A",
+                    "allocation_method": "area",
                     "period_amount": "120.00",
                     "share": "30.00",
                 }
@@ -823,6 +838,7 @@ class OdsTemplateTests(unittest.TestCase):
             line_items=[
                 {
                     "label": "Wasser",
+                    "allocation_method": "occupants",
                     "period_amount": "12.00",
                     "share": "3.00",
                     "tenant_consumption_value": "0.1180547945205479452054795",

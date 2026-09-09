@@ -3804,11 +3804,6 @@ def settlement_for_period(
         for line_item in lease_result["line_items"]:
             row = expense_by_id[line_item["source_id"]]
             line_item["expense_category"] = row["expense_category"] or row["label"]
-            line_item["allocation_kind"] = (
-                "consumption"
-                if row["charge_type"] == "consumption"
-                else row["allocation_method"]
-            )
             tenant_expense_overlap = overlap_period(
                 row["period_start"],
                 row["period_end"],

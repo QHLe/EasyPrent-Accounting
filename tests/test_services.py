@@ -1330,8 +1330,9 @@ class ExpenseServiceTests(unittest.TestCase):
         ]
         self.assertTrue(water_items)
         self.assertTrue(
-            all(item["allocation_kind"] == "consumption" for item in water_items)
+            all(item["allocation_method"] == "occupants" for item in water_items)
         )
+        self.assertTrue(all("allocation_kind" not in item for item in water_items))
 
     def test_create_expense_maps_recurring_yearly_to_yearly_charge_type(self) -> None:
         created = create_expense(
@@ -1449,14 +1450,14 @@ class ExpenseServiceTests(unittest.TestCase):
         self.assertNotIn("Wohnungswartung", line_items_by_tenant["Tim Wagner"])
         self.assertIn("Zimmeranstrich", line_items_by_tenant["Anna Schulz"])
         self.assertNotIn("Zimmeranstrich", line_items_by_tenant["Tim Wagner"])
-        allocation_kinds = {
-            line_item["label"]: line_item["allocation_kind"]
+        allocation_methods = {
+            line_item["label"]: line_item["allocation_method"]
             for result in settlement["results"]
             for line_item in result["line_items"]
         }
-        self.assertEqual(allocation_kinds["Gebäudereinigung"], "unit_count")
-        self.assertEqual(allocation_kinds["Wohnungswartung"], "occupants")
-        self.assertEqual(allocation_kinds["Zimmeranstrich"], "unit_count")
+        self.assertEqual(allocation_methods["Gebäudereinigung"], "unit_count")
+        self.assertEqual(allocation_methods["Wohnungswartung"], "occupants")
+        self.assertEqual(allocation_methods["Zimmeranstrich"], "unit_count")
 
     def test_list_overview_includes_meters_with_latest_reading(self) -> None:
         meter = create_meter(
