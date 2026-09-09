@@ -495,13 +495,15 @@ class OdsTemplateTests(unittest.TestCase):
                     "allocation_method": "occupants",
                     "allocation_kind": "occupants",
                     "period_amount": "300.00",
-                    "basis_total": "3",
-                    "basis_value": "1",
+                    "basis_total": "99",
+                    "basis_value": "9",
                     "share": "100.00",
                     "allocation_periods": [
                         {
                             "period_start": "2026-01-01",
                             "period_end": "2026-12-31",
+                            "basis_total": "3",
+                            "basis_value": "1",
                         }
                     ],
                 },
@@ -510,13 +512,15 @@ class OdsTemplateTests(unittest.TestCase):
                     "allocation_method": "area",
                     "allocation_kind": "area",
                     "period_amount": "324.00",
-                    "basis_total": "100",
-                    "basis_value": "32.4",
+                    "basis_total": "999",
+                    "basis_value": "999",
                     "share": "104.98",
                     "allocation_periods": [
                         {
                             "period_start": "2026-01-01",
                             "period_end": "2026-12-31",
+                            "basis_total": "34.0961",
+                            "basis_value": "11.0471364",
                         }
                     ],
                 },

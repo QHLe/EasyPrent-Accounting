@@ -253,6 +253,11 @@ def _render_allocation_keys(
             share = "" if kind in {"direct", "consumption"} else str(
                 period.get("basis_value", item.get("basis_value", ""))
             )
+            if kind == "area" and total and share:
+                total_value = Decimal(total)
+                if total_value > 0:
+                    share = format(Decimal(share) * Decimal("100") / total_value, "f")
+                    total = "100"
             signature = (kind, period_start, period_end, total, share)
             reference = reference_by_signature.get(signature)
             if reference is None:

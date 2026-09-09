@@ -3523,6 +3523,8 @@ def _allocation_segments_for_expense_period(
                 "period_start": segment_start.isoformat(),
                 "period_end": segment_end.isoformat(),
                 "period_amount": segment_amount,
+                "basis_values": basis_values,
+                "basis_total": basis_total,
                 "shares": shares,
             }
         )
@@ -3538,6 +3540,8 @@ def _allocation_periods_for_lease(
             "period_start": segment["period_start"],
             "period_end": segment["period_end"],
             "period_amount": f"{segment['period_amount']:.2f}",
+            "basis_value": str(segment["basis_values"][lease_id]),
+            "basis_total": str(segment["basis_total"]),
             "share": quantize_money(segment["shares"][lease_id]),
             "raw_share": segment["shares"][lease_id],
         }
@@ -3555,6 +3559,8 @@ def _allocation_periods_for_lease(
             "period_start": period["period_start"],
             "period_end": period["period_end"],
             "period_amount": period["period_amount"],
+            "basis_value": period["basis_value"],
+            "basis_total": period["basis_total"],
             "share": f"{period['share']:.2f}",
         }
         for period in periods

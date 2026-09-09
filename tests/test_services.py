@@ -1184,6 +1184,8 @@ class ExpenseServiceTests(unittest.TestCase):
                     "period_start": "2025-01-01",
                     "period_end": "2025-06-30",
                     "period_amount": "181.00",
+                    "basis_value": "1",
+                    "basis_total": "1",
                     "share": "181.00",
                 }
             ],
@@ -1195,6 +1197,8 @@ class ExpenseServiceTests(unittest.TestCase):
                     "period_start": "2025-07-01",
                     "period_end": "2025-12-31",
                     "period_amount": "184.00",
+                    "basis_value": "1",
+                    "basis_total": "1",
                     "share": "184.00",
                 }
             ],

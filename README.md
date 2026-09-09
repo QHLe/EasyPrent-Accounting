@@ -89,6 +89,13 @@ Unterteilung automatisch. Die Gesamtsumme berücksichtigt nur die
 Kostenarten-Summenzeilen und zählt Unterpositionen daher nicht doppelt.
 Jahreskosten und Mieteranteile werden linksbündig ausgegeben.
 
+Die Umlageschlüssel-Tabelle verwendet eine eigene Prototypzeile mit den
+Markern `{{UMLAGE_NR}}`, `{{UMLAGE_ART}}`, `{{UMLAGE_ZEITRAUM}}`,
+`{{UMLAGE_TAGE}}`, `{{UMLAGE_GESAMT}}` und `{{UMLAGE_ANTEIL}}`. In den
+Kostenzeilen verweisen `{{UMLAGE_REF}}` beziehungsweise
+`{{POSITION_UMLAGE_REF}}` auf die automatisch nummerierten Schlüssel. Auch
+diese Marker müssen bei Layoutänderungen erhalten bleiben.
+
 Der angezeigte Abrechnungszeitraum wird auf die tatsächliche Überschneidung
 mit dem Mietvertrag begrenzt. Unterjährige und verbrauchsabhängige Kosten
 werden mit den für diesen Zeitraum ermittelten Kosten- und Verbrauchswerten
