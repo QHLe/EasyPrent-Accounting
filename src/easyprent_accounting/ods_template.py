@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import copy, deepcopy
+from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 from importlib import resources
 from io import BytesIO
@@ -53,6 +54,14 @@ _POSITION_MARKERS = (
     "{{POSITION_MIETERANTEIL}}",
     "{{POSITION_VERBRAUCH}}",
 )
+_ALLOCATION_MARKERS = (
+    "{{UMLAGE_NR}}",
+    "{{UMLAGE_ART}}",
+    "{{UMLAGE_ZEITRAUM}}",
+    "{{UMLAGE_TAGE}}",
+    "{{UMLAGE_GESAMT}}",
+    "{{UMLAGE_ANTEIL}}",
+)
 
 
 def _cells(row: ET.Element) -> list[ET.Element]:
@@ -66,6 +75,11 @@ def _expand_repeated_cells(row: ET.Element) -> None:
             continue
         repeated = int(cell.attrib.pop(repeated_attribute, "1"))
         if repeated <= 1:
+            continue
+        if repeated > 1000 and not _cell_text(cell).strip():
+            # LibreOffice stores the unused tail of each row as thousands of
+            # repeated blank cells. A single representative is sufficient and
+            # avoids expanding a small template into millions of XML nodes.
             continue
         position = list(row).index(cell)
         for offset in range(1, repeated):
@@ -179,6 +193,112 @@ def _format_money(value: Decimal | str) -> str:
     return raw.replace(",", "_").replace(".", ",").replace("_", ".") + " €"
 
 
+def _format_allocation_period(value: object) -> str:
+    raw = str(value or "")
+    try:
+        return date.fromisoformat(raw).strftime("%d.%m.%Y")
+    except ValueError:
+        return raw
+
+
+def _allocation_kind(item: dict) -> str:
+    if item.get("allocation_kind"):
+        return str(item["allocation_kind"])
+    if item.get("charge_type") == "consumption":
+        return "consumption"
+    return str(item.get("allocation_method") or "direct")
+
+
+def _render_allocation_keys(
+    sheet: ET.Element, line_items: list[dict]
+) -> dict[int, list[int]]:
+    """Render the optional allocation legend and return references per item."""
+    marker_locations = [
+        (row, cell)
+        for row in sheet.findall("table:table-row", NS)
+        for cell in _cells(row)
+        if _cell_text(cell).strip() == "{{UMLAGE_NR}}"
+    ]
+    if not marker_locations:
+        return {}
+
+    prototype, _ = _find_marker(sheet, "{{UMLAGE_NR}}")
+    columns = {
+        marker: _find_marker_in_row(prototype, marker)
+        for marker in _ALLOCATION_MARKERS
+    }
+    insert_index = list(sheet).index(prototype)
+    sheet.remove(prototype)
+    references_by_item: dict[int, list[int]] = {}
+    reference_by_signature: dict[tuple[str, str, str, str, str], int] = {}
+
+    labels = {
+        "occupants": "Person",
+        "area": "Flächenanteil",
+        "direct": "Direkt",
+        "consumption": "Verbrauchsabhängig",
+        "unit_count": "Einheiten",
+    }
+    rendered_rows: list[ET.Element] = []
+    for item in line_items:
+        kind = _allocation_kind(item)
+        periods = item.get("allocation_periods") or [{}]
+        item_references: list[int] = []
+        for period in periods:
+            period_start = str(period.get("period_start") or "")
+            period_end = str(period.get("period_end") or "")
+            total = "" if kind in {"direct", "consumption"} else str(
+                period.get("basis_total", item.get("basis_total", ""))
+            )
+            share = "" if kind in {"direct", "consumption"} else str(
+                period.get("basis_value", item.get("basis_value", ""))
+            )
+            signature = (kind, period_start, period_end, total, share)
+            reference = reference_by_signature.get(signature)
+            if reference is None:
+                reference = len(reference_by_signature) + 1
+                reference_by_signature[signature] = reference
+                row = deepcopy(prototype)
+                period_label = ""
+                days_label = ""
+                if period_start or period_end:
+                    period_label = (
+                        f"{_format_allocation_period(period_start)} – "
+                        f"{_format_allocation_period(period_end)}"
+                    )
+                    try:
+                        days_label = str(
+                            (date.fromisoformat(period_end) - date.fromisoformat(period_start)).days
+                            + 1
+                        )
+                    except ValueError:
+                        pass
+                if kind == "area":
+                    total = f"{_format_decimal(total)} %" if total else ""
+                    share = f"{_format_decimal(share)} %" if share else ""
+                elif total:
+                    total = _format_decimal(total)
+                    share = _format_decimal(share)
+                values = {
+                    "{{UMLAGE_NR}}": str(reference),
+                    "{{UMLAGE_ART}}": labels.get(kind, kind),
+                    "{{UMLAGE_ZEITRAUM}}": period_label,
+                    "{{UMLAGE_TAGE}}": days_label,
+                    "{{UMLAGE_GESAMT}}": total,
+                    "{{UMLAGE_ANTEIL}}": share,
+                }
+                for marker, value in values.items():
+                    _set_cell(row, columns[marker], value)
+                rendered_rows.append(row)
+            if reference not in item_references:
+                item_references.append(reference)
+        references_by_item[id(item)] = item_references
+
+    for offset, row in enumerate(rendered_rows):
+        sheet.insert(insert_index + offset, row)
+    return references_by_item
+
+
 def _find_marker(sheet: ET.Element, marker: str) -> tuple[ET.Element, int]:
     for row in sheet.findall("table:table-row", NS):
         for column, cell in enumerate(_cells(row), start=1):
@@ -192,6 +312,98 @@ def _find_marker_in_row(row: ET.Element, marker: str) -> int:
         if _cell_text(cell).strip() == marker:
             return column
     raise ValueError(f"settlement template cost row is missing marker {marker}")
+
+
+def _find_optional_marker_in_row(row: ET.Element, marker: str) -> int | None:
+    for column, cell in enumerate(_cells(row), start=1):
+        if _cell_text(cell).strip() == marker:
+            return column
+    return None
+
+
+def _prepare_allocation_markers(sheet: ET.Element) -> None:
+    """Add dynamic markers to the optional allocation-key section."""
+    rows = sheet.findall("table:table-row", NS)
+    header_row = next(
+        (
+            row
+            for row in rows
+            if "Nr." in {_cell_text(cell).strip() for cell in _cells(row)}
+            and any(
+                "Umlageschlüssel" in _cell_text(cell)
+                for cell in _cells(row)
+            )
+        ),
+        None,
+    )
+    if header_row is None:
+        return
+
+    cost_header_row = next(
+        (
+            row
+            for row in rows[rows.index(header_row) + 1 :]
+            if any("Jahreskosten" in _cell_text(cell) for cell in _cells(row))
+        ),
+        None,
+    )
+    if cost_header_row is None:
+        raise ValueError("source template has no cost header after allocation keys")
+
+    existing_allocation_markers = [
+        marker
+        for marker in _ALLOCATION_MARKERS
+        if any(
+            _cell_text(cell).strip() == marker
+            for row in rows
+            for cell in _cells(row)
+        )
+    ]
+    if existing_allocation_markers and len(existing_allocation_markers) != len(
+        _ALLOCATION_MARKERS
+    ):
+        raise ValueError("settlement template has an incomplete allocation prototype")
+
+    if not existing_allocation_markers:
+        candidates = rows[rows.index(header_row) + 1 : rows.index(cost_header_row)]
+        header_style = header_row.get(f"{{{TABLE_NS}}}style-name")
+        prototype = next(
+            (
+                row
+                for row in candidates
+                if row.get(f"{{{TABLE_NS}}}style-name") == header_style
+                and not any(_cell_text(cell).strip() for cell in _cells(row))
+            ),
+            None,
+        )
+        if prototype is None:
+            raise ValueError("source template has no allocation-key prototype row")
+        for marker, column in zip(_ALLOCATION_MARKERS, (1, 2, 4, 5, 7, 8)):
+            _set_cell(prototype, column, marker)
+
+    cost_row, _ = _find_marker(sheet, "{{KOSTENART}}")
+    total_row, _ = _find_marker(sheet, "{{SUMME_JAHRESKOSTEN}}")
+    position_row = _find_position_prototype_row(sheet, cost_row, total_row)
+    if position_row is None:
+        raise ValueError("source template has no position prototype")
+    allocation_reference_column = next(
+        (
+            column
+            for column, cell in enumerate(_cells(cost_header_row), start=1)
+            if "Umlage" in _cell_text(cell)
+        ),
+        None,
+    )
+    if allocation_reference_column is None:
+        raise ValueError("source template cost header has no allocation-key column")
+    if _find_optional_marker_in_row(cost_row, "{{UMLAGE_REF}}") is None:
+        _set_cell(cost_row, allocation_reference_column, "{{UMLAGE_REF}}")
+    if _find_optional_marker_in_row(position_row, "{{POSITION_UMLAGE_REF}}") is None:
+        _set_cell(
+            position_row,
+            allocation_reference_column,
+            "{{POSITION_UMLAGE_REF}}",
+        )
 
 
 def _find_position_prototype_row(
@@ -699,6 +911,7 @@ def prepare_settlement_template_bytes(document: bytes) -> bytes:
         if position_row is None:
             position_prototype = _position_prototype_from_cost(root, cost_row)
             sheet.insert(list(sheet).index(cost_row) + 1, position_prototype)
+        _prepare_allocation_markers(sheet)
         return _finish_prepared_template(entries, root)
 
     created_row = _find_row_containing(rows, "erstellt am:")
@@ -775,6 +988,7 @@ def prepare_settlement_template_bytes(document: bytes) -> bytes:
     sheet.insert(first_cost_child_index + 1, position_prototype)
     _set_cell(total_row, 3, "{{SUMME_JAHRESKOSTEN}}")
     _set_cell(total_row, 5, "{{SUMME_MIETERANTEIL}}")
+    _prepare_allocation_markers(sheet)
 
     rows = sheet.findall("table:table-row", NS)
     payment_header = _find_row_containing(rows, "Betrag")
@@ -868,6 +1082,8 @@ def render_settlement_template(
         if marker == "{{OBJEKT}}":
             _apply_object_row_style(root, row)
 
+    allocation_references = _render_allocation_keys(sheet, line_items)
+
     cost_row, _ = _find_marker(sheet, "{{KOSTENART}}")
     total_row, annual_total_column = _find_marker(sheet, "{{SUMME_JAHRESKOSTEN}}")
     _, tenant_total_column = _find_marker(sheet, "{{SUMME_MIETERANTEIL}}")
@@ -880,6 +1096,9 @@ def render_settlement_template(
     tenant_share_column = _find_marker_in_row(prototype, "{{MIETERANTEIL}}")
     cost_label_column = _find_marker_in_row(prototype, "{{KOSTENART}}")
     consumption_column = _find_marker_in_row(prototype, "{{VERBRAUCH}}")
+    allocation_reference_column = _find_optional_marker_in_row(
+        prototype, "{{UMLAGE_REF}}"
+    )
     position_row = _find_position_prototype_row(sheet, cost_row, total_row)
     if position_row is None:
         position_prototype = _position_prototype_from_cost(root, prototype)
@@ -894,6 +1113,9 @@ def render_settlement_template(
     )
     position_consumption_column = _find_marker_in_row(
         position_prototype, "{{POSITION_VERBRAUCH}}"
+    )
+    position_allocation_reference_column = _find_optional_marker_in_row(
+        position_prototype, "{{POSITION_UMLAGE_REF}}"
     )
     for obsolete_row in rows[cost_index:total_index]:
         sheet.remove(obsolete_row)
@@ -950,6 +1172,18 @@ def render_settlement_template(
         if consumption_value is not None:
             usage = f"{_format_decimal(consumption_value)} {item.get('consumption_unit') or ''}".strip()
         _set_cell(row, row_consumption_column, usage)
+        row_allocation_reference_column = (
+            position_allocation_reference_column
+            if subposition
+            else allocation_reference_column
+        )
+        if row_allocation_reference_column is not None:
+            references = allocation_references.get(id(item), [])
+            _set_cell(
+                row,
+                row_allocation_reference_column,
+                ", ".join(str(reference) for reference in references),
+            )
         sheet.insert(cost_child_index + inserted_row_count, row)
         inserted_row_count += 1
 
@@ -995,6 +1229,19 @@ def render_settlement_template(
             ),
         )
         _set_cell(category_row, consumption_column, "")
+        if allocation_reference_column is not None:
+            category_references = sorted(
+                {
+                    reference
+                    for item in category_items
+                    for reference in allocation_references.get(id(item), [])
+                }
+            )
+            _set_cell(
+                category_row,
+                allocation_reference_column,
+                ", ".join(str(reference) for reference in category_references),
+            )
         sheet.insert(cost_child_index + inserted_row_count, category_row)
         inserted_row_count += 1
         for item in category_items:

@@ -31,6 +31,13 @@ CELL_TAGS = {
 }
 
 
+def _cell_text(cell: ET.Element) -> str:
+    return "\n".join(
+        "".join(paragraph.itertext())
+        for paragraph in cell.findall(f"{{{TEXT_NS}}}p")
+    )
+
+
 def _template_bytes() -> bytes:
     return (
         resources.files("src.easyprent_accounting")
@@ -477,6 +484,101 @@ class OdsTemplateTests(unittest.TestCase):
                 "start",
             )
 
+    def test_render_lists_and_references_allocation_keys(self) -> None:
+        document = _render(
+            prepare_settlement_template_bytes(
+                Path("templates/utility_settlement.ods").read_bytes()
+            ),
+            line_items=[
+                {
+                    "label": "Hausreinigung",
+                    "allocation_method": "occupants",
+                    "allocation_kind": "occupants",
+                    "period_amount": "300.00",
+                    "basis_total": "3",
+                    "basis_value": "1",
+                    "share": "100.00",
+                    "allocation_periods": [
+                        {
+                            "period_start": "2026-01-01",
+                            "period_end": "2026-12-31",
+                        }
+                    ],
+                },
+                {
+                    "label": "Grundsteuer",
+                    "allocation_method": "area",
+                    "allocation_kind": "area",
+                    "period_amount": "324.00",
+                    "basis_total": "100",
+                    "basis_value": "32.4",
+                    "share": "104.98",
+                    "allocation_periods": [
+                        {
+                            "period_start": "2026-01-01",
+                            "period_end": "2026-12-31",
+                        }
+                    ],
+                },
+                {
+                    "label": "Wohnungswartung",
+                    "allocation_method": "unit_count",
+                    "allocation_kind": "direct",
+                    "period_amount": "50.00",
+                    "basis_total": "1",
+                    "basis_value": "1",
+                    "share": "50.00",
+                    "allocation_periods": [
+                        {
+                            "period_start": "2026-01-01",
+                            "period_end": "2026-12-31",
+                        }
+                    ],
+                },
+                {
+                    "label": "Wasser",
+                    "allocation_method": "occupants",
+                    "allocation_kind": "consumption",
+                    "charge_type": "consumption",
+                    "period_amount": "45.02",
+                    "basis_total": "3",
+                    "basis_value": "1",
+                    "share": "45.02",
+                    "allocation_periods": [
+                        {
+                            "period_start": "2026-01-01",
+                            "period_end": "2026-12-31",
+                        }
+                    ],
+                },
+            ],
+            allocated_costs="300.00",
+        )
+
+        with ZipFile(BytesIO(document)) as archive:
+            root = ET.fromstring(archive.read("content.xml"))
+        row_texts = [
+            " | ".join(
+                _cell_text(cell)
+                for cell in row
+                if cell.tag in CELL_TAGS
+            )
+            for row in root.findall(f".//{{{TABLE_NS}}}table-row")
+        ]
+
+        expected_allocation_rows = (
+            "1 | Person |  | 01.01.2026 – 31.12.2026 | 365 |  | 3 | 1",
+            "2 | Flächenanteil |  | 01.01.2026 – 31.12.2026 | 365 |  | 100 % | 32,4 %",
+            "3 | Direkt |  | 01.01.2026 – 31.12.2026 | 365 |  |  | ",
+            "4 | Verbrauchsabhängig |  | 01.01.2026 – 31.12.2026 | 365 |  |  | ",
+        )
+        for expected in expected_allocation_rows:
+            self.assertTrue(any(text.startswith(expected) for text in row_texts))
+        self.assertTrue(any(text.startswith("Hausreinigung |  | 300,00 € |  | 1 |") for text in row_texts))
+        self.assertTrue(any(text.startswith("Grundsteuer |  | 324,00 € |  | 2 |") for text in row_texts))
+        self.assertTrue(any(text.startswith("Wohnungswartung |  | 50,00 € |  | 3 |") for text in row_texts))
+        self.assertTrue(any(text.startswith("Wasser |  | 45,02 € |  | 4 |") for text in row_texts))
+
     def test_render_lists_each_advance_payment_in_the_template(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             template_path = Path(directory) / "template.ods"
@@ -568,7 +670,7 @@ class OdsTemplateTests(unittest.TestCase):
             if cell.get(f"{{{TABLE_NS}}}formula")
         }
         self.assertTrue(
-            any(re.fullmatch(r"of:=SUM\(\[\.E\d+:\.E\d+\]\)", formula) for formula in formulas)
+            any(re.fullmatch(r"of:=SUM\(\[\.F\d+:\.F\d+\]\)", formula) for formula in formulas)
         )
         self.assertTrue(
             any(re.fullmatch(r"of:=SUM\(\[\.C\d+:\.C\d+\]\)", formula) for formula in formulas)
@@ -634,10 +736,10 @@ class OdsTemplateTests(unittest.TestCase):
         self.assertEqual(
             [row_text(row).split("  ", 1)[0] for row in cost_rows],
             [
-                "Heizung 400,00 € 130,00 €",
-                "Grundkosten 100,00 € 40,00 €",
-                "Verbrauch WE 206 300,00 € 90,00 € 123,457 kWh",
-                "Grundsteuer 200,00 € 50,00 €",
+                "Heizung 400,00 € 1 130,00 €",
+                "Grundkosten 100,00 € 1 40,00 €",
+                "Verbrauch WE 206 300,00 € 1 90,00 € 123,457 kWh",
+                "Grundsteuer 200,00 € 1 50,00 €",
             ],
         )
         heating_row_number = rows.index(cost_rows[0]) + 1
@@ -650,8 +752,8 @@ class OdsTemplateTests(unittest.TestCase):
             f"of:=SUM([.D{first_position_row_number}:.D{second_position_row_number}])",
         )
         self.assertEqual(
-            heating_cells[4].get(f"{{{TABLE_NS}}}formula"),
-            f"of:=SUM([.F{first_position_row_number}:.F{second_position_row_number}])",
+            heating_cells[5].get(f"{{{TABLE_NS}}}formula"),
+            f"of:=SUM([.G{first_position_row_number}:.G{second_position_row_number}])",
         )
         self.assertEqual(row_text(cost_rows[0]).endswith("130,00 €"), True)
         total_row = next(
@@ -663,11 +765,11 @@ class OdsTemplateTests(unittest.TestCase):
             f"of:=SUM([.C{heating_row_number}];[.C{tax_row_number}])",
         )
         self.assertEqual(
-            total_cells[4].get(f"{{{TABLE_NS}}}formula"),
-            f"of:=SUM([.E{heating_row_number}];[.E{tax_row_number}])",
+            total_cells[5].get(f"{{{TABLE_NS}}}formula"),
+            f"of:=SUM([.F{heating_row_number}];[.F{tax_row_number}])",
         )
         self.assertEqual(total_cells[2].get(f"{{{OFFICE_NS}}}value"), "600.00")
-        self.assertEqual(total_cells[4].get(f"{{{OFFICE_NS}}}value"), "180.00")
+        self.assertEqual(total_cells[5].get(f"{{{OFFICE_NS}}}value"), "180.00")
 
     def test_single_differing_position_gets_category_and_child_row(self) -> None:
         document = _render(
@@ -743,8 +845,10 @@ class OdsTemplateTests(unittest.TestCase):
             if style.get(f"{{{STYLE_NS}}}name") == "roEasyObject"
         )
         self.assertIsNotNone(row_properties)
+        self.assertIsNone(row_properties.get(f"{{{STYLE_NS}}}row-height"))
         self.assertEqual(
-            row_properties.get(f"{{{STYLE_NS}}}row-height"), "0.8in"
+            row_properties.get(f"{{{STYLE_NS}}}use-optimal-row-height"),
+            "true",
         )
 
 

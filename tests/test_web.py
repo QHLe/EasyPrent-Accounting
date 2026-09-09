@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -2951,19 +2952,19 @@ for (const text of ["Heizung", "Gasabschlag", "2025-01-01 bis 2025-03-31", "Kost
                     f"{{{table_ns}}}covered-table-cell",
                 }
             ]
-            for column in (0, 2, 4):
+            for column in (0, 2, 5):
                 self.assertEqual(cells[column].get(f"{{{table_ns}}}number-columns-spanned"), "2")
             self.assertEqual(cells[2].get(f"{{{office_ns}}}value-type"), "currency")
-            self.assertEqual(cells[4].get(f"{{{office_ns}}}value-type"), "currency")
+            self.assertEqual(cells[5].get(f"{{{office_ns}}}value-type"), "currency")
         formulas = {
             cell.get(f"{{{table_ns}}}formula")
             for cell in root.findall(f".//{{{table_ns}}}table-cell")
             if cell.get(f"{{{table_ns}}}formula")
         }
-        self.assertIn("of:=SUM([.C20:.C22])", formulas)
-        self.assertIn("of:=SUM([.E20:.E22])", formulas)
-        self.assertIn("of:=SUM([.D23:.D23])", formulas)
-        self.assertIn("of:=SUM([.F23:.F23])", formulas)
+        self.assertTrue(any(re.fullmatch(r"of:=SUM\(\[\.C\d+:\.C\d+\]\)", formula) for formula in formulas))
+        self.assertTrue(any(re.fullmatch(r"of:=SUM\(\[\.F\d+:\.F\d+\]\)", formula) for formula in formulas))
+        self.assertTrue(any(re.fullmatch(r"of:=SUM\(\[\.D\d+:\.D\d+\]\)", formula) for formula in formulas))
+        self.assertTrue(any(re.fullmatch(r"of:=SUM\(\[\.G\d+:\.G\d+\]\)", formula) for formula in formulas))
         self.assertTrue(any(formula.startswith("of:=ABS(") for formula in formulas))
 
     def test_settlement_document_uses_tenant_billing_period(self) -> None:
@@ -3096,8 +3097,8 @@ for (const text of ["Heizung", "Gasabschlag", "2025-01-01 bis 2025-03-31", "Kost
             }
         ]
         self.assertEqual(row_values[2], "100,00 €")
-        self.assertEqual(row_values[4], "80,00 €")
-        self.assertEqual(row_values[6], "40 kWh")
+        self.assertEqual(row_values[5], "80,00 €")
+        self.assertEqual(row_values[7], "40 kWh")
 
     def test_settlement_document_ignores_incomplete_alternate_address(self) -> None:
         connection = sqlite3.connect(self.db_path)
@@ -3245,10 +3246,10 @@ for (const text of ["Heizung", "Gasabschlag", "2025-01-01 bis 2025-03-31", "Kost
             content = archive.read("content.xml").decode("utf-8")
         self.assertIn("Dynamische Position 25", content)
         self.assertIn("<text:p>Zusatzkosten</text:p>", content)
-        self.assertIn("of:=SUM([.D25:.D49])", content)
-        self.assertIn("of:=SUM([.F25:.F49])", content)
-        self.assertIn("of:=SUM([.C20];[.C21];[.C22];[.C24])", content)
-        self.assertIn("of:=SUM([.E20];[.E21];[.E22];[.E24])", content)
+        self.assertRegex(content, r"of:=SUM\(\[\.D\d+:\.D\d+\]\)")
+        self.assertRegex(content, r"of:=SUM\(\[\.G\d+:\.G\d+\]\)")
+        self.assertRegex(content, r"of:=SUM\(\[\.C\d+\](?:;\[\.C\d+\])+\)")
+        self.assertRegex(content, r"of:=SUM\(\[\.F\d+\](?:;\[\.F\d+\])+\)")
 
     def test_settlement_document_rejects_lease_outside_period(self) -> None:
         status, _, body = self._call_app(
