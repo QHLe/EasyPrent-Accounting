@@ -1409,7 +1409,7 @@ class ExpenseServiceTests(unittest.TestCase):
                 "object_id": 1,
                 "label": "Wohnungswartung",
                 "amount": "120.00",
-                "allocation_method": "unit_count",
+                "allocation_method": "occupants",
                 "recurrence": "one_time",
                 "booking_date": "2025-04-02",
             },
@@ -1455,8 +1455,8 @@ class ExpenseServiceTests(unittest.TestCase):
             for line_item in result["line_items"]
         }
         self.assertEqual(allocation_kinds["Gebäudereinigung"], "unit_count")
-        self.assertEqual(allocation_kinds["Wohnungswartung"], "direct")
-        self.assertEqual(allocation_kinds["Zimmeranstrich"], "direct")
+        self.assertEqual(allocation_kinds["Wohnungswartung"], "occupants")
+        self.assertEqual(allocation_kinds["Zimmeranstrich"], "unit_count")
 
     def test_list_overview_includes_meters_with_latest_reading(self) -> None:
         meter = create_meter(

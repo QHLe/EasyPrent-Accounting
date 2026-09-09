@@ -3807,8 +3807,6 @@ def settlement_for_period(
             line_item["allocation_kind"] = (
                 "consumption"
                 if row["charge_type"] == "consumption"
-                else "direct"
-                if row["object_type"] in {"unit", "room"}
                 else row["allocation_method"]
             )
             tenant_expense_overlap = overlap_period(

@@ -1235,18 +1235,7 @@ def render_settlement_template(
         )
         _set_cell(category_row, consumption_column, "")
         if allocation_reference_column is not None:
-            category_references = sorted(
-                {
-                    reference
-                    for item in category_items
-                    for reference in allocation_references.get(id(item), [])
-                }
-            )
-            _set_cell(
-                category_row,
-                allocation_reference_column,
-                ", ".join(str(reference) for reference in category_references),
-            )
+            _set_cell(category_row, allocation_reference_column, "")
         sheet.insert(cost_child_index + inserted_row_count, category_row)
         inserted_row_count += 1
         for item in category_items:

@@ -699,12 +699,17 @@ class OdsTemplateTests(unittest.TestCase):
                 {
                     "expense_category": "Heizung",
                     "label": "Grundkosten",
+                    "allocation_method": "occupants",
+                    "basis_total": "3",
+                    "basis_value": "1",
                     "period_amount": "100.00",
                     "share": "40.00",
                 },
                 {
                     "expense_category": "heizung",
                     "label": "Verbrauch WE 206",
+                    "allocation_method": "occupants",
+                    "charge_type": "consumption",
                     "period_amount": "300.00",
                     "share": "90.00",
                     "tenant_consumption_value": "123.4567",
@@ -713,6 +718,9 @@ class OdsTemplateTests(unittest.TestCase):
                 {
                     "expense_category": "Grundsteuer",
                     "label": "Grundsteuer",
+                    "allocation_method": "area",
+                    "basis_total": "100",
+                    "basis_value": "32.4",
                     "period_amount": "200.00",
                     "share": "50.00",
                 },
@@ -738,12 +746,12 @@ class OdsTemplateTests(unittest.TestCase):
             )
         ]
         self.assertEqual(
-            [row_text(row).split("  ", 1)[0] for row in cost_rows],
+            [" ".join(row_text(row).split()) for row in cost_rows],
             [
-                "Heizung 400,00 € 1 130,00 €",
+                "Heizung 400,00 € 130,00 €",
                 "Grundkosten 100,00 € 1 40,00 €",
-                "Verbrauch WE 206 300,00 € 1 90,00 € 123,457 kWh",
-                "Grundsteuer 200,00 € 1 50,00 €",
+                "Verbrauch WE 206 300,00 € 2 90,00 € 123,457 kWh",
+                "Grundsteuer 200,00 € 3 50,00 €",
             ],
         )
         heating_row_number = rows.index(cost_rows[0]) + 1
