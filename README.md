@@ -129,3 +129,11 @@ eingetragen, da das Datenmodell derzeit keine Organisationsanschrift enthält.
 - Mehrbenutzerfähigkeit wird fachlich über Organisationen, Nutzer und Rollen vorbereitet.
 - Authentifizierung ist noch nicht implementiert.
 - Die Abschreibungslogik ist als fachlicher Startpunkt modelliert und rechnet aktuell linear und monatsgenau.
+
+## Qualitätsprüfungen
+
+Lokal läuft derselbe Befehl wie in CI:
+
+```bash
+python3 scripts/quality.py
+```
