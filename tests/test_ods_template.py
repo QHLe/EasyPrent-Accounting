@@ -571,7 +571,7 @@ class OdsTemplateTests(unittest.TestCase):
         ]
 
         expected_allocation_rows = (
-            "1 | Person |  | 01.01.2026 – 31.12.2026 | 365 |  | 3 | 1",
+            "1 | Personen |  | 01.01.2026 – 31.12.2026 | 365 |  | 3 | 1",
             "2 | Flächenanteil |  | 01.01.2026 – 31.12.2026 | 365 |  | 100 % | 32,4 %",
             "3 | Direkt |  | 01.01.2026 – 31.12.2026 | 365 |  |  | ",
             "4 | Verbrauchsabhängig |  | 01.01.2026 – 31.12.2026 | 365 |  |  | ",

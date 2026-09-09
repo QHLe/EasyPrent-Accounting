@@ -233,7 +233,7 @@ def _render_allocation_keys(
     reference_by_signature: dict[tuple[str, str, str, str, str], int] = {}
 
     labels = {
-        "occupants": "Person",
+        "occupants": "Personen",
         "area": "Flächenanteil",
         "direct": "Direkt",
         "consumption": "Verbrauchsabhängig",
