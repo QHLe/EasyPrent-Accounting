@@ -670,7 +670,7 @@ def _read_template_bytes(template_path: Path | str | None) -> bytes:
             raise ValueError(f"configured settlement template does not exist: {path}")
         return path.read_bytes()
 
-    checkout_template = Path(__file__).parents[2] / "templates" / _TEMPLATE_FILENAME
+    checkout_template = Path(__file__).parents[1] / "templates" / _TEMPLATE_FILENAME
     if checkout_template.is_file():
         return checkout_template.read_bytes()
 

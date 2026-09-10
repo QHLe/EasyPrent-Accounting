@@ -15,7 +15,7 @@ DEFAULT_PORT = 8020
 
 def run_server(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT) -> None:
     config = load_config(os.environ)
-    set_config(config)
+    set_global_config(config)
     initialize_database(config.db_path)
     with make_server(host, port, application) as httpd:
         print(f"EasyPrent Accounting laeuft auf http://{host}:{port}")

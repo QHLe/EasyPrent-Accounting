@@ -28,8 +28,9 @@ class BrowserSmokeTest(unittest.TestCase):
             raise unittest.SkipTest("playwright is required for browser smoke tests")
 
     def setUp(self) -> None:
+        from tests.support import temporary_database, mocked_global_config
         self.database = self.enterContext(temporary_database(seeded=True))
-        set_global_config(load_config({"EASYPRENT_DB_PATH": str(self.database.path)}))
+        self.enterContext(mocked_global_config(load_config({"EASYPRENT_DB_PATH": str(self.database.path)})))
 
         self.server = make_server("127.0.0.1", 0, application)
         self.port = self.server.server_port
@@ -40,7 +41,6 @@ class BrowserSmokeTest(unittest.TestCase):
         self.server.shutdown()
         self.server.server_close()
         self.server_thread.join()
-        set_global_config(None)
 
     def test_offline_start_clean_console_and_navigation(self) -> None:
         """Verify offline start: no external requests, clean console, and clickable main navigation."""

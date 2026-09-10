@@ -17,8 +17,8 @@ from .server import DEFAULT_PORT
 SYSTEMD_SERVICE_NAME = "easy-prent.service"
 
 
-def resolve_project_root(config=None) -> Path:
-    cfg = config if config is not None else get_global_config()
+def resolve_project_root() -> Path:
+    cfg = get_global_config()
     env_root = cfg.project_root
     if env_root:
         return Path(env_root).resolve()

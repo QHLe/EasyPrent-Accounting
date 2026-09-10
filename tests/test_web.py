@@ -23,12 +23,9 @@ class WebApiAndUiTests(unittest.TestCase):
     def setUp(self) -> None:
         self.database = self.enterContext(temporary_database(seeded=True))
         self.db_path = str(self.database.path)
-        from easyprent_accounting.config import load_config, set_global_config
-        set_global_config(load_config({"EASYPRENT_DB_PATH": self.db_path}))
-
-    def tearDown(self) -> None:
-        
-        set_global_config(None)
+        from easyprent_accounting.config import load_config
+        from tests.support import mocked_global_config
+        self.enterContext(mocked_global_config(load_config({"EASYPRENT_DB_PATH": self.db_path})))
 
 
     def _call_app(
