@@ -6,7 +6,7 @@ After=network.target
 Type=simple
 User=root
 WorkingDirectory=/root/EasyPrent-Accounting
-ExecStart=/root/EasyPrent-Accounting/.venv/bin/python -m src.easyprent_accounting.server
+ExecStart=/root/EasyPrent-Accounting/.venv/bin/python -m easyprent_accounting.server
 Restart=on-failure
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1

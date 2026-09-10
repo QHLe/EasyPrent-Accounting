@@ -2,7 +2,7 @@
 
 ## Verzeichnisse
 
-- `src/easyprent_accounting/`
+- `easyprent_accounting/`
   Python-Anwendung mit Webserver, Datenbankzugriff, Domänenlogik und HTML-Dashboard
 - `tests/`
   Unit- und API-Tests für Berechnung, Web-Anwendung und ODS-Ausgabe

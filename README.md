@@ -12,23 +12,23 @@ Die erste Version deckt vier Kernbereiche ab:
 
 ```bash
 pip install .
-easy-rem start
+easyprent-accounting start
 ```
 
 Oder direkt aus dem Checkout:
 
 ```bash
-./easy-rem start
+easyprent-accounting start
 ```
 
 Danach ist die Anwendung unter `http://localhost:8020` erreichbar.
 
 Verfügbare Befehle für einen direkt aus dem Checkout gestarteten Server:
 
-- `./easy-rem start`
-- `./easy-rem stop`
-- `./easy-rem restart`
-- `./easy-rem update`
+- `easyprent-accounting start`
+- `easyprent-accounting stop`
+- `easyprent-accounting restart`
+- `easyprent-accounting update`
 
 `update` führt `git pull --ff-only` aus, installiert bei Bedarf Node- und
 Python-Abhängigkeiten neu und startet einen laufenden Server anschließend
@@ -47,7 +47,7 @@ systemctl restart easy-prent.service
 journalctl -u easy-prent.service -n 100 --no-pager
 ```
 
-`./easy-rem update` erkennt einen laufenden systemd-Dienst und startet ihn nach
+`easyprent-accounting update` erkennt einen laufenden systemd-Dienst und startet ihn nach
 dem Update über systemd neu.
 
 ## Tests

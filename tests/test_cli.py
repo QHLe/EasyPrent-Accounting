@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from src.easyprent_accounting import cli
+from easyprent_accounting import cli
 
 
 class EasyPrentCliTests(unittest.TestCase):
@@ -16,12 +16,16 @@ class EasyPrentCliTests(unittest.TestCase):
         self.pid_file = self.runtime_dir / "server.pid"
         self.log_file = self.runtime_dir / "server.log"
         self.original_cwd = Path.cwd()
-        self.cwd_patch = mock.patch("src.easyprent_accounting.cli.Path.cwd", return_value=self.project_root)
+        self.cwd_patch = mock.patch("easyprent_accounting.cli.Path.cwd", return_value=self.project_root)
 
-        (self.project_root / "src" / "easyprent_accounting").mkdir(parents=True)
+        (self.project_root / "easyprent_accounting").mkdir(parents=True)
         self.cwd_patch.start()
+        
+        from easyprent_accounting.config import load_config
+        cli._set_config(load_config({"EASYPRENT_PROJECT_ROOT": str(self.project_root)}))
 
     def tearDown(self) -> None:
+        cli._set_config(None)
         self.cwd_patch.stop()
         self.temp_dir.cleanup()
 
@@ -30,7 +34,7 @@ class EasyPrentCliTests(unittest.TestCase):
         process.poll.return_value = None
 
         with mock.patch.object(cli, "running_pid", return_value=None), mock.patch.object(
-            cli, "server_command", return_value=["python3", "-m", "src.easyprent_accounting.server"]
+            cli, "server_command", return_value=["python3", "-m", "easyprent_accounting.server"]
         ), mock.patch.object(cli.subprocess, "Popen", return_value=process) as popen_mock, mock.patch.object(
             cli.time, "sleep"
         ):
@@ -67,7 +71,7 @@ class EasyPrentCliTests(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertEqual(
             run_command_mock.call_args_list,
-            [mock.call(["git", "pull", "--ff-only"]), mock.call(["npm", "install"])],
+            [mock.call(["git", "pull", "--ff-only"]), mock.call(["npm", "ci"])],
         )
         restart_mock.assert_called_once_with()
 

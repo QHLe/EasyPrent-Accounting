@@ -7,8 +7,8 @@ from decimal import Decimal
 from types import SimpleNamespace
 from unittest import mock
 
-from src.easyprent_accounting.integrations.gnucash import GnuCashPayment, PiecashGnuCashReader
-from src.easyprent_accounting.services import (
+from easyprent_accounting.integrations.gnucash import GnuCashPayment, PiecashGnuCashReader
+from easyprent_accounting.services import (
     create_or_open_settlement_run,
     delete_lease,
     get_settlement_run_overview,

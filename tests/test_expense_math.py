@@ -4,7 +4,7 @@ from datetime import date
 from decimal import Decimal
 import unittest
 
-from src.easyprent_accounting.expense_math import (
+from easyprent_accounting.expense_math import (
     day_accurate_recurring_amount,
     meter_consumption_for_period,
     overlap_period,

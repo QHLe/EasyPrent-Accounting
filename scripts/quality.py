@@ -10,12 +10,12 @@ import sys
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-STATIC_DIRECTORY = PROJECT_ROOT / "src" / "easyprent_accounting" / "static"
+STATIC_DIRECTORY = PROJECT_ROOT / "easyprent_accounting" / "static"
 PACKAGE_IMPORTS = (
-    "src.easyprent_accounting.cli",
-    "src.easyprent_accounting.db",
-    "src.easyprent_accounting.server",
-    "src.easyprent_accounting.web",
+    "easyprent_accounting.cli",
+    "easyprent_accounting.db",
+    "easyprent_accounting.server",
+    "easyprent_accounting.web",
 )
 
 

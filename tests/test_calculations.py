@@ -4,7 +4,7 @@ import unittest
 from datetime import date
 from decimal import Decimal
 
-from src.easyprent_accounting.calculations import (
+from easyprent_accounting.calculations import (
     SettlementExpense,
     SettlementLease,
     calculate_depreciation_schedule,

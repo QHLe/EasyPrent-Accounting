@@ -10,7 +10,7 @@ import unittest
 import xml.etree.ElementTree as ET
 from zipfile import ZipFile
 
-from src.easyprent_accounting.ods_template import (
+from easyprent_accounting.ods_template import (
     prepare_settlement_template_bytes,
     render_settlement_template,
 )
@@ -40,7 +40,7 @@ def _cell_text(cell: ET.Element) -> str:
 
 def _template_bytes() -> bytes:
     return (
-        resources.files("src.easyprent_accounting")
+        resources.files("easyprent_accounting")
         .joinpath("templates")
         .joinpath("utility_settlement.ods")
         .read_bytes()

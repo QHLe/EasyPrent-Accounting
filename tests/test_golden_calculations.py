@@ -4,14 +4,14 @@ import unittest
 from datetime import date, timedelta
 from decimal import Decimal
 
-from src.easyprent_accounting.calculations import (
+from easyprent_accounting.calculations import (
     SettlementExpense,
     SettlementLease,
     calculate_settlement,
     expense_amount_for_period,
 )
-from src.easyprent_accounting.expense_math import meter_consumption_for_period
-from src.easyprent_accounting.services import create_expense, settlement_for_period
+from easyprent_accounting.expense_math import meter_consumption_for_period
+from easyprent_accounting.services import create_expense, settlement_for_period
 from tests.support import in_memory_database
 
 

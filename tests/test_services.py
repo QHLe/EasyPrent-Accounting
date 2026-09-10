@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from decimal import Decimal
 
-from src.easyprent_accounting.services import (
+from easyprent_accounting.services import (
     archive_object,
     create_building,
     create_expense,

@@ -7,13 +7,12 @@ import sys
 PROJECT_ROOT = Path(__file__).parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.easyprent_accounting.ods_template import prepare_settlement_template_bytes
+from easyprent_accounting.ods_template import prepare_settlement_template_bytes
 
 
 DEFAULT_TEMPLATE = PROJECT_ROOT / "templates" / "utility_settlement.ods"
 PACKAGED_TEMPLATE = (
     PROJECT_ROOT
-    / "src"
     / "easyprent_accounting"
     / "templates"
     / "utility_settlement.ods"

@@ -29,3 +29,4 @@ dist/
 .coverage.*
 htmlcov/
 .easyprent/
+node_modules/

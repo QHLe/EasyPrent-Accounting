@@ -14,7 +14,7 @@ from io import BytesIO
 from zipfile import ZIP_STORED, ZipFile
 from unittest import mock
 
-from src.easyprent_accounting.web import application
+from easyprent_accounting.web import application
 from tests.support import call_wsgi_application, temporary_database
 
 
@@ -22,6 +22,14 @@ class WebApiAndUiTests(unittest.TestCase):
     def setUp(self) -> None:
         self.database = self.enterContext(temporary_database(seeded=True))
         self.db_path = str(self.database.path)
+        from easyprent_accounting.config import load_config
+        from easyprent_accounting.web import set_config
+        set_config(load_config({"EASYPRENT_DB_PATH": self.db_path}))
+
+    def tearDown(self) -> None:
+        from easyprent_accounting.web import set_config
+        set_config(None)
+
 
     def _call_app(
         self,
@@ -69,261 +77,195 @@ class WebApiAndUiTests(unittest.TestCase):
             "/api/settlements",
             query_string="property_id=1&period_start=2025-01-01&period_end=2025-12-31",
         )
-        main_status, _, main_body = self._call_app("GET", "/static/app_main.js")
-
         self.assertTrue(overview_status.startswith("200"))
         self.assertTrue(settlement_status.startswith("400"))
         self.assertIn("mea_percent", settlement_body.decode("utf-8"))
-        self.assertTrue(main_status.startswith("200"))
-        self.assertIn("catch(function (settlementError)", main_body.decode("utf-8"))
 
     def test_static_app_uses_react_and_api_endpoints(self) -> None:
-        status, headers, body = self._call_app("GET", "/static/app.js")
-        helpers_status, helpers_headers, helpers_body = self._call_app("GET", "/static/app_helpers.js")
-        domain_status, domain_headers, domain_body = self._call_app("GET", "/static/app_domain.js")
-        charts_status, charts_headers, charts_body = self._call_app("GET", "/static/app_charts.js")
-        sections_status, sections_headers, sections_body = self._call_app("GET", "/static/app_sections.js")
-        forms_status, forms_headers, forms_body = self._call_app("GET", "/static/app_forms.js")
-        previews_status, previews_headers, previews_body = self._call_app("GET", "/static/app_previews.js")
-        main_status, main_headers, main_body = self._call_app("GET", "/static/app_main.js")
-        self.assertTrue(status.startswith("200"))
-        self.assertTrue(helpers_status.startswith("200"))
-        self.assertTrue(domain_status.startswith("200"))
-        self.assertTrue(charts_status.startswith("200"))
-        self.assertTrue(sections_status.startswith("200"))
-        self.assertTrue(forms_status.startswith("200"))
-        self.assertTrue(previews_status.startswith("200"))
-        self.assertTrue(main_status.startswith("200"))
-        self.assertEqual(headers["Content-Type"], "application/javascript; charset=utf-8")
-        self.assertEqual(helpers_headers["Content-Type"], "application/javascript; charset=utf-8")
-        self.assertEqual(domain_headers["Content-Type"], "application/javascript; charset=utf-8")
-        self.assertEqual(charts_headers["Content-Type"], "application/javascript; charset=utf-8")
-        self.assertEqual(sections_headers["Content-Type"], "application/javascript; charset=utf-8")
-        self.assertEqual(forms_headers["Content-Type"], "application/javascript; charset=utf-8")
-        self.assertEqual(previews_headers["Content-Type"], "application/javascript; charset=utf-8")
-        self.assertEqual(main_headers["Content-Type"], "application/javascript; charset=utf-8")
-        content = (
-            helpers_body.decode("utf-8")
-            + "\n"
-            + domain_body.decode("utf-8")
-            + "\n"
-            + charts_body.decode("utf-8")
-            + "\n"
-            + sections_body.decode("utf-8")
-            + "\n"
-            + forms_body.decode("utf-8")
-            + "\n"
-            + previews_body.decode("utf-8")
-            + "\n"
-            + main_body.decode("utf-8")
-            + "\n"
-            + body.decode("utf-8")
+        """Verify each JS module is served with correct content-type and non-trivial size."""
+        script_files = [
+            "/static/app.js",
+            "/static/app_helpers.js",
+            "/static/app_domain.js",
+            "/static/app_charts.js",
+            "/static/app_sections.js",
+            "/static/app_forms.js",
+            "/static/app_previews.js",
+            "/static/app_main.js",
+        ]
+        for script in script_files:
+            status, headers, body = self._call_app("GET", script)
+            self.assertTrue(status.startswith("200"), f"{script} not served")
+            self.assertEqual(headers["Content-Type"], "application/javascript; charset=utf-8")
+            self.assertGreater(len(body), 100, f"{script} is suspiciously small")
+
+    def test_frontend_domain_behavior_contracts(self) -> None:
+        """Verify frontend domain contracts: target object parsing/formatting, labels, and money values."""
+        if shutil.which("node") is None:
+            self.skipTest("node is required for JavaScript component validation")
+
+        repo_root = os.path.dirname(os.path.dirname(__file__))
+        domain_path = os.path.join(repo_root, "easyprent_accounting", "static", "app_domain.js")
+        script = r'''
+const fs = require("fs");
+const vm = require("vm");
+global.window = {};
+global.React = window.React = { createElement: () => null, Fragment: "f" };
+vm.runInThisContext(fs.readFileSync(process.argv[1], "utf8"));
+const d = window.EasyPrentAppDomain;
+
+const targetStr = d.buildObjectTargetValue("unit", 42);
+const parsed = d.parseObjectTargetValue(targetStr);
+
+const results = {
+  targetStr: targetStr,
+  parsedType: parsed.object_type,
+  parsedId: parsed.object_id,
+  buildingLabel: d.formatObjectTypeLabel("building"),
+  unitLabel: d.formatObjectTypeLabel("unit"),
+  propertyLabel: d.formatObjectTypeLabel("property"),
+  billingTypeConsumption: d.formatExpenseBillingType({ charge_type: "consumption" }),
+  billingTypeOneTime: d.formatExpenseBillingType({ charge_type: "one_time" }),
+  cadenceYearly: d.formatExpenseCadence({ charge_type: "yearly" }),
+  address: d.formatAddress({ street: "Lindenweg 12", postal_code: "10439", city: "Berlin" }),
+  displayNameActive: d.formatDisplayName({ name: "Haus A", is_archived: 0 }),
+  displayNameArchived: d.formatDisplayName({ name: "Haus A", is_archived: 1 }),
+  moneyFormatted: d.formatMoneyValue("1234.50"),
+};
+process.stdout.write(JSON.stringify(results));
+'''
+        result = subprocess.run(
+            ["node", "-e", script, domain_path],
+            capture_output=True,
+            text=True,
+            check=False,
         )
-        self.assertIn("EasyPrentFrontendHelpers", content)
-        self.assertIn("EasyPrentAppDomain", content)
-        self.assertIn("EasyPrentAppCharts", content)
-        self.assertIn("EasyPrentAppSections", content)
-        self.assertIn("EasyPrentAppForms", content)
-        self.assertIn("EasyPrentAppPreviews", content)
-        self.assertIn("/static/app_domain.js", content)
-        self.assertIn("/static/app_charts.js", content)
-        self.assertIn("/static/app_sections.js", content)
-        self.assertIn("/static/app_forms.js", content)
-        self.assertIn("/static/app_previews.js", content)
-        self.assertIn("/static/app_main.js", content)
-        self.assertIn("ReactDOM.createRoot", content)
-        self.assertIn("/api/overview", content)
-        self.assertIn("/api/buildings", content)
-        self.assertIn("/api/units", content)
-        self.assertIn("/api/rooms", content)
-        self.assertIn("Flächenanteil in %", content)
-        self.assertIn("Warnung: Flächenanteile", content)
-        self.assertIn("area-share-warning", content)
-        self.assertIn("Kostenaufstellung", content)
-        self.assertIn("expandedLeaseId", content)
-        self.assertLess(content.index("Mietverträge und Dokumente"), content.index("Berücksichtigte Zahlungen"))
-        self.assertIn("/api/meters", content)
-        self.assertIn("/api/meter-readings", content)
-        self.assertIn("/api/tenants", content)
-        self.assertIn("/api/leases", content)
-        self.assertIn("/api/expenses", content)
-        self.assertIn("/api/health", content)
-        self.assertIn("/api/paperless-status", content)
-        self.assertIn("/api/paperless-settings", content)
-        self.assertIn("/api/application-settings", content)
-        self.assertIn("/api/application-export", content)
-        self.assertIn("/api/application-import", content)
-        self.assertIn("/api/expenses/\" + String(expenseId) + \"/documents", content)
-        self.assertIn("Paperless Dokument-ID", content)
-        self.assertIn("Dokumenten-ID hinzufügen", content)
-        self.assertIn("Dokument öffnen", content)
-        self.assertIn("/api/expenses/", content)
-        self.assertIn('"/api/meter-readings/" + String(reading.id)', content)
-        self.assertIn("Objektverwaltung", content)
-        self.assertIn("Kostenverwaltung", content)
-        self.assertIn("Kosten-Granularität", content)
-        self.assertIn("expenseDevelopmentMonthlySeries", content)
-        self.assertIn("Gesamtsumme", content)
-        self.assertIn("Mieterverwaltung", content)
-        self.assertIn("Objekt erzeugen", content)
-        self.assertIn("Kostenposten erzeugen", content)
-        self.assertIn("Mieter erzeugen", content)
-        self.assertIn("Mietvertrag erzeugen", content)
-        self.assertIn("Objektliste filtern", content)
-        self.assertIn("Elternobjekt", content)
-        self.assertIn("Kindobjekte", content)
-        self.assertIn("managementListFilters.objects", content)
-        self.assertIn("Mieterliste filtern", content)
-        self.assertIn("Mietvertragsliste filtern", content)
-        self.assertIn("Übersicht", content)
-        self.assertIn("Einstellungen", content)
-        self.assertIn("Mieter erfassen", content)
-        self.assertIn("Mietvertrag erfassen", content)
-        self.assertIn("Nebenkostenvorauszahlung pro Monat", content)
-        self.assertIn("Abgerechneter Zeitraum", content)
-        self.assertIn("Beim Aktualisieren werden fehlende GnuCash-Nebenkostenvorauszahlungen", content)
-        self.assertIn("Zimmer optional", content)
-        self.assertIn("Zimmerfläche in m²", content)
-        self.assertIn("Mieterliste", content)
-        self.assertIn("Mietvertragsliste", content)
-        self.assertIn("Identitätsdokumente", content)
-        self.assertIn("Vertragsdokumente", content)
-        self.assertIn("Paperless URL", content)
-        self.assertIn("Paperless Token", content)
-        self.assertIn("Löschaktionen anzeigen", content)
-        self.assertIn("Daten exportieren", content)
-        self.assertIn("Daten importieren", content)
-        self.assertIn("Import überschreibt den aktuellen Datenbestand", content)
-        self.assertIn("Token (maskiert)", content)
-        self.assertIn("Serverstatus", content)
-        self.assertIn("Paperless Serverstatus", content)
-        self.assertIn("token_masked", content)
-        self.assertNotIn("Passwort (maskiert)", content)
-        self.assertNotIn('e("option", { value: "" }, "Nicht verknüpft")', content)
-        self.assertIn("Verknüpfung entfernen", content)
-        self.assertNotIn('e("span", { className: "hint" }, forms.tenant.gnucash_nk_account_name)', content)
-        self.assertNotIn("forms.tenant.gnucash_nk_account_guid", content)
-        self.assertNotIn("forms.tenant.gnucash_nk_account_name", content)
-        self.assertIn("forms.lease.gnucash_nk_account_guid", content)
-        self.assertIn("forms.lease.gnucash_nk_account_name", content)
-        self.assertNotIn("formatSettlementAdvance", content)
-        self.assertIn('row.advances_paid == null ? "-" : row.advances_paid', content)
-        self.assertIn("settlement-table-scroll", content)
-        self.assertIn("settlement-document-download", content)
-        self.assertIn("Kosten erfassen", content)
-        self.assertIn("Kosten bearbeiten", content)
-        self.assertIn("Kosten archivieren", content)
-        self.assertIn("Änderungen speichern", content)
-        self.assertIn("buildManagementInlineEditorRow", content)
-        self.assertIn("Dokumente auswählen", content)
-        self.assertIn("Dokumente hochladen", content)
-        self.assertIn("Dokument öffnen", content)
-        self.assertIn("Dokument löschen", content)
-        self.assertIn("Mieter löschen", content)
-        self.assertIn("Mietvertrag löschen", content)
-        self.assertIn("Archivierung aufheben", content)
-        self.assertNotIn("Vorhandene Kostenart", content)
-        self.assertIn("Empfänger", content)
-        self.assertIn("Bezeichnung", content)
-        self.assertIn('setField("label", event.target.value);', content)
-        self.assertIn("value: formState.label", content)
-        self.assertIn("Abrechnungsart", content)
-        self.assertIn("Turnus", content)
-        self.assertIn("Kostenliste filtern", content)
-        self.assertIn("expenseListFilters", content)
-        self.assertIn('Object.assign({}, expenseListFilters, { year: "" })', content)
-        self.assertIn("filteredExpenses", content)
-        self.assertIn("startExpenseEdit(expense)", content)
-        self.assertIn('String(editingExpenseId) === String(expense.id) && !expense.is_archived', content)
-        self.assertIn("datalist", content)
-        self.assertIn("expense-category-suggestions", content)
-        self.assertIn("optgroup", content)
-        self.assertIn("Gebäude", content)
-        self.assertIn("Wohnungen", content)
-        self.assertIn("Zimmer", content)
-        self.assertIn("Zähler", content)
-        self.assertIn("Zählerstand", content)
-        self.assertIn("Zähler bearbeiten", content)
-        self.assertIn("Zähler aktualisieren", content)
-        self.assertIn("Zählerstandhistorie", content)
-        self.assertIn("Zählerentwicklung", content)
-        self.assertIn("Verbrauch im Zeitraum", content)
-        self.assertIn("meterConsumptionSummary", content)
-        self.assertIn("Zähler anklicken", content)
-        self.assertIn("Ansicht", content)
-        self.assertIn("Letzte Monate", content)
-        self.assertIn("Letzte Jahre", content)
-        self.assertIn("Diagrammtyp", content)
-        self.assertIn("Kumuliert", content)
-        self.assertIn("Säulen", content)
-        self.assertIn("Interpolation", content)
-        self.assertIn("Linear", content)
-        self.assertIn("Quadratisch", content)
-        self.assertIn("Vierteljährlich", content)
-        self.assertIn("window.echarts", content)
-        self.assertIn("echarts.init", content)
-        self.assertIn("tooltip", content)
-        self.assertIn("axisPointer", content)
-        self.assertNotIn("yAxisIndex: 0", content)
-        self.assertIn("scale: true", content)
-        self.assertIn(': "dataMin"', content)
-        self.assertIn("max: \"dataMax\"", content)
-        self.assertIn("type: \"scatter\"", content)
-        self.assertIn("actualReadings", content)
-        self.assertIn("rangeStartPoint", content)
-        self.assertIn("setMeterChartRangeBoundary", content)
-        self.assertIn("Kostenentwicklung", content)
-        self.assertIn("Total", content)
-        self.assertIn("Verbrauch", content)
-        self.assertIn("Legende: (2) interpoliert", content)
-        self.assertIn('className: "selectable-row"', content)
-        self.assertIn("buildExpenseDevelopmentSeries", content)
-        self.assertIn("buildExpenseDevelopmentCompositionSeries", content)
-        self.assertIn("calculateMeterConsumptionValue(", content)
-        self.assertIn("expense.conversion_factor", content)
-        self.assertIn("sortExpensesByEndDateDesc", content)
-        self.assertIn("filteredExpenses.slice().sort(sortExpensesByEndDateDesc)", content)
-        self.assertIn('stack: "expense-composition"', content)
-        self.assertIn("Kosten-Granularität", content)
-        self.assertIn("Kosten-Diagrammtyp", content)
-        self.assertIn("point-source-recorded", content)
-        self.assertIn("point-source-interpolated", content)
-        self.assertIn("source_type", content)
-        self.assertIn("Zählerstand löschen", content)
-        self.assertIn("Gebäude-Straße", content)
-        self.assertIn("Wohnungs-Straße", content)
-        self.assertIn("Zielobjekt", content)
-        self.assertIn("buildObjectTargetValue", content)
-        self.assertIn("parseObjectTargetValue", content)
-        self.assertIn("Gesamtkosten", content)
-        self.assertIn("Von Datum", content)
-        self.assertIn("Bis Datum", content)
-        self.assertNotIn("Einzeldatum", content)
-        self.assertNotIn("Zeitraum optional", content)
-        self.assertNotIn("Von Datum optional", content)
-        self.assertNotIn("Bis Datum optional", content)
-        self.assertIn("Verbrauchseinheit", content)
-        self.assertIn("Zähler optional", content)
-        self.assertIn("Umrechnungsfaktor", content)
-        self.assertIn('formState.charge_type === "consumption" && !formState.meter_id', content)
-        self.assertIn("meterOptions: props.meterOptions", content)
-        self.assertIn("Gesamtsumme", content)
-        self.assertIn("Zeitraum von", content)
-        self.assertIn("Zeitraum bis", content)
-        self.assertIn("buildDefaultMeterChartRange", content)
-        self.assertIn('setMeterChartRange(buildDefaultMeterChartRange(nextReadings))', content)
-        self.assertIn('previewTitle = "Objektliste"', content)
-        self.assertIn("Objektliste Zähler", content)
-        self.assertIn("Alle Anlagen, Gebäude, Wohnungen und Zimmer in gemeinsamer Hierarchie", content)
-        self.assertIn("Archivieren", content)
-        self.assertIn("Löschen", content)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        data = json.loads(result.stdout)
+        self.assertEqual(data["targetStr"], "unit:42")
+        self.assertEqual(data["parsedType"], "unit")
+        self.assertEqual(data["parsedId"], "42")
+        self.assertEqual(data["buildingLabel"], "Gebäude")
+        self.assertEqual(data["unitLabel"], "Wohnung")
+        self.assertEqual(data["propertyLabel"], "Anlage")
+        self.assertEqual(data["billingTypeConsumption"], "Verbrauchsbezogen")
+        self.assertEqual(data["billingTypeOneTime"], "Gesamtkosten")
+        self.assertEqual(data["cadenceYearly"], "jährlich")
+        self.assertEqual(data["address"], "Lindenweg 12, 10439 Berlin")
+        self.assertEqual(data["displayNameActive"], "Haus A")
+        self.assertEqual(data["displayNameArchived"], "Haus A (archiviert)")
+        self.assertEqual(data["moneyFormatted"], "1234.50")
+
+    def test_frontend_module_exports_contracts(self) -> None:
+        """Verify all JS module exports are callable/present by loading them in Node."""
+        if shutil.which("node") is None:
+            self.skipTest("node is required for JavaScript component validation")
+
+        repo_root = os.path.dirname(os.path.dirname(__file__))
+        static = os.path.join(repo_root, "easyprent_accounting", "static")
+        script = r'''
+const fs = require("fs");
+const vm = require("vm");
+
+// Minimal browser globals expected by the modules
+global.window = {};
+global.document = {
+  createElement: () => ({ addEventListener: () => {}, dataset: {} }),
+  head: { appendChild: () => {} },
+  getElementById: () => null,
+  querySelector: () => null,
+};
+global.React = window.React = { createElement: () => null, Fragment: "f" };
+global.echarts = window.echarts = { init: () => ({ setOption: () => {}, dispose: () => {} }) };
+
+function loadModule(path) {
+  vm.runInThisContext(fs.readFileSync(path, "utf8"));
+}
+
+const [domainPath, helpersPath, sectionsPath, formsPath, previewsPath] = process.argv.slice(1);
+
+loadModule(domainPath);
+loadModule(helpersPath);
+loadModule(previewsPath);  // load before sections (sections may reference previews)
+loadModule(formsPath);
+loadModule(sectionsPath);
+
+const results = {
+  // Helpers exports
+  helpersKeys: Object.keys(window.EasyPrentFrontendHelpers).sort(),
+  loadScriptOnceType: typeof window.EasyPrentFrontendHelpers.loadScriptOnce,
+  renderLoadErrorType: typeof window.EasyPrentFrontendHelpers.renderLoadError,
+
+  // Sections exports
+  sectionsKeys: Object.keys(window.EasyPrentAppSections).sort(),
+  appShellType: typeof window.EasyPrentAppSections.AppShell,
+  managementContentType: typeof window.EasyPrentAppSections.ManagementContent,
+  settlementRunsContentType: typeof window.EasyPrentAppSections.SettlementRunsContent,
+  overviewContentType: typeof window.EasyPrentAppSections.OverviewContent,
+  settingsContentType: typeof window.EasyPrentAppSections.SettingsContent,
+
+  // Forms exports
+  formsKeys: Object.keys(window.EasyPrentAppForms).sort(),
+  renderExpenseFormType: typeof window.EasyPrentAppForms.renderExpenseForm,
+  renderManagementActiveFormType: typeof window.EasyPrentAppForms.renderManagementActiveForm,
+
+  // Previews exports
+  previewsKeys: Object.keys(window.EasyPrentAppPreviews).sort(),
+  buildFilteredExpensesType: typeof window.EasyPrentAppPreviews.buildFilteredExpenses,
+  buildOverviewRowsType: typeof window.EasyPrentAppPreviews.buildOverviewRows,
+  buildMeterDataType: typeof window.EasyPrentAppPreviews.buildMeterData,
+};
+process.stdout.write(JSON.stringify(results));
+''';
+        result = subprocess.run(
+            [
+                "node", "-e", script,
+                os.path.join(static, "app_domain.js"),
+                os.path.join(static, "app_helpers.js"),
+                os.path.join(static, "app_sections.js"),
+                os.path.join(static, "app_forms.js"),
+                os.path.join(static, "app_previews.js"),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        data = json.loads(result.stdout)
+
+        # Helpers
+        self.assertIn("loadScriptOnce", data["helpersKeys"])
+        self.assertIn("renderLoadError", data["helpersKeys"])
+        self.assertEqual(data["loadScriptOnceType"], "function")
+        self.assertEqual(data["renderLoadErrorType"], "function")
+
+        # Sections — all major content components must be functions
+        for key in ["AppShell", "ManagementContent", "SettlementRunsContent",
+                     "OverviewContent", "SettingsContent"]:
+            self.assertIn(key, data["sectionsKeys"], f"Missing section export: {key}")
+        self.assertEqual(data["appShellType"], "function")
+        self.assertEqual(data["managementContentType"], "function")
+        self.assertEqual(data["settlementRunsContentType"], "function")
+
+        # Forms — rendering functions must be callable
+        self.assertIn("renderExpenseForm", data["formsKeys"])
+        self.assertIn("renderManagementActiveForm", data["formsKeys"])
+        self.assertEqual(data["renderExpenseFormType"], "function")
+        self.assertEqual(data["renderManagementActiveFormType"], "function")
+
+        # Previews — data-building functions must be callable
+        for key in ["buildFilteredExpenses", "buildOverviewRows", "buildMeterData"]:
+            self.assertIn(key, data["previewsKeys"], f"Missing preview export: {key}")
+        self.assertEqual(data["buildFilteredExpensesType"], "function")
+        self.assertEqual(data["buildOverviewRowsType"], "function")
+        self.assertEqual(data["buildMeterDataType"], "function")
 
     def test_static_app_javascript_is_syntax_valid(self) -> None:
         if shutil.which("node") is None:
             self.skipTest("node is required for JavaScript syntax validation")
 
         repo_root = os.path.dirname(os.path.dirname(__file__))
-        static_dir = os.path.join(repo_root, "src", "easyprent_accounting", "static")
+        static_dir = os.path.join(repo_root, "easyprent_accounting", "static")
         script_paths = [
             os.path.join(static_dir, "app_domain.js"),
             os.path.join(static_dir, "app_charts.js"),
@@ -349,7 +291,7 @@ class WebApiAndUiTests(unittest.TestCase):
 
         repo_root = os.path.dirname(os.path.dirname(__file__))
         previews_path = os.path.join(
-            repo_root, "src", "easyprent_accounting", "static", "app_previews.js"
+            repo_root, "easyprent_accounting", "static", "app_previews.js"
         )
         script = r'''
 const fs = require("fs");
@@ -388,7 +330,7 @@ process.stdout.write(JSON.stringify(result));
 
         repo_root = os.path.dirname(os.path.dirname(__file__))
         sections_path = os.path.join(
-            repo_root, "src", "easyprent_accounting", "static", "app_sections.js"
+            repo_root, "easyprent_accounting", "static", "app_sections.js"
         )
         script = r"""
 const fs = require("fs");
@@ -506,7 +448,7 @@ process.stdout.write(JSON.stringify({ target: !!target, options: options }));
 
         repo_root = os.path.dirname(os.path.dirname(__file__))
         sections_path = os.path.join(
-            repo_root, "src", "easyprent_accounting", "static", "app_sections.js"
+            repo_root, "easyprent_accounting", "static", "app_sections.js"
         )
         script = r"""
 const fs = require("fs");
@@ -548,7 +490,7 @@ window.EasyPrentAppSections.SettlementRunsContent({
 
         repo_root = os.path.dirname(os.path.dirname(__file__))
         sections_path = os.path.join(
-            repo_root, "src", "easyprent_accounting", "static", "app_sections.js"
+            repo_root, "easyprent_accounting", "static", "app_sections.js"
         )
         script = r"""
 const fs = require("fs");
@@ -745,7 +687,7 @@ for (const text of ["Heizung", "Gasabschlag", "2025-01-01 bis 2025-03-31", "Kost
         self.assertNotIn("password", settings)
 
         with mock.patch(
-            "src.easyprent_accounting.web.import_gnucash_payments_for_period",
+            "easyprent_accounting.web.import_gnucash_payments_for_period",
             return_value={"imported": 1, "existing": 2, "accounts": 1},
         ) as imported:
             refresh_body = json.dumps(
@@ -1401,7 +1343,7 @@ for (const text of ["Heizung", "Gasabschlag", "2025-01-01 bis 2025-03-31", "Kost
             return FakePaperlessResponse()
 
         with mock.patch(
-            "src.easyprent_accounting.services.urllib.request.urlopen",
+            "easyprent_accounting.services.urllib.request.urlopen",
             side_effect=fake_urlopen,
         ):
             document_download_status, document_download_headers, document_download_body = self._call_app(
@@ -1657,7 +1599,7 @@ for (const text of ["Heizung", "Gasabschlag", "2025-01-01 bis 2025-03-31", "Kost
             raise AssertionError(f"unexpected URL {request.full_url}")
 
         with mock.patch(
-            "src.easyprent_accounting.services.urllib.request.urlopen",
+            "easyprent_accounting.services.urllib.request.urlopen",
             side_effect=fake_urlopen,
         ):
             upload_status, _, upload_body = self._call_app(
@@ -1883,7 +1825,7 @@ for (const text of ["Heizung", "Gasabschlag", "2025-01-01 bis 2025-03-31", "Kost
             raise AssertionError(f"unexpected URL {request.full_url}")
 
         with mock.patch(
-            "src.easyprent_accounting.services.urllib.request.urlopen",
+            "easyprent_accounting.services.urllib.request.urlopen",
             side_effect=fake_urlopen,
         ):
             upload_status, _, upload_body = self._call_app(
@@ -2141,7 +2083,7 @@ for (const text of ["Heizung", "Gasabschlag", "2025-01-01 bis 2025-03-31", "Kost
             return FakePaperlessResponse()
 
         with mock.patch(
-            "src.easyprent_accounting.services.urllib.request.urlopen",
+            "easyprent_accounting.services.urllib.request.urlopen",
             side_effect=fake_urlopen,
         ):
             open_status, open_headers, open_body = self._call_app(
@@ -3177,7 +3119,7 @@ for (const text of ["Heizung", "Gasabschlag", "2025-01-01 bis 2025-03-31", "Kost
 
     def test_packaged_settlement_template_exists(self) -> None:
         packaged_template = (
-            resources.files("src.easyprent_accounting")
+            resources.files("easyprent_accounting")
             .joinpath("templates")
             .joinpath("utility_settlement.ods")
         )

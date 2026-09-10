@@ -11,7 +11,7 @@ from pathlib import Path
 import sqlite3
 import tempfile
 
-from src.easyprent_accounting.db import SCHEMA, initialize_database, seed_demo_data
+from easyprent_accounting.db import SCHEMA, initialize_database, seed_demo_data
 
 
 @dataclass(frozen=True)
@@ -32,7 +32,7 @@ class TemporaryDatabase:
         return connection
 
     def initialize(self) -> None:
-        initialize_database()
+        initialize_database(str(self.path))
 
     def seed(self) -> None:
         connection = self.connect()
