@@ -11,6 +11,8 @@ import re
 from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile, ZipInfo
 import xml.etree.ElementTree as ET
 
+from .config import find_checkout_root
+
 
 TABLE_NS = "urn:oasis:names:tc:opendocument:xmlns:table:1.0"
 TEXT_NS = "urn:oasis:names:tc:opendocument:xmlns:text:1.0"
@@ -663,16 +665,17 @@ def _row_number(sheet: ET.Element, target: ET.Element) -> int:
     return sheet.findall("table:table-row", NS).index(target) + 1
 
 
-def _read_template_bytes(template_path: Path | str | None) -> bytes:
+def _read_template_bytes(template_path: Path | None) -> bytes:
     if template_path is not None:
-        path = template_path if isinstance(template_path, Path) else Path(template_path).expanduser()
-        if not path.is_file():
-            raise ValueError(f"configured settlement template does not exist: {path}")
-        return path.read_bytes()
+        if not template_path.is_file():
+            raise ValueError(f"configured settlement template does not exist: {template_path}")
+        return template_path.read_bytes()
 
-    checkout_template = Path(__file__).parents[1] / "templates" / _TEMPLATE_FILENAME
-    if checkout_template.is_file():
-        return checkout_template.read_bytes()
+    checkout_root = find_checkout_root()
+    if checkout_root is not None:
+        checkout_template = checkout_root / "templates" / _TEMPLATE_FILENAME
+        if checkout_template.is_file():
+            return checkout_template.read_bytes()
 
     packaged_template = resources.files(__package__).joinpath("templates").joinpath(_TEMPLATE_FILENAME)
     if not packaged_template.is_file():
@@ -1026,7 +1029,7 @@ def prepare_settlement_template_bytes(document: bytes) -> bytes:
 
 
 def render_settlement_template(
-    template_path: Path | str | None = None,
+    template_path: Path | None = None,
     *,
     sender_name: str = "",
     sender_street: str = "",

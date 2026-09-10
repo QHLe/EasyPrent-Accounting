@@ -8,7 +8,7 @@ import shutil
 import subprocess
 import sys
 import time
-from .config import load_config, get_global_config, set_global_config
+from .config import load_config, get_global_config, set_global_config, find_checkout_root
 from pathlib import Path
 
 from .server import DEFAULT_PORT
@@ -23,8 +23,8 @@ def resolve_project_root() -> Path:
     if env_root:
         return Path(env_root).resolve()
 
-    source_root = Path(__file__).resolve().parents[1]
-    if (source_root / "pyproject.toml").exists():
+    source_root = find_checkout_root()
+    if source_root is not None:
         return source_root
 
     return Path.cwd().resolve()

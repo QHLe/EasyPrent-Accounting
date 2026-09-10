@@ -7,10 +7,13 @@ from pathlib import Path
 import re
 import tempfile
 import unittest
+from unittest import mock
 import xml.etree.ElementTree as ET
 from zipfile import ZipFile
 
+from easyprent_accounting.config import find_checkout_root
 from easyprent_accounting.ods_template import (
+    _read_template_bytes,
     prepare_settlement_template_bytes,
     render_settlement_template,
 )
@@ -880,5 +883,49 @@ class OdsTemplateTests(unittest.TestCase):
         )
 
 
+class TemplateResolutionTests(unittest.TestCase):
+    def test_checkout_root_resolves_to_source_checkout(self) -> None:
+        root = find_checkout_root()
+        self.assertIsNotNone(root)
+        assert root is not None
+        self.assertTrue((root / "pyproject.toml").is_file())
+        self.assertTrue((root / "templates" / "utility_settlement.ods").is_file())
+
+    def test_template_resolution_prefers_checkout_template_over_packaged_template(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            (temp_root / "pyproject.toml").touch()
+            templates_dir = temp_root / "templates"
+            templates_dir.mkdir()
+            fake_checkout_template = templates_dir / "utility_settlement.ods"
+            fake_checkout_bytes = b"PK\x03\x04checkout-distinct-content"
+            fake_checkout_template.write_bytes(fake_checkout_bytes)
+
+            with mock.patch("easyprent_accounting.ods_template.find_checkout_root", return_value=temp_root):
+                self.assertEqual(_read_template_bytes(None), fake_checkout_bytes)
+
+    def test_template_resolution_falls_back_to_packaged_template_when_checkout_missing(self) -> None:
+        with mock.patch("easyprent_accounting.ods_template.find_checkout_root", return_value=None):
+            packaged_bytes = (
+                resources.files("easyprent_accounting")
+                .joinpath("templates")
+                .joinpath("utility_settlement.ods")
+                .read_bytes()
+            )
+            self.assertEqual(_read_template_bytes(None), packaged_bytes)
+
+    def test_template_resolution_uses_explicitly_configured_template(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            custom_template = Path(temp_dir) / "custom.ods"
+            custom_template.write_bytes(b"PK\x03\x04custom-bytes")
+            self.assertEqual(_read_template_bytes(custom_template), b"PK\x03\x04custom-bytes")
+
+    def test_template_resolution_raises_for_missing_configured_template(self) -> None:
+        with self.assertRaises(ValueError) as ctx:
+            _read_template_bytes(Path("/nonexistent/template.ods"))
+        self.assertIn("configured settlement template does not exist", str(ctx.exception))
+
+
 if __name__ == "__main__":
     unittest.main()
+

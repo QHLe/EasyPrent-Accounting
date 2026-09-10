@@ -72,23 +72,14 @@ def in_memory_database(*, seeded: bool = True) -> sqlite3.Connection:
 def temporary_database(
     *, initialized: bool = True, seeded: bool = False
 ) -> Iterator[TemporaryDatabase]:
-    """Expose an isolated on-disk database through the application's config seam."""
-
-    original_database_path = os.environ.get("EASYPRENT_DB_PATH")
+    """Expose an isolated on-disk database."""
     with tempfile.TemporaryDirectory() as directory:
         database = TemporaryDatabase(Path(directory) / "easyprent_accounting.db")
-        os.environ["EASYPRENT_DB_PATH"] = str(database.path)
-        try:
-            if initialized:
-                database.initialize()
-            if seeded:
-                database.seed()
-            yield database
-        finally:
-            if original_database_path is None:
-                os.environ.pop("EASYPRENT_DB_PATH", None)
-            else:
-                os.environ["EASYPRENT_DB_PATH"] = original_database_path
+        if initialized:
+            database.initialize()
+        if seeded:
+            database.seed()
+        yield database
 
 
 def call_wsgi_application(

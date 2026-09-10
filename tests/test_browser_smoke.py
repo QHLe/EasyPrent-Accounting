@@ -5,9 +5,7 @@ import os
 import sys
 import threading
 import unittest
-from wsgiref.simple_server import make_server
-
-
+from unittest import mock
 
 try:
     from playwright.sync_api import sync_playwright
@@ -15,9 +13,7 @@ try:
 except ImportError:
     HAVE_PLAYWRIGHT = False
 
-from easyprent_accounting.config import load_config
-from easyprent_accounting.web import application
-from easyprent_accounting.config import set_global_config
+from easyprent_accounting.server import run_server
 from tests.support import temporary_database
 
 
@@ -28,19 +24,29 @@ class BrowserSmokeTest(unittest.TestCase):
             raise unittest.SkipTest("playwright is required for browser smoke tests")
 
     def setUp(self) -> None:
-        from tests.support import temporary_database, mocked_global_config
         self.database = self.enterContext(temporary_database(seeded=True))
-        self.enterContext(mocked_global_config(load_config({"EASYPRENT_DB_PATH": str(self.database.path)})))
+        server_ready = threading.Event()
+        self.server = None
 
-        self.server = make_server("127.0.0.1", 0, application)
-        self.port = self.server.server_port
-        self.server_thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        def on_ready(httpd):
+            self.server = httpd
+            self.port = httpd.server_port
+            server_ready.set()
+
+        def run_target():
+            with mock.patch.dict(os.environ, {"EASYPRENT_DB_PATH": str(self.database.path)}):
+                run_server("127.0.0.1", 0, ready_callback=on_ready)
+
+        self.server_thread = threading.Thread(target=run_target, daemon=True)
         self.server_thread.start()
+        if not server_ready.wait(timeout=10):
+            raise RuntimeError("Server failed to start within timeout")
 
     def tearDown(self) -> None:
-        self.server.shutdown()
-        self.server.server_close()
-        self.server_thread.join()
+        if self.server is not None:
+            self.server.shutdown()
+            self.server.server_close()
+        self.server_thread.join(timeout=5)
 
     def test_offline_start_clean_console_and_navigation(self) -> None:
         """Verify offline start: no external requests, clean console, and clickable main navigation."""

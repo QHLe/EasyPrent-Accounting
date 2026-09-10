@@ -25,6 +25,13 @@ def load_config(environ: dict[str, str]) -> AppConfig:
         settlement_template=Path(template) if template is not None else None,
     )
 
+
+def find_checkout_root() -> Optional[Path]:
+    candidate = Path(__file__).resolve().parents[1]
+    if (candidate / "pyproject.toml").is_file():
+        return candidate
+    return None
+
 _global_config: Optional[AppConfig] = None
 
 def set_global_config(cfg: Optional[AppConfig]) -> None:
