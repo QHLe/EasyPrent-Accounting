@@ -175,20 +175,37 @@ global.document = {
   getElementById: () => null,
   querySelector: () => null,
 };
-global.React = window.React = { createElement: () => null, Fragment: "f" };
-global.echarts = window.echarts = { init: () => ({ setOption: () => {}, dispose: () => {} }) };
+
+// Mock React to capture component rendering
+global.React = window.React = { 
+  createElement: (type, props, ...children) => ({ type, props, children }),
+  Fragment: "ReactFragment",
+  useEffect: () => {},
+  useRef: () => ({ current: null }),
+  useState: (v) => [v, () => {}]
+};
+global.echarts = window.echarts = { init: () => ({ setOption: () => {}, dispose: () => {}, resize: () => {} }) };
 
 function loadModule(path) {
   vm.runInThisContext(fs.readFileSync(path, "utf8"));
 }
 
-const [domainPath, helpersPath, sectionsPath, formsPath, previewsPath] = process.argv.slice(1);
+const [domainPath, helpersPath, previewsPath, chartsPath, sectionsPath, formsPath] = process.argv.slice(1);
 
 loadModule(domainPath);
 loadModule(helpersPath);
-loadModule(previewsPath);  // load before sections (sections may reference previews)
-loadModule(formsPath);
+loadModule(previewsPath);
+loadModule(chartsPath);
 loadModule(sectionsPath);
+loadModule(formsPath);
+
+// Perform behavioral rendering tests for Forms
+const expenseFormResult = window.EasyPrentAppForms.renderExpenseForm({ formState: {} });
+const managementFormResult = window.EasyPrentAppForms.renderManagementActiveForm({ activeTab: "properties", forms: { property: { formState: {} }, expense: { formState: {} }, lease: { formState: {} }, tenant: { formState: {} } } });
+
+// Perform behavioral rendering tests for Charts
+const expenseChartResult = window.EasyPrentAppCharts.ExpenseDevelopmentChart({ series: [] });
+const meterChartResult = window.EasyPrentAppCharts.MeterChart({ series: [] });
 
 const results = {
   // Helpers exports
@@ -208,12 +225,21 @@ const results = {
   formsKeys: Object.keys(window.EasyPrentAppForms).sort(),
   renderExpenseFormType: typeof window.EasyPrentAppForms.renderExpenseForm,
   renderManagementActiveFormType: typeof window.EasyPrentAppForms.renderManagementActiveForm,
+  
+  // Charts exports
+  chartsKeys: Object.keys(window.EasyPrentAppCharts).sort(),
 
   // Previews exports
   previewsKeys: Object.keys(window.EasyPrentAppPreviews).sort(),
   buildFilteredExpensesType: typeof window.EasyPrentAppPreviews.buildFilteredExpenses,
   buildOverviewRowsType: typeof window.EasyPrentAppPreviews.buildOverviewRows,
   buildMeterDataType: typeof window.EasyPrentAppPreviews.buildMeterData,
+
+  // Behavior checks
+  expenseFormIsReactElement: !!expenseFormResult.type,
+  managementFormIsReactElement: !!(managementFormResult && managementFormResult.activeForm && managementFormResult.activeForm.type),
+  expenseChartIsReactElement: !!expenseChartResult.type,
+  meterChartIsReactElement: !!meterChartResult.type,
 };
 process.stdout.write(JSON.stringify(results));
 ''';
@@ -222,9 +248,10 @@ process.stdout.write(JSON.stringify(results));
                 "node", "-e", script,
                 os.path.join(static, "app_domain.js"),
                 os.path.join(static, "app_helpers.js"),
+                os.path.join(static, "app_previews.js"),
+                os.path.join(static, "app_charts.js"),
                 os.path.join(static, "app_sections.js"),
                 os.path.join(static, "app_forms.js"),
-                os.path.join(static, "app_previews.js"),
             ],
             capture_output=True,
             text=True,
@@ -247,11 +274,14 @@ process.stdout.write(JSON.stringify(results));
         self.assertEqual(data["managementContentType"], "function")
         self.assertEqual(data["settlementRunsContentType"], "function")
 
-        # Forms — rendering functions must be callable
+        # Forms — rendering functions must be callable and return React Elements
         self.assertIn("renderExpenseForm", data["formsKeys"])
-        self.assertIn("renderManagementActiveForm", data["formsKeys"])
         self.assertEqual(data["renderExpenseFormType"], "function")
+        self.assertTrue(data["expenseFormIsReactElement"], "renderExpenseForm did not return a valid React element")
+        
+        self.assertIn("renderManagementActiveForm", data["formsKeys"])
         self.assertEqual(data["renderManagementActiveFormType"], "function")
+        self.assertTrue(data["managementFormIsReactElement"], "renderManagementActiveForm did not return a valid React element")
 
         # Previews — data-building functions must be callable
         for key in ["buildFilteredExpenses", "buildOverviewRows", "buildMeterData"]:

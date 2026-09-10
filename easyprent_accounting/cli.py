@@ -115,16 +115,17 @@ def running_pid() -> int | None:
     return None
 
 
-def start_server() -> int:
+def start_server(env: dict[str, str]) -> int:
     pid = running_pid()
     if pid is not None:
         print(f"Server laeuft bereits mit PID {pid}.")
         return 0
 
-    env = os.environ.copy()
     cfg = _get_config()
-    env["EASYPRENT_PROJECT_ROOT"] = str(cfg.project_root)
-    env["EASYPRENT_DB_PATH"] = str(cfg.db_path)
+    child_env = env.copy()
+    if cfg.project_root is not None:
+        child_env["EASYPRENT_PROJECT_ROOT"] = str(cfg.project_root)
+    child_env["EASYPRENT_DB_PATH"] = str(cfg.db_path)
 
     ensure_runtime_dir()
     with log_file().open("a", encoding="utf-8") as log_handle:
@@ -134,7 +135,7 @@ def start_server() -> int:
             stdout=log_handle,
             stderr=subprocess.STDOUT,
             start_new_session=True,
-            env=env,
+            env=child_env,
         )
     time.sleep(0.5)
     if process.poll() is not None:
@@ -178,11 +179,11 @@ def stop_server() -> int:
     return 0
 
 
-def restart_server() -> int:
+def restart_server(env: dict[str, str]) -> int:
     stop_code = stop_server()
     if stop_code != 0:
         return stop_code
-    return start_server()
+    return start_server(env)
 
 
 def run_command(command: list[str]) -> int:
@@ -202,7 +203,7 @@ def systemd_service_is_running() -> bool:
     return completed.returncode == 0
 
 
-def update_project() -> int:
+def update_project(env: dict[str, str]) -> int:
     was_running = running_pid() is not None
     systemd_service_was_running = systemd_service_is_running()
     git_check = subprocess.run(
@@ -240,7 +241,7 @@ def update_project() -> int:
 
     if was_running:
         print("Server war aktiv und wird neu gestartet.")
-        return restart_server()
+        return restart_server(env)
 
     print("Update abgeschlossen.")
     return 0
@@ -253,15 +254,16 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    _set_config(load_config(os.environ))
+    env = os.environ.copy()
+    _set_config(load_config(env))
     args = build_parser().parse_args(argv)
     if args.command == "start":
-        return start_server()
+        return start_server(env)
     if args.command == "stop":
         return stop_server()
     if args.command == "restart":
-        return restart_server()
-    return update_project()
+        return restart_server(env)
+    return update_project(env)
 
 
 if __name__ == "__main__":

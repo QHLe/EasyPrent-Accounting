@@ -18,17 +18,17 @@ easyprent-accounting start
 Oder direkt aus dem Checkout:
 
 ```bash
-easyprent-accounting start
+python3 -m easyprent_accounting.cli start
 ```
 
 Danach ist die Anwendung unter `http://localhost:8020` erreichbar.
 
 Verfügbare Befehle für einen direkt aus dem Checkout gestarteten Server:
 
-- `easyprent-accounting start`
-- `easyprent-accounting stop`
-- `easyprent-accounting restart`
-- `easyprent-accounting update`
+- `python3 -m easyprent_accounting.cli start`
+- `python3 -m easyprent_accounting.cli stop`
+- `python3 -m easyprent_accounting.cli restart`
+- `python3 -m easyprent_accounting.cli update`
 
 `update` führt `git pull --ff-only` aus, installiert bei Bedarf Node- und
 Python-Abhängigkeiten neu und startet einen laufenden Server anschließend
@@ -47,7 +47,7 @@ systemctl restart easy-prent.service
 journalctl -u easy-prent.service -n 100 --no-pager
 ```
 
-`easyprent-accounting update` erkennt einen laufenden systemd-Dienst und startet ihn nach
+`python3 -m easyprent_accounting.cli update` erkennt einen laufenden systemd-Dienst und startet ihn nach
 dem Update über systemd neu.
 
 ## Tests

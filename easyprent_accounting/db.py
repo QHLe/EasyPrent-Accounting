@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
+from pathlib import Path
 from decimal import Decimal
 
 
@@ -298,14 +299,14 @@ CREATE TABLE IF NOT EXISTS depreciation_assets (
 
 
 
-def get_connection(db_path: str) -> sqlite3.Connection:
+def get_connection(db_path: str | Path) -> sqlite3.Connection:
     connection = sqlite3.connect(db_path)
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys = ON")
     return connection
 
 
-def initialize_database(db_path: str) -> None:
+def initialize_database(db_path: str | Path) -> None:
     connection = get_connection(db_path)
     try:
         connection.executescript(SCHEMA)

@@ -38,7 +38,7 @@ class EasyPrentCliTests(unittest.TestCase):
         ), mock.patch.object(cli.subprocess, "Popen", return_value=process) as popen_mock, mock.patch.object(
             cli.time, "sleep"
         ):
-            exit_code = cli.start_server()
+            exit_code = cli.start_server({})
 
         self.assertEqual(exit_code, 0)
         self.assertEqual(self.pid_file.read_text(encoding="utf-8").strip(), "4321")
@@ -66,14 +66,14 @@ class EasyPrentCliTests(unittest.TestCase):
         ), mock.patch.object(
             cli, "systemd_service_is_running", return_value=False
         ):
-            exit_code = cli.update_project()
+            exit_code = cli.update_project({})
 
         self.assertEqual(exit_code, 0)
         self.assertEqual(
             run_command_mock.call_args_list,
             [mock.call(["git", "pull", "--ff-only"]), mock.call(["npm", "ci"])],
         )
-        restart_mock.assert_called_once_with()
+        restart_mock.assert_called_once_with({})
 
     def test_update_skips_npm_when_it_is_not_installed(self) -> None:
         (self.project_root / "package.json").write_text("{}", encoding="utf-8")
@@ -87,7 +87,7 @@ class EasyPrentCliTests(unittest.TestCase):
         ), mock.patch.object(
             cli, "systemd_service_is_running", return_value=False
         ):
-            exit_code = cli.update_project()
+            exit_code = cli.update_project({})
 
         self.assertEqual(exit_code, 0)
         run_command_mock.assert_called_once_with(["git", "pull", "--ff-only"])
@@ -99,7 +99,7 @@ class EasyPrentCliTests(unittest.TestCase):
         ), mock.patch.object(cli, "restart_server") as restart_mock, mock.patch.object(
             cli, "run_command", return_value=0
         ) as run_command_mock, mock.patch.object(cli.subprocess, "run", return_value=completed):
-            exit_code = cli.update_project()
+            exit_code = cli.update_project({})
 
         self.assertEqual(exit_code, 0)
         self.assertEqual(
