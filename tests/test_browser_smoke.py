@@ -16,7 +16,8 @@ except ImportError:
     HAVE_PLAYWRIGHT = False
 
 from easyprent_accounting.config import load_config
-from easyprent_accounting.web import application, set_config
+from easyprent_accounting.web import application
+from easyprent_accounting.config import set_global_config
 from tests.support import temporary_database
 
 
@@ -28,7 +29,7 @@ class BrowserSmokeTest(unittest.TestCase):
 
     def setUp(self) -> None:
         self.database = self.enterContext(temporary_database(seeded=True))
-        set_config(load_config({"EASYPRENT_DB_PATH": str(self.database.path)}))
+        set_global_config(load_config({"EASYPRENT_DB_PATH": str(self.database.path)}))
 
         self.server = make_server("127.0.0.1", 0, application)
         self.port = self.server.server_port
@@ -39,7 +40,7 @@ class BrowserSmokeTest(unittest.TestCase):
         self.server.shutdown()
         self.server.server_close()
         self.server_thread.join()
-        set_config(None)
+        set_global_config(None)
 
     def test_offline_start_clean_console_and_navigation(self) -> None:
         """Verify offline start: no external requests, clean console, and clickable main navigation."""
@@ -106,6 +107,15 @@ class BrowserSmokeTest(unittest.TestCase):
                     page.wait_for_selector('text="Wohnpark Lindenhof"', timeout=2000)
                 elif tab_label == "Kostenverwaltung":
                     page.wait_for_selector('text="Gesamtkosten je Kostenart"', timeout=2000)
+                    
+                    # Verify behavioral chart rendering
+                    page.wait_for_selector('.echarts-host', timeout=2000)
+
+                    # Verify behavioral form rendering
+                    # Verify behavioral form rendering
+                    page.click('text="Kostenposten erzeugen"')
+                    page.wait_for_selector('label:has-text("Kostenart")', timeout=2000)
+                    
                 elif tab_label == "Mieterverwaltung":
                     page.wait_for_selector('text="Tim Wagner"', timeout=2000)
 

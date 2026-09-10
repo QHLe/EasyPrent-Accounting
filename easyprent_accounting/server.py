@@ -6,7 +6,8 @@ from wsgiref.simple_server import make_server
 
 from .config import load_config
 from .db import initialize_database
-from .web import application, set_config
+from .web import application
+from .config import set_global_config
 
 DEFAULT_HOST = "0.0.0.0"
 DEFAULT_PORT = 8020

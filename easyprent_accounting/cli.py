@@ -8,7 +8,7 @@ import shutil
 import subprocess
 import sys
 import time
-from .config import load_config
+from .config import load_config, get_global_config, set_global_config
 from pathlib import Path
 
 from .server import DEFAULT_PORT
@@ -16,25 +16,9 @@ from .server import DEFAULT_PORT
 
 SYSTEMD_SERVICE_NAME = "easy-prent.service"
 
-_config = None
-
-
-def _set_config(cfg):
-    global _config
-    _config = cfg
-
-
-def _get_config():
-    if _config is None:
-        raise RuntimeError(
-            "AppConfig not initialised. "
-            "Call _set_config() before using CLI functions."
-        )
-    return _config
-
 
 def resolve_project_root(config=None) -> Path:
-    cfg = config if config is not None else _get_config()
+    cfg = config if config is not None else get_global_config()
     env_root = cfg.project_root
     if env_root:
         return Path(env_root).resolve()
@@ -121,7 +105,7 @@ def start_server(env: dict[str, str]) -> int:
         print(f"Server laeuft bereits mit PID {pid}.")
         return 0
 
-    cfg = _get_config()
+    cfg = get_global_config()
     child_env = env.copy()
     if cfg.project_root is not None:
         child_env["EASYPRENT_PROJECT_ROOT"] = str(cfg.project_root)
@@ -255,7 +239,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     env = os.environ.copy()
-    _set_config(load_config(env))
+    set_global_config(load_config(env))
     args = build_parser().parse_args(argv)
     if args.command == "start":
         return start_server(env)

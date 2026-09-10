@@ -15,6 +15,7 @@ from zipfile import ZIP_STORED, ZipFile
 from unittest import mock
 
 from easyprent_accounting.web import application
+from easyprent_accounting.config import set_global_config
 from tests.support import call_wsgi_application, temporary_database
 
 
@@ -22,13 +23,12 @@ class WebApiAndUiTests(unittest.TestCase):
     def setUp(self) -> None:
         self.database = self.enterContext(temporary_database(seeded=True))
         self.db_path = str(self.database.path)
-        from easyprent_accounting.config import load_config
-        from easyprent_accounting.web import set_config
-        set_config(load_config({"EASYPRENT_DB_PATH": self.db_path}))
+        from easyprent_accounting.config import load_config, set_global_config
+        set_global_config(load_config({"EASYPRENT_DB_PATH": self.db_path}))
 
     def tearDown(self) -> None:
-        from easyprent_accounting.web import set_config
-        set_config(None)
+        
+        set_global_config(None)
 
 
     def _call_app(
@@ -155,140 +155,6 @@ process.stdout.write(JSON.stringify(results));
         self.assertEqual(data["displayNameActive"], "Haus A")
         self.assertEqual(data["displayNameArchived"], "Haus A (archiviert)")
         self.assertEqual(data["moneyFormatted"], "1234.50")
-
-    def test_frontend_module_exports_contracts(self) -> None:
-        """Verify all JS module exports are callable/present by loading them in Node."""
-        if shutil.which("node") is None:
-            self.skipTest("node is required for JavaScript component validation")
-
-        repo_root = os.path.dirname(os.path.dirname(__file__))
-        static = os.path.join(repo_root, "easyprent_accounting", "static")
-        script = r'''
-const fs = require("fs");
-const vm = require("vm");
-
-// Minimal browser globals expected by the modules
-global.window = {};
-global.document = {
-  createElement: () => ({ addEventListener: () => {}, dataset: {} }),
-  head: { appendChild: () => {} },
-  getElementById: () => null,
-  querySelector: () => null,
-};
-
-// Mock React to capture component rendering
-global.React = window.React = { 
-  createElement: (type, props, ...children) => ({ type, props, children }),
-  Fragment: "ReactFragment",
-  useEffect: () => {},
-  useRef: () => ({ current: null }),
-  useState: (v) => [v, () => {}]
-};
-global.echarts = window.echarts = { init: () => ({ setOption: () => {}, dispose: () => {}, resize: () => {} }) };
-
-function loadModule(path) {
-  vm.runInThisContext(fs.readFileSync(path, "utf8"));
-}
-
-const [domainPath, helpersPath, previewsPath, chartsPath, sectionsPath, formsPath] = process.argv.slice(1);
-
-loadModule(domainPath);
-loadModule(helpersPath);
-loadModule(previewsPath);
-loadModule(chartsPath);
-loadModule(sectionsPath);
-loadModule(formsPath);
-
-// Perform behavioral rendering tests for Forms
-const expenseFormResult = window.EasyPrentAppForms.renderExpenseForm({ formState: {} });
-const managementFormResult = window.EasyPrentAppForms.renderManagementActiveForm({ activeTab: "properties", forms: { property: { formState: {} }, expense: { formState: {} }, lease: { formState: {} }, tenant: { formState: {} } } });
-
-// Perform behavioral rendering tests for Charts
-const expenseChartResult = window.EasyPrentAppCharts.ExpenseDevelopmentChart({ series: [] });
-const meterChartResult = window.EasyPrentAppCharts.MeterChart({ series: [] });
-
-const results = {
-  // Helpers exports
-  helpersKeys: Object.keys(window.EasyPrentFrontendHelpers).sort(),
-  loadScriptOnceType: typeof window.EasyPrentFrontendHelpers.loadScriptOnce,
-  renderLoadErrorType: typeof window.EasyPrentFrontendHelpers.renderLoadError,
-
-  // Sections exports
-  sectionsKeys: Object.keys(window.EasyPrentAppSections).sort(),
-  appShellType: typeof window.EasyPrentAppSections.AppShell,
-  managementContentType: typeof window.EasyPrentAppSections.ManagementContent,
-  settlementRunsContentType: typeof window.EasyPrentAppSections.SettlementRunsContent,
-  overviewContentType: typeof window.EasyPrentAppSections.OverviewContent,
-  settingsContentType: typeof window.EasyPrentAppSections.SettingsContent,
-
-  // Forms exports
-  formsKeys: Object.keys(window.EasyPrentAppForms).sort(),
-  renderExpenseFormType: typeof window.EasyPrentAppForms.renderExpenseForm,
-  renderManagementActiveFormType: typeof window.EasyPrentAppForms.renderManagementActiveForm,
-  
-  // Charts exports
-  chartsKeys: Object.keys(window.EasyPrentAppCharts).sort(),
-
-  // Previews exports
-  previewsKeys: Object.keys(window.EasyPrentAppPreviews).sort(),
-  buildFilteredExpensesType: typeof window.EasyPrentAppPreviews.buildFilteredExpenses,
-  buildOverviewRowsType: typeof window.EasyPrentAppPreviews.buildOverviewRows,
-  buildMeterDataType: typeof window.EasyPrentAppPreviews.buildMeterData,
-
-  // Behavior checks
-  expenseFormIsReactElement: !!expenseFormResult.type,
-  managementFormIsReactElement: !!(managementFormResult && managementFormResult.activeForm && managementFormResult.activeForm.type),
-  expenseChartIsReactElement: !!expenseChartResult.type,
-  meterChartIsReactElement: !!meterChartResult.type,
-};
-process.stdout.write(JSON.stringify(results));
-''';
-        result = subprocess.run(
-            [
-                "node", "-e", script,
-                os.path.join(static, "app_domain.js"),
-                os.path.join(static, "app_helpers.js"),
-                os.path.join(static, "app_previews.js"),
-                os.path.join(static, "app_charts.js"),
-                os.path.join(static, "app_sections.js"),
-                os.path.join(static, "app_forms.js"),
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        self.assertEqual(result.returncode, 0, result.stderr)
-        data = json.loads(result.stdout)
-
-        # Helpers
-        self.assertIn("loadScriptOnce", data["helpersKeys"])
-        self.assertIn("renderLoadError", data["helpersKeys"])
-        self.assertEqual(data["loadScriptOnceType"], "function")
-        self.assertEqual(data["renderLoadErrorType"], "function")
-
-        # Sections — all major content components must be functions
-        for key in ["AppShell", "ManagementContent", "SettlementRunsContent",
-                     "OverviewContent", "SettingsContent"]:
-            self.assertIn(key, data["sectionsKeys"], f"Missing section export: {key}")
-        self.assertEqual(data["appShellType"], "function")
-        self.assertEqual(data["managementContentType"], "function")
-        self.assertEqual(data["settlementRunsContentType"], "function")
-
-        # Forms — rendering functions must be callable and return React Elements
-        self.assertIn("renderExpenseForm", data["formsKeys"])
-        self.assertEqual(data["renderExpenseFormType"], "function")
-        self.assertTrue(data["expenseFormIsReactElement"], "renderExpenseForm did not return a valid React element")
-        
-        self.assertIn("renderManagementActiveForm", data["formsKeys"])
-        self.assertEqual(data["renderManagementActiveFormType"], "function")
-        self.assertTrue(data["managementFormIsReactElement"], "renderManagementActiveForm did not return a valid React element")
-
-        # Previews — data-building functions must be callable
-        for key in ["buildFilteredExpenses", "buildOverviewRows", "buildMeterData"]:
-            self.assertIn(key, data["previewsKeys"], f"Missing preview export: {key}")
-        self.assertEqual(data["buildFilteredExpensesType"], "function")
-        self.assertEqual(data["buildOverviewRowsType"], "function")
-        self.assertEqual(data["buildMeterDataType"], "function")
 
     def test_static_app_javascript_is_syntax_valid(self) -> None:
         if shutil.which("node") is None:

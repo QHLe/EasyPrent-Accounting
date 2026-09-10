@@ -1,23 +1,9 @@
 from __future__ import annotations
 
 import json
-from .config import AppConfig
-
-_config: AppConfig | None = None
+from .config import AppConfig, get_global_config, set_global_config
 
 
-def get_config() -> AppConfig:
-    if _config is None:
-        raise RuntimeError(
-            "AppConfig not initialised. "
-            "Call set_config() from the composition root before serving requests."
-        )
-    return _config
-
-
-def set_config(cfg: AppConfig | None) -> None:
-    global _config
-    _config = cfg
 from http import HTTPStatus
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -385,7 +371,7 @@ def application(environ, start_response):
             "application/javascript; charset=utf-8",
         )
 
-    cfg = get_config()
+    cfg = get_global_config()
     connection = get_connection(cfg.db_path)
     try:
         lifecycle_route = parse_object_lifecycle_path(path)

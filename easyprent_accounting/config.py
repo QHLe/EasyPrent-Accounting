@@ -24,3 +24,17 @@ def load_config(environ: dict[str, str]) -> AppConfig:
         sender_city=environ.get("EASYPRENT_SENDER_CITY"),
         settlement_template=Path(template) if template is not None else None,
     )
+
+_global_config: Optional[AppConfig] = None
+
+def set_global_config(cfg: Optional[AppConfig]) -> None:
+    global _global_config
+    _global_config = cfg
+
+def get_global_config() -> AppConfig:
+    if _global_config is None:
+        raise RuntimeError(
+            "AppConfig not initialised. "
+            "Call set_global_config() from the composition root before serving requests or CLI functions."
+        )
+    return _global_config

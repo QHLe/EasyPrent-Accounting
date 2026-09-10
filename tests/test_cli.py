@@ -22,10 +22,10 @@ class EasyPrentCliTests(unittest.TestCase):
         self.cwd_patch.start()
         
         from easyprent_accounting.config import load_config
-        cli._set_config(load_config({"EASYPRENT_PROJECT_ROOT": str(self.project_root)}))
+        cli.set_global_config(load_config({"EASYPRENT_PROJECT_ROOT": str(self.project_root)}))
 
     def tearDown(self) -> None:
-        cli._set_config(None)
+        cli.set_global_config(None)
         self.cwd_patch.stop()
         self.temp_dir.cleanup()
 
