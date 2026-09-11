@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 
-from typing import Callable
 from wsgiref.simple_server import WSGIServer, make_server
 
 from .config import load_config, set_global_config
@@ -20,14 +19,8 @@ def create_server(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT) -> WSGISer
     return make_server(host, port, application)
 
 
-def run_server(
-    host: str = DEFAULT_HOST,
-    port: int = DEFAULT_PORT,
-    ready_callback: Callable[[WSGIServer], None] | None = None,
-) -> None:
+def run_server(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT) -> None:
     with create_server(host, port) as httpd:
-        if ready_callback is not None:
-            ready_callback(httpd)
         print(f"EasyPrent Accounting laeuft auf http://{host}:{port}")
         httpd.serve_forever()
 

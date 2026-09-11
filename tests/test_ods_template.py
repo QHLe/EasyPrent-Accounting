@@ -13,7 +13,6 @@ from zipfile import ZipFile
 
 from easyprent_accounting.config import find_checkout_root
 from easyprent_accounting.ods_template import (
-    _read_template_bytes,
     prepare_settlement_template_bytes,
     render_settlement_template,
 )
@@ -70,6 +69,17 @@ def _rewrite_archive(
         for filename, data in (additions or {}).items():
             target.writestr(filename, data)
     return output.getvalue()
+
+
+def _template_with_marker(marker_text: str) -> bytes:
+    base_bytes = _template_bytes()
+    with ZipFile(BytesIO(base_bytes)) as z:
+        content = z.read("content.xml").decode("utf-8")
+    custom_content = content.replace(
+        "Geleistete Vorauszahlungen",
+        f"Geleistete Vorauszahlungen ({marker_text})",
+    )
+    return _rewrite_archive(base_bytes, {"content.xml": custom_content.encode("utf-8")})
 
 
 def _with_stale_thumbnail(document: bytes) -> bytes:
@@ -884,6 +894,26 @@ class OdsTemplateTests(unittest.TestCase):
 
 
 class TemplateResolutionTests(unittest.TestCase):
+    def _render(self, template_path: Path | None = None) -> str:
+        document = render_settlement_template(
+            template_path,
+            sender_name="Vermieter",
+            sender_street="Absenderweg 1",
+            sender_city_line="12345 Musterstadt",
+            tenant_name="Testmieter",
+            tenant_street="Mieterweg 2",
+            tenant_city_line="54321 Beispielstadt",
+            object_lines=["WE 1"],
+            created_on="15.01.2027",
+            period_label="01.01.2026 – 31.12.2026",
+            line_items=[],
+            allocated_costs="0.00",
+            advances_paid="0.00",
+            balance="0.00",
+        )
+        with ZipFile(BytesIO(document)) as archive:
+            return archive.read("content.xml").decode("utf-8")
+
     def test_checkout_root_resolves_to_source_checkout(self) -> None:
         root = find_checkout_root()
         self.assertIsNotNone(root)
@@ -891,38 +921,36 @@ class TemplateResolutionTests(unittest.TestCase):
         self.assertTrue((root / "pyproject.toml").is_file())
         self.assertTrue((root / "templates" / "utility_settlement.ods").is_file())
 
-    def test_template_resolution_prefers_checkout_template_over_packaged_template(self) -> None:
+    def test_render_prefers_checkout_template_over_packaged_template(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_root = Path(temp_dir)
             (temp_root / "pyproject.toml").touch()
             templates_dir = temp_root / "templates"
             templates_dir.mkdir()
             fake_checkout_template = templates_dir / "utility_settlement.ods"
-            fake_checkout_bytes = b"PK\x03\x04checkout-distinct-content"
-            fake_checkout_template.write_bytes(fake_checkout_bytes)
+            fake_checkout_template.write_bytes(_template_with_marker("Checkout-Prioritaet"))
 
             with mock.patch("easyprent_accounting.ods_template.find_checkout_root", return_value=temp_root):
-                self.assertEqual(_read_template_bytes(None), fake_checkout_bytes)
+                rendered_xml = self._render(template_path=None)
+                self.assertIn("Geleistete Vorauszahlungen (Checkout-Prioritaet)", rendered_xml)
 
-    def test_template_resolution_falls_back_to_packaged_template_when_checkout_missing(self) -> None:
+    def test_render_falls_back_to_packaged_template_when_checkout_missing(self) -> None:
         with mock.patch("easyprent_accounting.ods_template.find_checkout_root", return_value=None):
-            packaged_bytes = (
-                resources.files("easyprent_accounting")
-                .joinpath("templates")
-                .joinpath("utility_settlement.ods")
-                .read_bytes()
-            )
-            self.assertEqual(_read_template_bytes(None), packaged_bytes)
+            rendered_xml = self._render(template_path=None)
+            self.assertIn("Geleistete Vorauszahlungen", rendered_xml)
+            self.assertNotIn("Checkout-Prioritaet", rendered_xml)
 
-    def test_template_resolution_uses_explicitly_configured_template(self) -> None:
+    def test_render_uses_explicitly_configured_template(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             custom_template = Path(temp_dir) / "custom.ods"
-            custom_template.write_bytes(b"PK\x03\x04custom-bytes")
-            self.assertEqual(_read_template_bytes(custom_template), b"PK\x03\x04custom-bytes")
+            custom_template.write_bytes(_template_with_marker("Explizite-Vorlage"))
 
-    def test_template_resolution_raises_for_missing_configured_template(self) -> None:
+            rendered_xml = self._render(template_path=custom_template)
+            self.assertIn("Geleistete Vorauszahlungen (Explizite-Vorlage)", rendered_xml)
+
+    def test_render_raises_for_missing_configured_template(self) -> None:
         with self.assertRaises(ValueError) as ctx:
-            _read_template_bytes(Path("/nonexistent/template.ods"))
+            self._render(template_path=Path("/nonexistent/template.ods"))
         self.assertIn("configured settlement template does not exist", str(ctx.exception))
 
 
