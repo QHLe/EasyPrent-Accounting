@@ -19,7 +19,7 @@ def load_config(environ: dict[str, str]) -> AppConfig:
     if db_path_env is not None:
         db_path = Path(db_path_env).expanduser().resolve()
     else:
-        root_for_db = project_root or find_checkout_root() or Path.cwd().resolve()
+        root_for_db = resolve_project_root(project_root)
         db_path = (root_for_db / "easyprent_accounting.db").resolve()
 
     template = environ.get("EASYPRENT_SETTLEMENT_TEMPLATE")
@@ -32,6 +32,15 @@ def load_config(environ: dict[str, str]) -> AppConfig:
         sender_city=environ.get("EASYPRENT_SENDER_CITY"),
         settlement_template=Path(template).expanduser() if template is not None else None,
     )
+
+
+def resolve_project_root(project_root_override: Optional[Path] = None) -> Path:
+    if project_root_override is not None:
+        return project_root_override.resolve()
+    checkout = find_checkout_root()
+    if checkout is not None:
+        return checkout
+    return Path.cwd().resolve()
 
 
 def find_checkout_root() -> Optional[Path]:

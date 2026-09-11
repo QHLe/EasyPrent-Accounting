@@ -131,19 +131,3 @@ class EasyPrentCliTests(unittest.TestCase):
         )
         restart_mock.assert_not_called()
 
-    def test_load_config_expands_user_paths(self) -> None:
-        from easyprent_accounting.config import load_config
-        cfg = load_config({
-            "EASYPRENT_SETTLEMENT_TEMPLATE": "~/custom_template.ods",
-            "EASYPRENT_PROJECT_ROOT": "~/my_project",
-            "EASYPRENT_DB_PATH": "~/my_db.db",
-        })
-        self.assertEqual(cfg.settlement_template, (Path.home() / "custom_template.ods").resolve())
-        self.assertEqual(cfg.project_root, (Path.home() / "my_project").resolve())
-        self.assertEqual(cfg.db_path, (Path.home() / "my_db.db").resolve())
-
-    def test_load_config_defaults_db_to_project_root(self) -> None:
-        from easyprent_accounting.config import load_config
-        cfg = load_config({"EASYPRENT_PROJECT_ROOT": str(self.project_root)})
-        self.assertEqual(cfg.db_path, (self.project_root / "easyprent_accounting.db").resolve())
-

@@ -8,7 +8,7 @@ import shutil
 import subprocess
 import sys
 import time
-from .config import load_config, get_global_config, set_global_config, find_checkout_root
+from .config import load_config, get_global_config, set_global_config, resolve_project_root
 from pathlib import Path
 
 from .server import DEFAULT_PORT
@@ -17,21 +17,9 @@ from .server import DEFAULT_PORT
 SYSTEMD_SERVICE_NAME = "easy-prent.service"
 
 
-def resolve_project_root() -> Path:
-    cfg = get_global_config()
-    env_root = cfg.project_root
-    if env_root:
-        return Path(env_root).resolve()
-
-    source_root = find_checkout_root()
-    if source_root is not None:
-        return source_root
-
-    return Path.cwd().resolve()
-
-
 def project_root() -> Path:
-    return resolve_project_root()
+    cfg = get_global_config()
+    return resolve_project_root(cfg.project_root)
 
 
 def runtime_dir() -> Path:
