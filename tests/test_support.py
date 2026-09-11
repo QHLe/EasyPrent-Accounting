@@ -2,8 +2,14 @@ from __future__ import annotations
 
 import os
 import unittest
+from unittest import mock
 
-from tests.support import call_wsgi_application, in_memory_database, temporary_database
+from tests.support import (
+    call_wsgi_application,
+    in_memory_database,
+    running_server,
+    temporary_database,
+)
 
 
 class TestSupportTests(unittest.TestCase):
@@ -57,3 +63,35 @@ class TestSupportTests(unittest.TestCase):
             response.body,
             b"POST /expenses?year=2025 text/plain Winterdienst",
         )
+
+    def test_running_server_starts_and_cleans_up_in_order(self) -> None:
+        fake_server = mock.Mock()
+        fake_thread = mock.Mock()
+
+        with mock.patch("tests.support.create_server", return_value=fake_server), \
+             mock.patch("tests.support.threading.Thread", return_value=fake_thread):
+            with running_server("127.0.0.1", 0) as server:
+                self.assertIs(server, fake_server)
+                fake_thread.start.assert_called_once()
+                fake_server.shutdown.assert_not_called()
+                fake_server.server_close.assert_not_called()
+
+            fake_server.shutdown.assert_called_once()
+            fake_thread.join.assert_called_once_with(5)
+            fake_server.server_close.assert_called_once()
+
+    def test_running_server_closes_socket_when_thread_start_fails(self) -> None:
+        fake_server = mock.Mock()
+        fake_thread = mock.Mock()
+        fake_thread.start.side_effect = RuntimeError("thread start failure")
+
+        with mock.patch("tests.support.create_server", return_value=fake_server), \
+             mock.patch("tests.support.threading.Thread", return_value=fake_thread):
+            with self.assertRaises(RuntimeError):
+                with running_server("127.0.0.1", 0):
+                    pass
+
+        fake_server.server_close.assert_called_once()
+        fake_server.shutdown.assert_not_called()
+        fake_thread.join.assert_not_called()
+

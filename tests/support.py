@@ -10,9 +10,31 @@ import os
 from pathlib import Path
 import sqlite3
 import tempfile
+import threading
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from wsgiref.simple_server import WSGIServer
 
 from easyprent_accounting.db import SCHEMA, initialize_database, seed_demo_data
 from easyprent_accounting.config import AppConfig, get_global_config, set_global_config
+from easyprent_accounting.server import create_server
+
+
+@contextmanager
+def running_server(host: str = "127.0.0.1", port: int = 0) -> Iterator[WSGIServer]:
+    server = create_server(host, port)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    try:
+        thread.start()
+        try:
+            yield server
+        finally:
+            server.shutdown()
+            thread.join(5)
+    finally:
+        server.server_close()
+
 
 @contextmanager
 def preserved_global_config() -> Iterator[None]:

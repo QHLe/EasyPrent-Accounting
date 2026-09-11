@@ -933,13 +933,9 @@ class TemplateResolutionTests(unittest.TestCase):
                 self.assertIn("Geleistete Vorauszahlungen (Checkout-Prioritaet)", rendered_xml)
 
     def test_render_falls_back_to_packaged_template_when_checkout_missing(self) -> None:
-        fake_package_template = mock.Mock()
-        fake_package_template.is_file.return_value = True
-        fake_package_template.read_bytes.return_value = _template_with_marker("Paket-Ressource")
-
+        fake_bytes = _template_with_marker("Paket-Ressource")
         with mock.patch("easyprent_accounting.ods_template.find_checkout_root", return_value=None), \
-             mock.patch("easyprent_accounting.ods_template.resources.files") as mock_resources:
-            mock_resources.return_value.joinpath.return_value.joinpath.return_value = fake_package_template
+             mock.patch("easyprent_accounting.ods_template._packaged_template_bytes", return_value=fake_bytes):
             rendered_xml = self._render(template_path=None)
             self.assertIn("Geleistete Vorauszahlungen (Paket-Ressource)", rendered_xml)
 

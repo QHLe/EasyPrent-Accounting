@@ -664,6 +664,13 @@ def _row_number(sheet: ET.Element, target: ET.Element) -> int:
     return sheet.findall("table:table-row", NS).index(target) + 1
 
 
+def _packaged_template_bytes() -> bytes:
+    packaged_template = resources.files(__package__).joinpath("templates", _TEMPLATE_FILENAME)
+    if not packaged_template.is_file():
+        raise ValueError("packaged settlement template is missing")
+    return packaged_template.read_bytes()
+
+
 def _read_template_bytes(template_path: Path | None) -> bytes:
     if template_path is not None:
         if not template_path.is_file():
@@ -676,10 +683,7 @@ def _read_template_bytes(template_path: Path | None) -> bytes:
         if checkout_template.is_file():
             return checkout_template.read_bytes()
 
-    packaged_template = resources.files(__package__).joinpath("templates").joinpath(_TEMPLATE_FILENAME)
-    if not packaged_template.is_file():
-        raise ValueError("packaged settlement template is missing")
-    return packaged_template.read_bytes()
+    return _packaged_template_bytes()
 
 
 def _archive_entries(document: bytes) -> list[tuple[ZipInfo, bytes]]:

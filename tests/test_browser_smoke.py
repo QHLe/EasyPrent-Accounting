@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import os
-import threading
 import unittest
 from unittest import mock
 
@@ -12,8 +11,7 @@ try:
 except ImportError:
     HAVE_PLAYWRIGHT = False
 
-from easyprent_accounting import server as server_mod
-from tests.support import temporary_database, preserved_global_config
+from tests.support import preserved_global_config, running_server, temporary_database
 
 
 class BrowserSmokeTest(unittest.TestCase):
@@ -25,25 +23,9 @@ class BrowserSmokeTest(unittest.TestCase):
     def setUp(self) -> None:
         self.enterContext(preserved_global_config())
         self.database = self.enterContext(temporary_database(seeded=True))
-
         self.enterContext(mock.patch.dict(os.environ, {"EASYPRENT_DB_PATH": str(self.database.path)}))
-
-        self.server = server_mod.create_server("127.0.0.1", 0)
+        self.server = self.enterContext(running_server("127.0.0.1", 0))
         self.port = self.server.server_port
-
-        server_started = False
-
-        def cleanup_server() -> None:
-            if server_started:
-                self.server.shutdown()
-                self.server_thread.join(5)
-            self.server.server_close()
-
-        self.addCleanup(cleanup_server)
-
-        self.server_thread = threading.Thread(target=self.server.serve_forever, daemon=True)
-        self.server_thread.start()
-        server_started = True
 
     def test_offline_start_clean_console_and_navigation(self) -> None:
         """Verify offline start: no external requests, clean console, and clickable main navigation."""
@@ -128,39 +110,6 @@ class BrowserSmokeTest(unittest.TestCase):
             browser.close()
 
 
-class BrowserSmokeLifecycleTests(unittest.TestCase):
-    def test_setup_cleans_up_server_without_shutdown_when_thread_start_fails(self) -> None:
-        fake_server = mock.Mock()
-        fake_server.server_port = 8888
-        fake_thread = mock.Mock()
-        fake_thread.start.side_effect = RuntimeError("thread start failure")
-
-        instance = BrowserSmokeTest(methodName="test_offline_start_clean_console_and_navigation")
-        with mock.patch.object(server_mod, "create_server", return_value=fake_server), \
-             mock.patch.object(threading, "Thread", return_value=fake_thread):
-            with self.assertRaises(RuntimeError):
-                instance.setUp()
-            instance.doCleanups()
-
-        fake_server.server_close.assert_called_once()
-        fake_server.shutdown.assert_not_called()
-        fake_thread.join.assert_not_called()
-
-    def test_cleanup_shuts_down_and_joins_when_server_started(self) -> None:
-        fake_server = mock.Mock()
-        fake_server.server_port = 8888
-        fake_thread = mock.Mock()
-
-        instance = BrowserSmokeTest(methodName="test_offline_start_clean_console_and_navigation")
-        with mock.patch.object(server_mod, "create_server", return_value=fake_server), \
-             mock.patch.object(threading, "Thread", return_value=fake_thread):
-            instance.setUp()
-            instance.doCleanups()
-
-        fake_server.shutdown.assert_called_once()
-        fake_thread.join.assert_called_once_with(5)
-        fake_server.server_close.assert_called_once()
-
-
 if __name__ == "__main__":
     unittest.main()
+

@@ -6,6 +6,8 @@ from pathlib import Path
 from unittest import mock
 
 from easyprent_accounting import cli
+from easyprent_accounting.config import load_config
+from tests.support import mocked_global_config
 
 
 class EasyPrentCliTests(unittest.TestCase):
@@ -18,8 +20,6 @@ class EasyPrentCliTests(unittest.TestCase):
 
         (self.project_root / "easyprent_accounting").mkdir(parents=True)
 
-        from easyprent_accounting.config import load_config
-        from tests.support import mocked_global_config
         self.enterContext(mocked_global_config(load_config({"EASYPRENT_PROJECT_ROOT": str(self.project_root)})))
 
     def _run_start_server(self, pid: int) -> tuple[int, mock.Mock]:
@@ -52,14 +52,9 @@ class EasyPrentCliTests(unittest.TestCase):
 
     def test_start_server_from_other_working_directory_preserves_project_root_database(self) -> None:
         with tempfile.TemporaryDirectory() as other_dir:
-            from easyprent_accounting.config import load_config
-            from tests.support import mocked_global_config
-
             other_path = Path(other_dir).resolve()
             with mock.patch("pathlib.Path.cwd", return_value=other_path):
-                cfg = load_config({"EASYPRENT_PROJECT_ROOT": str(self.project_root)})
-                with mocked_global_config(cfg):
-                    exit_code, popen_mock = self._run_start_server(5678)
+                exit_code, popen_mock = self._run_start_server(5678)
 
             self.assertEqual(exit_code, 0)
             self._assert_server_started_in_project_root(popen_mock)

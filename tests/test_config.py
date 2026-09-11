@@ -8,6 +8,7 @@ from unittest import mock
 from easyprent_accounting.config import (
     AppConfig,
     get_global_config,
+    get_project_root,
     load_config,
     resolve_project_root,
     set_global_config,
@@ -76,6 +77,32 @@ class ConfigTests(unittest.TestCase):
         set_global_config(cfg)
         self.assertEqual(get_global_config(), cfg)
 
+    def test_load_config_resolves_relative_settlement_template(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project_root = Path(temp_dir)
+            cfg = load_config({
+                "EASYPRENT_PROJECT_ROOT": str(project_root),
+                "EASYPRENT_SETTLEMENT_TEMPLATE": "relative/template.ods",
+            })
+            self.assertEqual(cfg.settlement_template, (project_root / "relative/template.ods").resolve())
+
+    def test_get_project_root_delegates_to_global_config(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project_root = Path(temp_dir).resolve()
+            set_global_config(
+                AppConfig(
+                    db_path=project_root / "easyprent_accounting.db",
+                    project_root=project_root,
+                    sender_name=None,
+                    sender_street=None,
+                    sender_city=None,
+                    settlement_template=None,
+                )
+            )
+            self.assertEqual(get_project_root(), project_root)
+
+
 
 if __name__ == "__main__":
     unittest.main()
+
