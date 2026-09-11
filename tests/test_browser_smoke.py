@@ -27,18 +27,24 @@ class BrowserSmokeTest(unittest.TestCase):
         self.enterContext(preserved_global_config())
         self.database = self.enterContext(temporary_database(seeded=True))
 
-        env_patch = mock.patch.dict(os.environ, {"EASYPRENT_DB_PATH": str(self.database.path)})
-        env_patch.start()
-        self.addCleanup(env_patch.stop)
+        self.enterContext(mock.patch.dict(os.environ, {"EASYPRENT_DB_PATH": str(self.database.path)}))
 
         self.server = create_server("127.0.0.1", 0)
-        self.addCleanup(self.server.server_close)
-        self.addCleanup(self.server.shutdown)
         self.port = self.server.server_port
+
+        server_started = False
+
+        def cleanup_server() -> None:
+            if server_started:
+                self.server.shutdown()
+                self.server_thread.join(5)
+            self.server.server_close()
+
+        self.addCleanup(cleanup_server)
 
         self.server_thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.server_thread.start()
-        self.addCleanup(self.server_thread.join, 5)
+        server_started = True
 
     def test_offline_start_clean_console_and_navigation(self) -> None:
         """Verify offline start: no external requests, clean console, and clickable main navigation."""

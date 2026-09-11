@@ -667,9 +667,10 @@ def _row_number(sheet: ET.Element, target: ET.Element) -> int:
 
 def _read_template_bytes(template_path: Path | None) -> bytes:
     if template_path is not None:
-        if not template_path.is_file():
-            raise ValueError(f"configured settlement template does not exist: {template_path}")
-        return template_path.read_bytes()
+        expanded_path = template_path.expanduser()
+        if not expanded_path.is_file():
+            raise ValueError(f"configured settlement template does not exist: {expanded_path}")
+        return expanded_path.read_bytes()
 
     checkout_root = find_checkout_root()
     if checkout_root is not None:

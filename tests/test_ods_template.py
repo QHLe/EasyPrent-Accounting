@@ -954,6 +954,15 @@ class TemplateResolutionTests(unittest.TestCase):
             rendered_xml = self._render(template_path=custom_template)
             self.assertIn("Geleistete Vorauszahlungen (Explizite-Vorlage)", rendered_xml)
 
+    def test_render_expands_user_for_custom_template(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            custom_template = Path(temp_dir) / "custom.ods"
+            custom_template.write_bytes(_template_with_marker("Tilde-Vorlage"))
+
+            with mock.patch.object(Path, "expanduser", return_value=custom_template):
+                rendered_xml = self._render(template_path=Path("~/custom.ods"))
+                self.assertIn("Geleistete Vorauszahlungen (Tilde-Vorlage)", rendered_xml)
+
     def test_render_raises_for_missing_configured_template(self) -> None:
         with self.assertRaises(ValueError) as ctx:
             self._render(template_path=Path("/nonexistent/template.ods"))
