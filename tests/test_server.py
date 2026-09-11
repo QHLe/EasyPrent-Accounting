@@ -5,7 +5,7 @@ import unittest
 from unittest import mock
 from wsgiref.simple_server import WSGIServer
 
-from easyprent_accounting.config import get_global_config, set_global_config
+from easyprent_accounting.config import get_global_config
 from easyprent_accounting.server import create_server, run_server, main
 from tests.support import temporary_database, preserved_global_config
 

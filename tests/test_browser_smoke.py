@@ -116,7 +116,6 @@ class BrowserSmokeTest(unittest.TestCase):
                     page.wait_for_selector('.echarts-host', timeout=2000)
 
                     # Verify behavioral form rendering
-                    # Verify behavioral form rendering
                     page.click('text="Kostenposten erzeugen"')
                     page.wait_for_selector('label:has-text("Kostenart")', timeout=2000)
                     
@@ -128,6 +127,16 @@ class BrowserSmokeTest(unittest.TestCase):
             self.assertEqual(page_errors, [], f"Page errors during navigation: {page_errors}")
 
             browser.close()
+
+
+class BrowserSmokeLifecycleTests(unittest.TestCase):
+    def test_setup_cleans_up_server_without_shutdown_when_thread_start_fails(self) -> None:
+        instance = BrowserSmokeTest(methodName="test_offline_start_clean_console_and_navigation")
+        with mock.patch("threading.Thread.start", side_effect=RuntimeError("thread start failure")):
+            with self.assertRaises(RuntimeError):
+                instance.setUp()
+            instance.doCleanups()
+        self.assertEqual(instance.server.socket.fileno(), -1)
 
 
 if __name__ == "__main__":

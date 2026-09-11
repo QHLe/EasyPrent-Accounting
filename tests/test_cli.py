@@ -29,8 +29,8 @@ class EasyPrentCliTests(unittest.TestCase):
         self.cwd_patch.stop()
         self.temp_dir.cleanup()
 
-    def test_start_server_launches_background_process_and_writes_pid(self) -> None:
-        process = mock.Mock(pid=4321)
+    def _run_start_server(self, pid: int = 4321, env: dict[str, str] | None = None) -> tuple[int, mock.Mock]:
+        process = mock.Mock(pid=pid)
         process.poll.return_value = None
 
         with mock.patch.object(cli, "running_pid", return_value=None), mock.patch.object(
@@ -38,10 +38,11 @@ class EasyPrentCliTests(unittest.TestCase):
         ), mock.patch.object(cli.subprocess, "Popen", return_value=process) as popen_mock, mock.patch.object(
             cli.time, "sleep"
         ):
-            exit_code = cli.start_server({})
+            exit_code = cli.start_server({} if env is None else env)
 
-        self.assertEqual(exit_code, 0)
-        self.assertEqual(self.pid_file.read_text(encoding="utf-8").strip(), "4321")
+        return exit_code, popen_mock
+
+    def _assert_server_started_in_project_root(self, popen_mock: mock.Mock) -> None:
         popen_mock.assert_called_once()
         self.assertEqual(popen_mock.call_args.kwargs["cwd"], self.project_root.resolve())
         self.assertEqual(
@@ -49,33 +50,25 @@ class EasyPrentCliTests(unittest.TestCase):
             str((self.project_root / "easyprent_accounting.db").resolve()),
         )
 
-    def test_start_server_from_other_working_directory_preserves_project_root_database(self) -> None:
-        process = mock.Mock(pid=5678)
-        process.poll.return_value = None
+    def test_start_server_launches_background_process_and_writes_pid(self) -> None:
+        exit_code, popen_mock = self._run_start_server(pid=4321)
 
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(self.pid_file.read_text(encoding="utf-8").strip(), "4321")
+        self._assert_server_started_in_project_root(popen_mock)
+
+    def test_start_server_from_other_working_directory_preserves_project_root_database(self) -> None:
         with tempfile.TemporaryDirectory() as other_dir:
             from easyprent_accounting.config import load_config
             from tests.support import mocked_global_config
 
             with mock.patch("os.getcwd", return_value=other_dir):
                 cfg = load_config({"EASYPRENT_PROJECT_ROOT": str(self.project_root)})
-                with mocked_global_config(cfg), mock.patch.object(
-                    cli, "running_pid", return_value=None
-                ), mock.patch.object(
-                    cli, "server_command", return_value=["python3", "-m", "easyprent_accounting.server"]
-                ), mock.patch.object(
-                    cli.subprocess, "Popen", return_value=process
-                ) as popen_mock, mock.patch.object(
-                    cli.time, "sleep"
-                ):
-                    exit_code = cli.start_server({})
+                with mocked_global_config(cfg):
+                    exit_code, popen_mock = self._run_start_server(pid=5678)
 
             self.assertEqual(exit_code, 0)
-            self.assertEqual(popen_mock.call_args.kwargs["cwd"], self.project_root.resolve())
-            self.assertEqual(
-                popen_mock.call_args.kwargs["env"]["EASYPRENT_DB_PATH"],
-                str((self.project_root / "easyprent_accounting.db").resolve()),
-            )
+            self._assert_server_started_in_project_root(popen_mock)
 
     def test_stop_server_removes_stale_pid_file(self) -> None:
         self.runtime_dir.mkdir()

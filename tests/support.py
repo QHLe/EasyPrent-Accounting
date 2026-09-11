@@ -15,19 +15,6 @@ from easyprent_accounting.db import SCHEMA, initialize_database, seed_demo_data
 from easyprent_accounting.config import AppConfig, get_global_config, set_global_config
 
 @contextmanager
-def mocked_global_config(config: AppConfig) -> Iterator[None]:
-    try:
-        original = get_global_config()
-    except RuntimeError:
-        original = None
-    set_global_config(config)
-    try:
-        yield
-    finally:
-        set_global_config(original)
-
-
-@contextmanager
 def preserved_global_config() -> Iterator[None]:
     try:
         original = get_global_config()
@@ -37,6 +24,13 @@ def preserved_global_config() -> Iterator[None]:
         yield
     finally:
         set_global_config(original)
+
+
+@contextmanager
+def mocked_global_config(config: AppConfig) -> Iterator[None]:
+    with preserved_global_config():
+        set_global_config(config)
+        yield
 
 
 @dataclass(frozen=True)
