@@ -13,16 +13,25 @@ class AppConfig:
     settlement_template: Optional[Path]
 
 def load_config(environ: dict[str, str]) -> AppConfig:
-    project_root = environ.get("EASYPRENT_PROJECT_ROOT")
+    project_root_env = environ.get("EASYPRENT_PROJECT_ROOT")
+    project_root = Path(project_root_env).expanduser().resolve() if project_root_env is not None else None
+
+    db_path_env = environ.get("EASYPRENT_DB_PATH")
+    if db_path_env is not None:
+        db_path = Path(db_path_env).expanduser().resolve()
+    else:
+        root_for_db = project_root or find_checkout_root() or Path.cwd().resolve()
+        db_path = (root_for_db / "easyprent_accounting.db").resolve()
+
     template = environ.get("EASYPRENT_SETTLEMENT_TEMPLATE")
-    
+
     return AppConfig(
-        db_path=Path(environ.get("EASYPRENT_DB_PATH", os.path.join(os.getcwd(), "easyprent_accounting.db"))),
-        project_root=Path(project_root) if project_root is not None else None,
+        db_path=db_path,
+        project_root=project_root,
         sender_name=environ.get("EASYPRENT_SENDER_NAME"),
         sender_street=environ.get("EASYPRENT_SENDER_STREET"),
         sender_city=environ.get("EASYPRENT_SENDER_CITY"),
-        settlement_template=Path(template) if template is not None else None,
+        settlement_template=Path(template).expanduser() if template is not None else None,
     )
 
 

@@ -27,6 +27,18 @@ def mocked_global_config(config: AppConfig) -> Iterator[None]:
         set_global_config(original)
 
 
+@contextmanager
+def preserved_global_config() -> Iterator[None]:
+    try:
+        original = get_global_config()
+    except RuntimeError:
+        original = None
+    try:
+        yield
+    finally:
+        set_global_config(original)
+
+
 @dataclass(frozen=True)
 class WsgiResponse:
     status: str

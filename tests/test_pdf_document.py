@@ -43,6 +43,7 @@ class PdfDocumentTest(unittest.TestCase):
     def setUp(self) -> None:
         self.database = self.enterContext(temporary_database(seeded=True))
         self.connection = self.database.connect(rows=True)
+        self.addCleanup(self.connection.close)
 
     def test_pdf_is_valid_and_contains_settlement_content(self) -> None:
         document_bytes, filename = settlement_pdf_for_period(

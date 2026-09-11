@@ -7,16 +7,12 @@ from wsgiref.simple_server import WSGIServer
 
 from easyprent_accounting.config import get_global_config, set_global_config
 from easyprent_accounting.server import create_server, run_server, main
-from tests.support import temporary_database
+from tests.support import temporary_database, preserved_global_config
 
 
 class ServerLifecycleTests(unittest.TestCase):
     def setUp(self) -> None:
-        try:
-            original_config = get_global_config()
-        except RuntimeError:
-            original_config = None
-        self.addCleanup(set_global_config, original_config)
+        self.enterContext(preserved_global_config())
 
     def test_create_server_initializes_config_and_database(self) -> None:
         database = self.enterContext(temporary_database(initialized=False))

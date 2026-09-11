@@ -13,9 +13,8 @@ try:
 except ImportError:
     HAVE_PLAYWRIGHT = False
 
-from easyprent_accounting.config import get_global_config, set_global_config
 from easyprent_accounting.server import create_server
-from tests.support import temporary_database
+from tests.support import temporary_database, preserved_global_config
 
 
 class BrowserSmokeTest(unittest.TestCase):
@@ -25,12 +24,7 @@ class BrowserSmokeTest(unittest.TestCase):
             raise unittest.SkipTest("playwright is required for browser smoke tests")
 
     def setUp(self) -> None:
-        try:
-            original_config = get_global_config()
-        except RuntimeError:
-            original_config = None
-        self.addCleanup(set_global_config, original_config)
-
+        self.enterContext(preserved_global_config())
         self.database = self.enterContext(temporary_database(seeded=True))
 
         env_patch = mock.patch.dict(os.environ, {"EASYPRENT_DB_PATH": str(self.database.path)})

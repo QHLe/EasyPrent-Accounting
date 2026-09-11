@@ -326,11 +326,13 @@ class OdsTemplateTests(unittest.TestCase):
         settings = ET.fromstring(settings_bytes)
         office_meta = meta.find(f".//{{{OFFICE_NS}}}meta")
         self.assertIsNotNone(office_meta)
+        assert office_meta is not None
         self.assertIsNone(office_meta.find(f"{{{META_NS}}}initial-creator"))
         self.assertIsNone(office_meta.find(f"{{{META_NS}}}printed-by"))
         self.assertIsNone(office_meta.find(f"{{{DC_NS}}}creator"))
         statistic = office_meta.find(f"{{{META_NS}}}document-statistic")
         self.assertIsNotNone(statistic)
+        assert statistic is not None
         self.assertEqual(statistic.get(f"{{{META_NS}}}table-count"), "1")
 
         name_attribute = f"{{{CONFIG_NS}}}name"
@@ -421,6 +423,7 @@ class OdsTemplateTests(unittest.TestCase):
             settings = ET.fromstring(archive.read("settings.xml"))
         sheet = content.find(f".//{{{TABLE_NS}}}table")
         self.assertIsNotNone(sheet)
+        assert sheet is not None
         self.assertEqual(sheet.get(f"{{{TABLE_NS}}}name"), "2026")
         active_table = next(
             item
@@ -495,6 +498,7 @@ class OdsTemplateTests(unittest.TestCase):
                 f"{{{STYLE_NS}}}paragraph-properties"
             )
             self.assertIsNotNone(paragraph_properties)
+            assert paragraph_properties is not None
             self.assertEqual(
                 paragraph_properties.get(f"{{{FO_NS}}}text-align"),
                 "start",
@@ -666,6 +670,7 @@ class OdsTemplateTests(unittest.TestCase):
             f"{{{STYLE_NS}}}table-row-properties"
         )
         self.assertIsNotNone(row_properties)
+        assert row_properties is not None
         self.assertEqual(row_properties.get(f"{{{FO_NS}}}break-before"), "page")
         row_styles = [
             style
@@ -886,6 +891,7 @@ class OdsTemplateTests(unittest.TestCase):
             if style.get(f"{{{STYLE_NS}}}name") == "roEasyObject"
         )
         self.assertIsNotNone(row_properties)
+        assert row_properties is not None
         self.assertIsNone(row_properties.get(f"{{{STYLE_NS}}}row-height"))
         self.assertEqual(
             row_properties.get(f"{{{STYLE_NS}}}use-optimal-row-height"),
