@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import os
-import sys
 import threading
 import unittest
 from unittest import mock
@@ -13,7 +12,7 @@ try:
 except ImportError:
     HAVE_PLAYWRIGHT = False
 
-from easyprent_accounting.server import create_server
+from easyprent_accounting import server as server_mod
 from tests.support import temporary_database, preserved_global_config
 
 
@@ -29,7 +28,7 @@ class BrowserSmokeTest(unittest.TestCase):
 
         self.enterContext(mock.patch.dict(os.environ, {"EASYPRENT_DB_PATH": str(self.database.path)}))
 
-        self.server = create_server("127.0.0.1", 0)
+        self.server = server_mod.create_server("127.0.0.1", 0)
         self.port = self.server.server_port
 
         server_started = False
@@ -131,12 +130,36 @@ class BrowserSmokeTest(unittest.TestCase):
 
 class BrowserSmokeLifecycleTests(unittest.TestCase):
     def test_setup_cleans_up_server_without_shutdown_when_thread_start_fails(self) -> None:
+        fake_server = mock.Mock()
+        fake_server.server_port = 8888
+        fake_thread = mock.Mock()
+        fake_thread.start.side_effect = RuntimeError("thread start failure")
+
         instance = BrowserSmokeTest(methodName="test_offline_start_clean_console_and_navigation")
-        with mock.patch("threading.Thread.start", side_effect=RuntimeError("thread start failure")):
+        with mock.patch.object(server_mod, "create_server", return_value=fake_server), \
+             mock.patch.object(threading, "Thread", return_value=fake_thread):
             with self.assertRaises(RuntimeError):
                 instance.setUp()
             instance.doCleanups()
-        self.assertEqual(instance.server.socket.fileno(), -1)
+
+        fake_server.server_close.assert_called_once()
+        fake_server.shutdown.assert_not_called()
+        fake_thread.join.assert_not_called()
+
+    def test_cleanup_shuts_down_and_joins_when_server_started(self) -> None:
+        fake_server = mock.Mock()
+        fake_server.server_port = 8888
+        fake_thread = mock.Mock()
+
+        instance = BrowserSmokeTest(methodName="test_offline_start_clean_console_and_navigation")
+        with mock.patch.object(server_mod, "create_server", return_value=fake_server), \
+             mock.patch.object(threading, "Thread", return_value=fake_thread):
+            instance.setUp()
+            instance.doCleanups()
+
+        fake_server.shutdown.assert_called_once()
+        fake_thread.join.assert_called_once_with(5)
+        fake_server.server_close.assert_called_once()
 
 
 if __name__ == "__main__":

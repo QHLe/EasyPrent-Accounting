@@ -10,26 +10,19 @@ from easyprent_accounting import cli
 
 class EasyPrentCliTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.temp_dir = tempfile.TemporaryDirectory()
-        self.project_root = Path(self.temp_dir.name)
+        self.temp_dir = self.enterContext(tempfile.TemporaryDirectory())
+        self.project_root = Path(self.temp_dir)
         self.runtime_dir = self.project_root / ".easyprent"
         self.pid_file = self.runtime_dir / "server.pid"
         self.log_file = self.runtime_dir / "server.log"
-        self.original_cwd = Path.cwd()
-        self.cwd_patch = mock.patch("easyprent_accounting.cli.Path.cwd", return_value=self.project_root)
 
         (self.project_root / "easyprent_accounting").mkdir(parents=True)
-        self.cwd_patch.start()
-        
+
         from easyprent_accounting.config import load_config
         from tests.support import mocked_global_config
         self.enterContext(mocked_global_config(load_config({"EASYPRENT_PROJECT_ROOT": str(self.project_root)})))
 
-    def tearDown(self) -> None:
-        self.cwd_patch.stop()
-        self.temp_dir.cleanup()
-
-    def _run_start_server(self, pid: int = 4321, env: dict[str, str] | None = None) -> tuple[int, mock.Mock]:
+    def _run_start_server(self, pid: int) -> tuple[int, mock.Mock]:
         process = mock.Mock(pid=pid)
         process.poll.return_value = None
 
@@ -38,7 +31,7 @@ class EasyPrentCliTests(unittest.TestCase):
         ), mock.patch.object(cli.subprocess, "Popen", return_value=process) as popen_mock, mock.patch.object(
             cli.time, "sleep"
         ):
-            exit_code = cli.start_server({} if env is None else env)
+            exit_code = cli.start_server({})
 
         return exit_code, popen_mock
 
@@ -51,7 +44,7 @@ class EasyPrentCliTests(unittest.TestCase):
         )
 
     def test_start_server_launches_background_process_and_writes_pid(self) -> None:
-        exit_code, popen_mock = self._run_start_server(pid=4321)
+        exit_code, popen_mock = self._run_start_server(4321)
 
         self.assertEqual(exit_code, 0)
         self.assertEqual(self.pid_file.read_text(encoding="utf-8").strip(), "4321")
@@ -62,10 +55,11 @@ class EasyPrentCliTests(unittest.TestCase):
             from easyprent_accounting.config import load_config
             from tests.support import mocked_global_config
 
-            with mock.patch("os.getcwd", return_value=other_dir):
+            other_path = Path(other_dir).resolve()
+            with mock.patch("pathlib.Path.cwd", return_value=other_path):
                 cfg = load_config({"EASYPRENT_PROJECT_ROOT": str(self.project_root)})
                 with mocked_global_config(cfg):
-                    exit_code, popen_mock = self._run_start_server(pid=5678)
+                    exit_code, popen_mock = self._run_start_server(5678)
 
             self.assertEqual(exit_code, 0)
             self._assert_server_started_in_project_root(popen_mock)

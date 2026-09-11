@@ -5,7 +5,6 @@ import binascii
 import html
 from io import BytesIO
 import json
-import os
 import sqlite3
 import urllib.error
 import urllib.request

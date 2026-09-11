@@ -15,7 +15,6 @@ from zipfile import ZIP_STORED, ZipFile
 from unittest import mock
 
 from easyprent_accounting.web import application
-from easyprent_accounting.config import set_global_config
 from tests.support import call_wsgi_application, temporary_database
 
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from .config import AppConfig, get_global_config, set_global_config
+from .config import get_global_config
 
 
 from http import HTTPStatus

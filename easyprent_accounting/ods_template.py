@@ -5,7 +5,6 @@ from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 from importlib import resources
 from io import BytesIO
-import os
 from pathlib import Path
 import re
 from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile, ZipInfo

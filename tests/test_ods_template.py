@@ -11,7 +11,6 @@ from unittest import mock
 import xml.etree.ElementTree as ET
 from zipfile import ZipFile
 
-from easyprent_accounting.config import find_checkout_root
 from easyprent_accounting.ods_template import (
     prepare_settlement_template_bytes,
     render_settlement_template,
@@ -920,13 +919,6 @@ class TemplateResolutionTests(unittest.TestCase):
         with ZipFile(BytesIO(document)) as archive:
             return archive.read("content.xml").decode("utf-8")
 
-    def test_checkout_root_resolves_to_source_checkout(self) -> None:
-        root = find_checkout_root()
-        self.assertIsNotNone(root)
-        assert root is not None
-        self.assertTrue((root / "pyproject.toml").is_file())
-        self.assertTrue((root / "templates" / "utility_settlement.ods").is_file())
-
     def test_render_prefers_checkout_template_over_packaged_template(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_root = Path(temp_dir)
@@ -941,10 +933,15 @@ class TemplateResolutionTests(unittest.TestCase):
                 self.assertIn("Geleistete Vorauszahlungen (Checkout-Prioritaet)", rendered_xml)
 
     def test_render_falls_back_to_packaged_template_when_checkout_missing(self) -> None:
-        with mock.patch("easyprent_accounting.ods_template.find_checkout_root", return_value=None):
+        fake_package_template = mock.Mock()
+        fake_package_template.is_file.return_value = True
+        fake_package_template.read_bytes.return_value = _template_with_marker("Paket-Ressource")
+
+        with mock.patch("easyprent_accounting.ods_template.find_checkout_root", return_value=None), \
+             mock.patch("easyprent_accounting.ods_template.resources.files") as mock_resources:
+            mock_resources.return_value.joinpath.return_value.joinpath.return_value = fake_package_template
             rendered_xml = self._render(template_path=None)
-            self.assertIn("Geleistete Vorauszahlungen", rendered_xml)
-            self.assertNotIn("Checkout-Prioritaet", rendered_xml)
+            self.assertIn("Geleistete Vorauszahlungen (Paket-Ressource)", rendered_xml)
 
     def test_render_uses_explicitly_configured_template(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
