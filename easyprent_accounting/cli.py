@@ -7,8 +7,10 @@ import signal
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from .config import load_config, get_global_config, set_global_config, get_project_root
+from .packaging import build_clean_wheel, uninstall_legacy_distribution
 from pathlib import Path
 
 from .server import DEFAULT_PORT
@@ -16,11 +18,9 @@ from .server import DEFAULT_PORT
 
 SYSTEMD_SERVICE_NAME = "easy-prent.service"
 
-project_root = get_project_root
-
 
 def runtime_dir() -> Path:
-    return project_root() / ".easyprent"
+    return get_project_root() / ".easyprent"
 
 
 def pid_file() -> Path:
@@ -32,7 +32,7 @@ def log_file() -> Path:
 
 
 def runtime_python() -> str:
-    venv_python = project_root() / ".venv" / "bin" / "python"
+    venv_python = get_project_root() / ".venv" / "bin" / "python"
     if venv_python.exists():
         return str(venv_python)
     return sys.executable
@@ -92,15 +92,14 @@ def start_server(env: dict[str, str]) -> int:
 
     cfg = get_global_config()
     child_env = env.copy()
-    if cfg.project_root is not None:
-        child_env["EASYPRENT_PROJECT_ROOT"] = str(cfg.project_root)
+    child_env["EASYPRENT_PROJECT_ROOT"] = str(cfg.project_root)
     child_env["EASYPRENT_DB_PATH"] = str(cfg.db_path)
 
     ensure_runtime_dir()
     with log_file().open("a", encoding="utf-8") as log_handle:
         process = subprocess.Popen(
             server_command(),
-            cwd=project_root(),
+            cwd=get_project_root(),
             stdout=log_handle,
             stderr=subprocess.STDOUT,
             start_new_session=True,
@@ -157,7 +156,7 @@ def restart_server(env: dict[str, str]) -> int:
 
 def run_command(command: list[str]) -> int:
     print(f"$ {shlex.join(command)}")
-    completed = subprocess.run(command, cwd=project_root())
+    completed = subprocess.run(command, cwd=get_project_root())
     return completed.returncode
 
 
@@ -177,7 +176,7 @@ def update_project(env: dict[str, str]) -> int:
     systemd_service_was_running = systemd_service_is_running()
     git_check = subprocess.run(
         ["git", "rev-parse", "--is-inside-work-tree"],
-        cwd=project_root(),
+        cwd=get_project_root(),
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
@@ -188,8 +187,8 @@ def update_project(env: dict[str, str]) -> int:
     if run_command(["git", "pull", "--ff-only"]) != 0:
         return 1
 
-    package_lock = project_root() / "package-lock.json"
-    package_json = project_root() / "package.json"
+    package_lock = get_project_root() / "package-lock.json"
+    package_json = get_project_root() / "package.json"
     if package_json.exists() and package_lock.exists():
         if shutil.which("npm") is None:
             print(
@@ -199,10 +198,21 @@ def update_project(env: dict[str, str]) -> int:
         elif run_command(["npm", "ci"]) != 0:
             return 1
 
-    venv_pip = project_root() / ".venv" / "bin" / "pip"
+    venv_pip = get_project_root() / ".venv" / "bin" / "pip"
     if venv_pip.exists():
-        if run_command([str(venv_pip), "install", "--upgrade", "."]) != 0:
-            return 1
+        uninstall_legacy_distribution(runtime_python())
+        with tempfile.TemporaryDirectory() as temp_dir:
+            try:
+                wheel_path = build_clean_wheel(
+                    get_project_root(),
+                    Path(temp_dir),
+                    python_executable=runtime_python(),
+                )
+            except Exception as exc:
+                print(f"Fehler beim Bauen des Wheels: {exc}", file=sys.stderr)
+                return 1
+            if run_command([str(venv_pip), "install", "--upgrade", str(wheel_path)]) != 0:
+                return 1
 
     if systemd_service_was_running:
         print("Systemd-Dienst war aktiv und wird neu gestartet.")

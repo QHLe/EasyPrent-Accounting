@@ -5,7 +5,7 @@ from typing import Optional
 @dataclass(frozen=True)
 class AppConfig:
     db_path: Path
-    project_root: Optional[Path]
+    project_root: Path
     sender_name: Optional[str]
     sender_street: Optional[str]
     sender_city: Optional[str]
@@ -13,21 +13,21 @@ class AppConfig:
 
 def load_config(environ: dict[str, str]) -> AppConfig:
     project_root_env = environ.get("EASYPRENT_PROJECT_ROOT")
-    project_root = Path(project_root_env).expanduser().resolve() if project_root_env is not None else None
-    resolved_root = resolve_project_root(project_root)
+    project_root_override = Path(project_root_env).expanduser().resolve() if project_root_env is not None else None
+    effective_project_root = resolve_project_root(project_root_override)
 
     db_path_env = environ.get("EASYPRENT_DB_PATH")
     if db_path_env is not None:
         db_path = Path(db_path_env).expanduser().resolve()
     else:
-        db_path = (resolved_root / "easyprent_accounting.db").resolve()
+        db_path = (effective_project_root / "easyprent_accounting.db").resolve()
 
     template = environ.get("EASYPRENT_SETTLEMENT_TEMPLATE")
-    template_path = (resolved_root / Path(template).expanduser()).resolve() if template is not None else None
+    template_path = (effective_project_root / Path(template).expanduser()).resolve() if template is not None else None
 
     return AppConfig(
         db_path=db_path,
-        project_root=project_root,
+        project_root=effective_project_root,
         sender_name=environ.get("EASYPRENT_SENDER_NAME"),
         sender_street=environ.get("EASYPRENT_SENDER_STREET"),
         sender_city=environ.get("EASYPRENT_SENDER_CITY"),
@@ -45,7 +45,7 @@ def resolve_project_root(project_root_override: Optional[Path] = None) -> Path:
 
 
 def get_project_root() -> Path:
-    return resolve_project_root(get_global_config().project_root)
+    return get_global_config().project_root
 
 
 def find_checkout_root() -> Optional[Path]:

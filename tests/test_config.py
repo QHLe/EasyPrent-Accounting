@@ -101,8 +101,32 @@ class ConfigTests(unittest.TestCase):
             )
             self.assertEqual(get_project_root(), project_root)
 
+    def test_load_config_defaults_db_and_root_to_checkout_when_cwd_is_foreign(self) -> None:
+        with tempfile.TemporaryDirectory() as checkout_dir, tempfile.TemporaryDirectory() as foreign_dir:
+            checkout_path = Path(checkout_dir).resolve()
+            (checkout_path / "pyproject.toml").touch()
+            foreign_path = Path(foreign_dir).resolve()
+
+            with mock.patch("pathlib.Path.cwd", return_value=foreign_path), \
+                 mock.patch("easyprent_accounting.config.find_checkout_root", return_value=checkout_path):
+                cfg = load_config({})
+                self.assertEqual(cfg.project_root, checkout_path)
+                self.assertEqual(cfg.db_path, (checkout_path / "easyprent_accounting.db").resolve())
+
+    def test_get_project_root_remains_stable_after_cwd_change(self) -> None:
+        with tempfile.TemporaryDirectory() as dir_a, tempfile.TemporaryDirectory() as dir_b:
+            path_a = Path(dir_a).resolve()
+            path_b = Path(dir_b).resolve()
+
+            with mock.patch("pathlib.Path.cwd", return_value=path_a), \
+                 mock.patch("easyprent_accounting.config.find_checkout_root", return_value=None):
+                cfg = load_config({})
+                set_global_config(cfg)
+                self.assertEqual(get_project_root(), path_a)
+
+            with mock.patch("pathlib.Path.cwd", return_value=path_b):
+                self.assertEqual(get_project_root(), path_a)
 
 
 if __name__ == "__main__":
     unittest.main()
-

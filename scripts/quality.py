@@ -14,6 +14,7 @@ STATIC_DIRECTORY = PROJECT_ROOT / "easyprent_accounting" / "static"
 PACKAGE_IMPORTS = (
     "easyprent_accounting.cli",
     "easyprent_accounting.db",
+    "easyprent_accounting.packaging",
     "easyprent_accounting.server",
     "easyprent_accounting.web",
 )

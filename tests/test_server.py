@@ -55,4 +55,3 @@ class ServerLifecycleTests(unittest.TestCase):
         with mock.patch("easyprent_accounting.server.run_server") as mock_run:
             main()
             mock_run.assert_called_once_with()
-

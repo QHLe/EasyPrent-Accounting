@@ -65,25 +65,35 @@ class TestSupportTests(unittest.TestCase):
         )
 
     def test_running_server_starts_and_cleans_up_in_order(self) -> None:
+        manager = mock.Mock()
         fake_server = mock.Mock()
         fake_thread = mock.Mock()
+        manager.attach_mock(fake_server, "server")
+        manager.attach_mock(fake_thread, "thread")
 
         with mock.patch("tests.support.create_server", return_value=fake_server), \
              mock.patch("tests.support.threading.Thread", return_value=fake_thread):
             with running_server("127.0.0.1", 0) as server:
                 self.assertIs(server, fake_server)
-                fake_thread.start.assert_called_once()
-                fake_server.shutdown.assert_not_called()
-                fake_server.server_close.assert_not_called()
+                self.assertEqual(manager.mock_calls, [mock.call.thread.start()])
 
-            fake_server.shutdown.assert_called_once()
-            fake_thread.join.assert_called_once_with(5)
-            fake_server.server_close.assert_called_once()
+            self.assertEqual(
+                manager.mock_calls,
+                [
+                    mock.call.thread.start(),
+                    mock.call.server.shutdown(),
+                    mock.call.thread.join(5),
+                    mock.call.server.server_close(),
+                ],
+            )
 
     def test_running_server_closes_socket_when_thread_start_fails(self) -> None:
+        manager = mock.Mock()
         fake_server = mock.Mock()
         fake_thread = mock.Mock()
         fake_thread.start.side_effect = RuntimeError("thread start failure")
+        manager.attach_mock(fake_server, "server")
+        manager.attach_mock(fake_thread, "thread")
 
         with mock.patch("tests.support.create_server", return_value=fake_server), \
              mock.patch("tests.support.threading.Thread", return_value=fake_thread):
@@ -91,7 +101,10 @@ class TestSupportTests(unittest.TestCase):
                 with running_server("127.0.0.1", 0):
                     pass
 
-        fake_server.server_close.assert_called_once()
-        fake_server.shutdown.assert_not_called()
-        fake_thread.join.assert_not_called()
-
+        self.assertEqual(
+            manager.mock_calls,
+            [
+                mock.call.thread.start(),
+                mock.call.server.server_close(),
+            ],
+        )

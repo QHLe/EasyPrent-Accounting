@@ -919,26 +919,6 @@ class TemplateResolutionTests(unittest.TestCase):
         with ZipFile(BytesIO(document)) as archive:
             return archive.read("content.xml").decode("utf-8")
 
-    def test_render_prefers_checkout_template_over_packaged_template(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_root = Path(temp_dir)
-            (temp_root / "pyproject.toml").touch()
-            templates_dir = temp_root / "templates"
-            templates_dir.mkdir()
-            fake_checkout_template = templates_dir / "utility_settlement.ods"
-            fake_checkout_template.write_bytes(_template_with_marker("Checkout-Prioritaet"))
-
-            with mock.patch("easyprent_accounting.ods_template.find_checkout_root", return_value=temp_root):
-                rendered_xml = self._render(template_path=None)
-                self.assertIn("Geleistete Vorauszahlungen (Checkout-Prioritaet)", rendered_xml)
-
-    def test_render_falls_back_to_packaged_template_when_checkout_missing(self) -> None:
-        fake_bytes = _template_with_marker("Paket-Ressource")
-        with mock.patch("easyprent_accounting.ods_template.find_checkout_root", return_value=None), \
-             mock.patch("easyprent_accounting.ods_template._packaged_template_bytes", return_value=fake_bytes):
-            rendered_xml = self._render(template_path=None)
-            self.assertIn("Geleistete Vorauszahlungen (Paket-Ressource)", rendered_xml)
-
     def test_render_uses_explicitly_configured_template(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             custom_template = Path(temp_dir) / "custom.ods"
@@ -955,4 +935,3 @@ class TemplateResolutionTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

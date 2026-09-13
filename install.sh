@@ -29,7 +29,29 @@ fi
 
 echo "Installiere EasyPrent Accounting …"
 .venv/bin/python -m pip install --upgrade pip
-.venv/bin/python -m pip install --upgrade .
+
+rm -rf build dist *.egg-info
+.venv/bin/python -m pip uninstall -y easy-rem 2>/dev/null || true
+
+WHEEL_DIR="$(mktemp -d)"
+trap 'rm -rf "$WHEEL_DIR"' EXIT
+.venv/bin/python -m pip wheel --no-deps --no-build-isolation -w "$WHEEL_DIR" .
+WHEEL_FILE="$(ls "$WHEEL_DIR"/easyprent_accounting-*.whl | head -n 1)"
+
+if python3 -c '
+import sys, zipfile
+with zipfile.ZipFile(sys.argv[1]) as z:
+    bad = [n for n in z.namelist() if n.startswith("src/") or n.startswith("build/")]
+    if bad:
+        sys.exit(1)
+' "$WHEEL_FILE"; then
+  :
+else
+  echo "Fehler: Wheel enthält unerlaubte src/-Dateien." >&2
+  exit 1
+fi
+
+.venv/bin/python -m pip install --upgrade "$WHEEL_FILE"
 .venv/bin/python -c 'from importlib import resources; import odf, reportlab; assert resources.files("easyprent_accounting").joinpath("templates").joinpath("utility_settlement.ods").is_file(); print("ODS-Vorlage sowie ODS- und PDF-Abhängigkeiten verfügbar.")'
 
 echo "Richte Autostart ein …"

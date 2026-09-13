@@ -12,7 +12,6 @@ import uuid
 from socket import timeout as socket_timeout
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
-from typing import TYPE_CHECKING
 from .config import AppConfig
 
 from reportlab.lib import colors

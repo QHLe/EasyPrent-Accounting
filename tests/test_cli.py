@@ -59,6 +59,32 @@ class EasyPrentCliTests(unittest.TestCase):
             self.assertEqual(exit_code, 0)
             self._assert_server_started_in_project_root(popen_mock)
 
+    def test_start_server_without_root_env_from_foreign_cwd_preserves_checkout_root_database(self) -> None:
+        with tempfile.TemporaryDirectory() as checkout_dir, tempfile.TemporaryDirectory() as foreign_dir:
+            checkout_path = Path(checkout_dir).resolve()
+            (checkout_path / "pyproject.toml").touch()
+            (checkout_path / ".easyprent").mkdir()
+            foreign_path = Path(foreign_dir).resolve()
+
+            with mock.patch("pathlib.Path.cwd", return_value=foreign_path), \
+                 mock.patch("easyprent_accounting.config.find_checkout_root", return_value=checkout_path):
+                cfg = load_config({})
+                with mocked_global_config(cfg):
+                    exit_code, popen_mock = self._run_start_server(7890)
+
+            self.assertEqual(exit_code, 0)
+            popen_mock.assert_called_once()
+            self.assertEqual(popen_mock.call_args.kwargs["cwd"], checkout_path)
+            self.assertEqual(
+                popen_mock.call_args.kwargs["env"]["EASYPRENT_DB_PATH"],
+                str((checkout_path / "easyprent_accounting.db").resolve()),
+            )
+            self.assertEqual(
+                popen_mock.call_args.kwargs["env"]["EASYPRENT_PROJECT_ROOT"],
+                str(checkout_path),
+            )
+
+
     def test_stop_server_removes_stale_pid_file(self) -> None:
         self.runtime_dir.mkdir()
         self.pid_file.write_text("9999\n", encoding="utf-8")
@@ -125,4 +151,3 @@ class EasyPrentCliTests(unittest.TestCase):
             ],
         )
         restart_mock.assert_not_called()
-

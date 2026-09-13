@@ -86,20 +86,20 @@ class BrowserSmokeTest(unittest.TestCase):
                 # Verify button received active state
                 classes = tab_btn.get_attribute("class") or ""
                 self.assertIn("active", classes, f"Tab '{tab_label}' did not become active after click")
-                
+
                 # Verify visible behavioral rendering based on seeded data or UI structure
                 if tab_label == "Objektverwaltung":
                     page.wait_for_selector('text="Wohnpark Lindenhof"', timeout=2000)
                 elif tab_label == "Kostenverwaltung":
                     page.wait_for_selector('text="Gesamtkosten je Kostenart"', timeout=2000)
-                    
+
                     # Verify behavioral chart rendering
                     page.wait_for_selector('.echarts-host', timeout=2000)
 
                     # Verify behavioral form rendering
                     page.click('text="Kostenposten erzeugen"')
                     page.wait_for_selector('label:has-text("Kostenart")', timeout=2000)
-                    
+
                 elif tab_label == "Mieterverwaltung":
                     page.wait_for_selector('text="Tim Wagner"', timeout=2000)
 
@@ -112,4 +112,3 @@ class BrowserSmokeTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

@@ -6,7 +6,6 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from io import BytesIO
-import os
 from pathlib import Path
 import sqlite3
 import tempfile
