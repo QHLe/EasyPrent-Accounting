@@ -932,6 +932,10 @@ class TemplateResolutionTests(unittest.TestCase):
             self._render(template_path=Path("/nonexistent/template.ods"))
         self.assertIn("configured settlement template does not exist", str(ctx.exception))
 
+    def test_render_falls_back_to_packaged_template_when_template_path_is_none(self) -> None:
+        rendered_xml = self._render(template_path=None)
+        self.assertIn("Geleistete Vorauszahlungen", rendered_xml)
+
 
 if __name__ == "__main__":
     unittest.main()

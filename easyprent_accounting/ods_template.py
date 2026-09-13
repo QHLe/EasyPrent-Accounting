@@ -10,8 +10,6 @@ import re
 from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile, ZipInfo
 import xml.etree.ElementTree as ET
 
-from .config import find_checkout_root
-
 
 TABLE_NS = "urn:oasis:names:tc:opendocument:xmlns:table:1.0"
 TEXT_NS = "urn:oasis:names:tc:opendocument:xmlns:text:1.0"
@@ -676,12 +674,6 @@ def _read_template_bytes(template_path: Path | None) -> bytes:
         if not template_path.is_file():
             raise ValueError(f"configured settlement template does not exist: {template_path}")
         return template_path.read_bytes()
-
-    checkout_root = find_checkout_root()
-    if checkout_root is not None:
-        checkout_template = checkout_root / "templates" / _TEMPLATE_FILENAME
-        if checkout_template.is_file():
-            return checkout_template.read_bytes()
 
     return _packaged_template_bytes()
 

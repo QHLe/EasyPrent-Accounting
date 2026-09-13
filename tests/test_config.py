@@ -7,8 +7,8 @@ from unittest import mock
 
 from easyprent_accounting.config import (
     AppConfig,
+    SenderAddress,
     get_global_config,
-    get_project_root,
     load_config,
     resolve_project_root,
     set_global_config,
@@ -69,13 +69,14 @@ class ConfigTests(unittest.TestCase):
         cfg = AppConfig(
             db_path=Path("/tmp/test.db"),
             project_root=Path("/tmp"),
-            sender_name="Sender",
-            sender_street="Street 1",
-            sender_city="City",
+            sender=SenderAddress(name="Sender", street="Street 1", city="City"),
             settlement_template=None,
         )
         set_global_config(cfg)
         self.assertEqual(get_global_config(), cfg)
+        self.assertEqual(cfg.sender_name, "Sender")
+        self.assertEqual(cfg.sender_street, "Street 1")
+        self.assertEqual(cfg.sender_city, "City")
 
     def test_load_config_resolves_relative_settlement_template(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -86,20 +87,35 @@ class ConfigTests(unittest.TestCase):
             })
             self.assertEqual(cfg.settlement_template, (project_root / "relative/template.ods").resolve())
 
-    def test_get_project_root_delegates_to_global_config(self) -> None:
+    def test_load_config_resolves_checkout_template_when_file_exists(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
-            project_root = Path(temp_dir).resolve()
-            set_global_config(
-                AppConfig(
-                    db_path=project_root / "easyprent_accounting.db",
-                    project_root=project_root,
-                    sender_name=None,
-                    sender_street=None,
-                    sender_city=None,
-                    settlement_template=None,
-                )
-            )
-            self.assertEqual(get_project_root(), project_root)
+            project_root = Path(temp_dir)
+            template_file = project_root / "templates" / "utility_settlement.ods"
+            template_file.parent.mkdir(parents=True)
+            template_file.write_bytes(b"dummy ods")
+
+            cfg = load_config({"EASYPRENT_PROJECT_ROOT": str(project_root)})
+            self.assertEqual(cfg.settlement_template, template_file.resolve())
+
+    def test_load_config_sets_none_template_when_checkout_file_absent(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project_root = Path(temp_dir)
+            cfg = load_config({"EASYPRENT_PROJECT_ROOT": str(project_root)})
+            self.assertIsNone(cfg.settlement_template)
+
+    def test_load_config_bundles_sender_address(self) -> None:
+        cfg = load_config({
+            "EASYPRENT_SENDER_NAME": "Hausverwaltung Meyer",
+            "EASYPRENT_SENDER_STREET": "Hauptstr. 10",
+            "EASYPRENT_SENDER_CITY": "10115 Berlin",
+        })
+        self.assertEqual(
+            cfg.sender,
+            SenderAddress(name="Hausverwaltung Meyer", street="Hauptstr. 10", city="10115 Berlin"),
+        )
+        self.assertEqual(cfg.sender_name, "Hausverwaltung Meyer")
+        self.assertEqual(cfg.sender_street, "Hauptstr. 10")
+        self.assertEqual(cfg.sender_city, "10115 Berlin")
 
     def test_load_config_defaults_db_and_root_to_checkout_when_cwd_is_foreign(self) -> None:
         with tempfile.TemporaryDirectory() as checkout_dir, tempfile.TemporaryDirectory() as foreign_dir:
@@ -113,7 +129,7 @@ class ConfigTests(unittest.TestCase):
                 self.assertEqual(cfg.project_root, checkout_path)
                 self.assertEqual(cfg.db_path, (checkout_path / "easyprent_accounting.db").resolve())
 
-    def test_get_project_root_remains_stable_after_cwd_change(self) -> None:
+    def test_global_config_project_root_remains_stable_after_cwd_change(self) -> None:
         with tempfile.TemporaryDirectory() as dir_a, tempfile.TemporaryDirectory() as dir_b:
             path_a = Path(dir_a).resolve()
             path_b = Path(dir_b).resolve()
@@ -122,10 +138,10 @@ class ConfigTests(unittest.TestCase):
                  mock.patch("easyprent_accounting.config.find_checkout_root", return_value=None):
                 cfg = load_config({})
                 set_global_config(cfg)
-                self.assertEqual(get_project_root(), path_a)
+                self.assertEqual(get_global_config().project_root, path_a)
 
             with mock.patch("pathlib.Path.cwd", return_value=path_b):
-                self.assertEqual(get_project_root(), path_a)
+                self.assertEqual(get_global_config().project_root, path_a)
 
 
 if __name__ == "__main__":

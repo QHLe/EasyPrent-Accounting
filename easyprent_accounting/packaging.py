@@ -30,7 +30,7 @@ def assert_wheel_is_clean(wheel_path: Path) -> None:
         forbidden = [name for name in names if name.startswith("src/") or name.startswith("build/")]
         if forbidden:
             raise ValueError(f"Built wheel contains forbidden paths: {forbidden}")
-        
+
         has_canonical = any(name.startswith("easyprent_accounting/") for name in names)
         if not has_canonical:
             raise ValueError(f"Built wheel is missing canonical easyprent_accounting package: {names}")
@@ -78,4 +78,3 @@ def build_clean_wheel(
         return wheel_path
     finally:
         clean_build_artifacts(project_root)
-

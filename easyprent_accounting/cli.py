@@ -9,7 +9,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from .config import load_config, get_global_config, set_global_config, get_project_root
+from .config import load_config, get_global_config, set_global_config
 from .packaging import build_clean_wheel, uninstall_legacy_distribution
 from pathlib import Path
 
@@ -20,7 +20,7 @@ SYSTEMD_SERVICE_NAME = "easy-prent.service"
 
 
 def runtime_dir() -> Path:
-    return get_project_root() / ".easyprent"
+    return get_global_config().project_root / ".easyprent"
 
 
 def pid_file() -> Path:
@@ -32,7 +32,7 @@ def log_file() -> Path:
 
 
 def runtime_python() -> str:
-    venv_python = get_project_root() / ".venv" / "bin" / "python"
+    venv_python = get_global_config().project_root / ".venv" / "bin" / "python"
     if venv_python.exists():
         return str(venv_python)
     return sys.executable
@@ -99,7 +99,7 @@ def start_server(env: dict[str, str]) -> int:
     with log_file().open("a", encoding="utf-8") as log_handle:
         process = subprocess.Popen(
             server_command(),
-            cwd=get_project_root(),
+            cwd=cfg.project_root,
             stdout=log_handle,
             stderr=subprocess.STDOUT,
             start_new_session=True,
@@ -156,7 +156,7 @@ def restart_server(env: dict[str, str]) -> int:
 
 def run_command(command: list[str]) -> int:
     print(f"$ {shlex.join(command)}")
-    completed = subprocess.run(command, cwd=get_project_root())
+    completed = subprocess.run(command, cwd=get_global_config().project_root)
     return completed.returncode
 
 
@@ -174,9 +174,10 @@ def systemd_service_is_running() -> bool:
 def update_project(env: dict[str, str]) -> int:
     was_running = running_pid() is not None
     systemd_service_was_running = systemd_service_is_running()
+    root = get_global_config().project_root
     git_check = subprocess.run(
         ["git", "rev-parse", "--is-inside-work-tree"],
-        cwd=get_project_root(),
+        cwd=root,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
@@ -187,8 +188,8 @@ def update_project(env: dict[str, str]) -> int:
     if run_command(["git", "pull", "--ff-only"]) != 0:
         return 1
 
-    package_lock = get_project_root() / "package-lock.json"
-    package_json = get_project_root() / "package.json"
+    package_lock = root / "package-lock.json"
+    package_json = root / "package.json"
     if package_json.exists() and package_lock.exists():
         if shutil.which("npm") is None:
             print(
@@ -198,13 +199,13 @@ def update_project(env: dict[str, str]) -> int:
         elif run_command(["npm", "ci"]) != 0:
             return 1
 
-    venv_pip = get_project_root() / ".venv" / "bin" / "pip"
+    venv_pip = root / ".venv" / "bin" / "pip"
     if venv_pip.exists():
         uninstall_legacy_distribution(runtime_python())
         with tempfile.TemporaryDirectory() as temp_dir:
             try:
                 wheel_path = build_clean_wheel(
-                    get_project_root(),
+                    root,
                     Path(temp_dir),
                     python_executable=runtime_python(),
                 )

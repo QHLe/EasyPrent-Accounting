@@ -22,6 +22,10 @@ class EasyPrentCliTests(unittest.TestCase):
 
         self.enterContext(mocked_global_config(load_config({"EASYPRENT_PROJECT_ROOT": str(self.project_root)})))
 
+    def _create_fake_npm_project(self) -> None:
+        (self.project_root / "package.json").write_text("{}", encoding="utf-8")
+        (self.project_root / "package-lock.json").write_text("{}", encoding="utf-8")
+
     def _run_start_server(self, pid: int) -> tuple[int, mock.Mock]:
         process = mock.Mock(pid=pid)
         process.poll.return_value = None
@@ -96,8 +100,7 @@ class EasyPrentCliTests(unittest.TestCase):
         self.assertFalse(self.pid_file.exists())
 
     def test_update_runs_pull_and_restarts_running_server(self) -> None:
-        (self.project_root / "package.json").write_text("{}", encoding="utf-8")
-        (self.project_root / "package-lock.json").write_text("{}", encoding="utf-8")
+        self._create_fake_npm_project()
 
         completed = mock.Mock(returncode=0)
         with mock.patch.object(cli, "running_pid", return_value=1111), mock.patch.object(
@@ -117,8 +120,7 @@ class EasyPrentCliTests(unittest.TestCase):
         restart_mock.assert_called_once_with({})
 
     def test_update_skips_npm_when_it_is_not_installed(self) -> None:
-        (self.project_root / "package.json").write_text("{}", encoding="utf-8")
-        (self.project_root / "package-lock.json").write_text("{}", encoding="utf-8")
+        self._create_fake_npm_project()
 
         completed = mock.Mock(returncode=0)
         with mock.patch.object(cli, "running_pid", return_value=None), mock.patch.object(

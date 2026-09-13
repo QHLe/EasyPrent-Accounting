@@ -3,13 +3,48 @@ from pathlib import Path
 from typing import Optional
 
 @dataclass(frozen=True)
+class SenderAddress:
+    name: Optional[str] = None
+    street: Optional[str] = None
+    city: Optional[str] = None
+
+
+@dataclass(frozen=True)
 class AppConfig:
     db_path: Path
     project_root: Path
-    sender_name: Optional[str]
-    sender_street: Optional[str]
-    sender_city: Optional[str]
-    settlement_template: Optional[Path]
+    sender: SenderAddress = SenderAddress()
+    settlement_template: Optional[Path] = None
+
+    def __init__(
+        self,
+        db_path: Path,
+        project_root: Path,
+        sender: Optional[SenderAddress] = None,
+        settlement_template: Optional[Path] = None,
+        sender_name: Optional[str] = None,
+        sender_street: Optional[str] = None,
+        sender_city: Optional[str] = None,
+    ) -> None:
+        object.__setattr__(self, "db_path", db_path)
+        object.__setattr__(self, "project_root", project_root)
+        if sender is None:
+            sender = SenderAddress(name=sender_name, street=sender_street, city=sender_city)
+        object.__setattr__(self, "sender", sender)
+        object.__setattr__(self, "settlement_template", settlement_template)
+
+    @property
+    def sender_name(self) -> Optional[str]:
+        return self.sender.name
+
+    @property
+    def sender_street(self) -> Optional[str]:
+        return self.sender.street
+
+    @property
+    def sender_city(self) -> Optional[str]:
+        return self.sender.city
+
 
 def load_config(environ: dict[str, str]) -> AppConfig:
     project_root_env = environ.get("EASYPRENT_PROJECT_ROOT")
@@ -23,14 +58,25 @@ def load_config(environ: dict[str, str]) -> AppConfig:
         db_path = (effective_project_root / "easyprent_accounting.db").resolve()
 
     template = environ.get("EASYPRENT_SETTLEMENT_TEMPLATE")
-    template_path = (effective_project_root / Path(template).expanduser()).resolve() if template is not None else None
+    if template is not None:
+        template_path: Optional[Path] = (effective_project_root / Path(template).expanduser()).resolve()
+    else:
+        checkout_template = effective_project_root / "templates" / "utility_settlement.ods"
+        if checkout_template.is_file():
+            template_path = checkout_template.resolve()
+        else:
+            template_path = None
+
+    sender = SenderAddress(
+        name=environ.get("EASYPRENT_SENDER_NAME"),
+        street=environ.get("EASYPRENT_SENDER_STREET"),
+        city=environ.get("EASYPRENT_SENDER_CITY"),
+    )
 
     return AppConfig(
         db_path=db_path,
         project_root=effective_project_root,
-        sender_name=environ.get("EASYPRENT_SENDER_NAME"),
-        sender_street=environ.get("EASYPRENT_SENDER_STREET"),
-        sender_city=environ.get("EASYPRENT_SENDER_CITY"),
+        sender=sender,
         settlement_template=template_path,
     )
 
@@ -43,9 +89,6 @@ def resolve_project_root(project_root_override: Optional[Path] = None) -> Path:
         return checkout
     return Path.cwd().resolve()
 
-
-def get_project_root() -> Path:
-    return get_global_config().project_root
 
 
 def find_checkout_root() -> Optional[Path]:

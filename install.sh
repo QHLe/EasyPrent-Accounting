@@ -54,14 +54,32 @@ fi
 .venv/bin/python -m pip install --upgrade "$WHEEL_FILE"
 .venv/bin/python -c 'from importlib import resources; import odf, reportlab; assert resources.files("easyprent_accounting").joinpath("templates").joinpath("utility_settlement.ods").is_file(); print("ODS-Vorlage sowie ODS- und PDF-Abhängigkeiten verfügbar.")'
 
+if command -v npm >/dev/null 2>&1 && [[ -f "package-lock.json" ]]; then
+  echo "Prüfe und installiere Node-Abhängigkeiten via Lockfile …"
+  npm ci
+fi
+
 echo "Richte Autostart ein …"
 SERVICE_FILE="/etc/systemd/system/easy-prent.service"
+CANONICAL_SERVICE_FILE="/etc/systemd/system/easyprent-accounting.service"
+ACTUAL_USER="${SUDO_USER:-$(id -un)}"
+TMP_SERVICE="$(mktemp)"
+sed \
+  -e "s|^User=.*|User=${ACTUAL_USER}|" \
+  -e "s|^WorkingDirectory=.*|WorkingDirectory=${PROJECT_DIR}|" \
+  -e "s|^ExecStart=.*|ExecStart=${PROJECT_DIR}/.venv/bin/python -m easyprent_accounting.server|" \
+  "$PROJECT_DIR/easy-prent.service" > "$TMP_SERVICE"
+
 if [[ "$(id -u)" -eq 0 ]]; then
-  install -m 0644 "$PROJECT_DIR/easy-prent.service" "$SERVICE_FILE"
+  install -m 0644 "$TMP_SERVICE" "$SERVICE_FILE"
+  ln -sf "$SERVICE_FILE" "$CANONICAL_SERVICE_FILE"
+  rm -f "$TMP_SERVICE"
   systemctl daemon-reload
   systemctl enable --now easy-prent.service
 else
-  sudo install -m 0644 "$PROJECT_DIR/easy-prent.service" "$SERVICE_FILE"
+  sudo install -m 0644 "$TMP_SERVICE" "$SERVICE_FILE"
+  sudo ln -sf "$SERVICE_FILE" "$CANONICAL_SERVICE_FILE"
+  rm -f "$TMP_SERVICE"
   sudo systemctl daemon-reload
   sudo systemctl enable --now easy-prent.service
 fi

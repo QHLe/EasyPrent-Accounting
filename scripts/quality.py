@@ -31,6 +31,10 @@ def main() -> int:
         print("node is required for JavaScript syntax checks", file=sys.stderr)
         return 1
 
+    npm = shutil.which("npm")
+    if npm is not None and (PROJECT_ROOT / "package-lock.json").is_file():
+        run([npm, "ci", "--dry-run"])
+
     run([sys.executable, "-m", "unittest", "discover", "-s", "tests"])
     for source_file in sorted(STATIC_DIRECTORY.glob("*.js")):
         run([node, "--check", str(source_file)])
