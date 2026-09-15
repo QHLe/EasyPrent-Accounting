@@ -4529,15 +4529,15 @@ def settlement_ods_for_period(
         template_path=config.settlement_template,
         sender_name=(
             application_settings["sender_name"]
-            or config.sender_name or str(details["organization_name"] or "")
+            or config.sender.name or str(details["organization_name"] or "")
         ),
         sender_street=(
             application_settings["sender_street"]
-            or config.sender_street or ""
+            or config.sender.street or ""
         ),
         sender_city_line=(
             application_settings["sender_city"]
-            or config.sender_city or ""
+            or config.sender.city or ""
         ),
         tenant_name=result["tenant_name"],
         tenant_street=street,

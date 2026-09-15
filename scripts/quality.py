@@ -14,6 +14,7 @@ STATIC_DIRECTORY = PROJECT_ROOT / "easyprent_accounting" / "static"
 PACKAGE_IMPORTS = (
     "easyprent_accounting.cli",
     "easyprent_accounting.db",
+    "easyprent_accounting.deployment",
     "easyprent_accounting.packaging",
     "easyprent_accounting.server",
     "easyprent_accounting.web",
@@ -32,8 +33,23 @@ def main() -> int:
         return 1
 
     npm = shutil.which("npm")
-    if npm is not None and (PROJECT_ROOT / "package-lock.json").is_file():
-        run([npm, "ci", "--dry-run"])
+    if npm is None:
+        print("npm is required for reproducible Node dependency installation", file=sys.stderr)
+        return 1
+
+    node_manifests = (
+        PROJECT_ROOT / "package.json",
+        PROJECT_ROOT / "package-lock.json",
+    )
+    missing_manifests = [path.name for path in node_manifests if not path.is_file()]
+    if missing_manifests:
+        print(
+            "required Node manifest files are missing: " + ", ".join(missing_manifests),
+            file=sys.stderr,
+        )
+        return 1
+
+    run([npm, "ci", "--ignore-scripts"])
 
     run([sys.executable, "-m", "unittest", "discover", "-s", "tests"])
     for source_file in sorted(STATIC_DIRECTORY.glob("*.js")):

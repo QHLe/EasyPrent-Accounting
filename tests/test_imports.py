@@ -24,6 +24,8 @@ class ImportSmokeTest(unittest.TestCase):
             "easyprent_accounting.integrations.gnucash was not discovered by walk_packages",
         )
         self.assertIn("easyprent_accounting.services", discovered)
+        self.assertIn("easyprent_accounting.deployment", discovered)
+        self.assertIn("easyprent_accounting.packaging", discovered)
         self.assertIn("easyprent_accounting.web", discovered)
         self.assertIn("easyprent_accounting.cli", discovered)
 

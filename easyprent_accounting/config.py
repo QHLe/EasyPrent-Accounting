@@ -1,6 +1,9 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+import subprocess
+import tomllib
 from typing import Optional
+
 
 @dataclass(frozen=True)
 class SenderAddress:
@@ -13,43 +16,25 @@ class SenderAddress:
 class AppConfig:
     db_path: Path
     project_root: Path
-    sender: SenderAddress = SenderAddress()
+    sender: SenderAddress = field(default_factory=SenderAddress)
     settlement_template: Optional[Path] = None
-
-    def __init__(
-        self,
-        db_path: Path,
-        project_root: Path,
-        sender: Optional[SenderAddress] = None,
-        settlement_template: Optional[Path] = None,
-        sender_name: Optional[str] = None,
-        sender_street: Optional[str] = None,
-        sender_city: Optional[str] = None,
-    ) -> None:
-        object.__setattr__(self, "db_path", db_path)
-        object.__setattr__(self, "project_root", project_root)
-        if sender is None:
-            sender = SenderAddress(name=sender_name, street=sender_street, city=sender_city)
-        object.__setattr__(self, "sender", sender)
-        object.__setattr__(self, "settlement_template", settlement_template)
-
-    @property
-    def sender_name(self) -> Optional[str]:
-        return self.sender.name
-
-    @property
-    def sender_street(self) -> Optional[str]:
-        return self.sender.street
-
-    @property
-    def sender_city(self) -> Optional[str]:
-        return self.sender.city
 
 
 def load_config(environ: dict[str, str]) -> AppConfig:
     project_root_env = environ.get("EASYPRENT_PROJECT_ROOT")
-    project_root_override = Path(project_root_env).expanduser().resolve() if project_root_env is not None else None
-    effective_project_root = resolve_project_root(project_root_override)
+    project_root_override = (
+        Path(project_root_env).expanduser().resolve()
+        if project_root_env is not None
+        else None
+    )
+    current_working_directory = Path.cwd().resolve()
+    checkout_root = _find_checkout_root(
+        project_root_override,
+        current_working_directory,
+    )
+    effective_project_root = (
+        project_root_override or checkout_root or current_working_directory
+    )
 
     db_path_env = environ.get("EASYPRENT_DB_PATH")
     if db_path_env is not None:
@@ -59,13 +44,17 @@ def load_config(environ: dict[str, str]) -> AppConfig:
 
     template = environ.get("EASYPRENT_SETTLEMENT_TEMPLATE")
     if template is not None:
-        template_path: Optional[Path] = (effective_project_root / Path(template).expanduser()).resolve()
-    else:
-        checkout_template = effective_project_root / "templates" / "utility_settlement.ods"
+        template_path: Optional[Path] = (
+            effective_project_root / Path(template).expanduser()
+        ).resolve()
+    elif checkout_root is not None:
+        checkout_template = checkout_root / "templates" / "utility_settlement.ods"
         if checkout_template.is_file():
             template_path = checkout_template.resolve()
         else:
             template_path = None
+    else:
+        template_path = None
 
     sender = SenderAddress(
         name=environ.get("EASYPRENT_SENDER_NAME"),
@@ -81,27 +70,73 @@ def load_config(environ: dict[str, str]) -> AppConfig:
     )
 
 
-def resolve_project_root(project_root_override: Optional[Path] = None) -> Path:
+def _find_checkout_root(
+    project_root_override: Optional[Path],
+    current_working_directory: Path,
+) -> Optional[Path]:
     if project_root_override is not None:
-        return project_root_override.resolve()
-    checkout = find_checkout_root()
-    if checkout is not None:
-        return checkout
-    return Path.cwd().resolve()
+        if _is_checkout_root(project_root_override):
+            return project_root_override
+        return None
 
-
-
-def find_checkout_root() -> Optional[Path]:
-    candidate = Path(__file__).resolve().parents[1]
-    if (candidate / "pyproject.toml").is_file():
-        return candidate
+    seen: set[Path] = set()
+    search_roots = (Path(__file__).resolve().parent, current_working_directory)
+    for search_root in search_roots:
+        for candidate in (search_root, *search_root.parents):
+            if candidate in seen:
+                continue
+            seen.add(candidate)
+            if _is_checkout_root(candidate):
+                return candidate
     return None
 
+
+def _is_checkout_root(candidate: Path) -> bool:
+    pyproject = candidate / "pyproject.toml"
+    package = candidate / "easyprent_accounting"
+    if not pyproject.is_file() or not (package / "config.py").is_file():
+        return False
+    try:
+        with pyproject.open("rb") as handle:
+            project = tomllib.load(handle).get("project")
+    except (OSError, tomllib.TOMLDecodeError):
+        return False
+    if not isinstance(project, dict) or project.get("name") != "easyprent-accounting":
+        return False
+
+    # sudo may read a checkout owned by the application account. Trust only
+    # this explicitly validated candidate for these read-only identity checks.
+    git = ["git", "-c", f"safe.directory={candidate}", "-C", str(candidate)]
+    try:
+        root = subprocess.run(
+            [*git, "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+        )
+        if root.returncode != 0 or Path(root.stdout.rstrip("\n")).resolve() != candidate:
+            return False
+        tracked = subprocess.run(
+            [
+                *git, "ls-files", "--error-unmatch", "--",
+                "pyproject.toml",
+                "easyprent_accounting/__init__.py",
+                "easyprent_accounting/config.py",
+            ],
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return False
+    return tracked.returncode == 0
+
+
 _global_config: Optional[AppConfig] = None
+
 
 def set_global_config(cfg: Optional[AppConfig]) -> None:
     global _global_config
     _global_config = cfg
+
 
 def get_global_config() -> AppConfig:
     if _global_config is None:

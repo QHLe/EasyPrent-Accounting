@@ -3,6 +3,24 @@ set -Eeuo pipefail
 
 PROJECT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 cd "$PROJECT_DIR"
+PROJECT_OWNER="$(stat -c '%U' "$PROJECT_DIR")"
+PROJECT_OWNER_UID="$(stat -c '%u' "$PROJECT_DIR")"
+if [[ "$PROJECT_OWNER" == "UNKNOWN" ]]; then
+  echo "Fehler: Der Checkout-Eigentümer besitzt kein Unix-Benutzerkonto." >&2
+  exit 1
+fi
+if [[ "$(id -u)" -ne 0 && "$(id -u)" != "$PROJECT_OWNER_UID" ]]; then
+  echo "Fehler: Installation muss vom Checkout-Eigentümer oder root gestartet werden." >&2
+  exit 1
+fi
+OWNER_COMMAND=()
+if [[ "$(id -u)" -eq 0 && "$PROJECT_OWNER_UID" -ne 0 ]]; then
+  if ! command -v runuser >/dev/null 2>&1; then
+    echo "Fehler: runuser ist für den benutzereigenen Checkout erforderlich." >&2
+    exit 1
+  fi
+  OWNER_COMMAND=(runuser -u "$PROJECT_OWNER" --)
+fi
 
 if [[ "$(id -u)" -eq 0 ]]; then
   APT=(apt-get)
@@ -24,68 +42,46 @@ if [[ ! -x ".venv/bin/python" ]]; then
     exit 1
   fi
   echo "Erstelle virtuelle Python-Umgebung …"
-  python3 -m venv .venv
+  "${OWNER_COMMAND[@]}" python3 -m venv "$PROJECT_DIR/.venv"
 fi
-
-echo "Installiere EasyPrent Accounting …"
-.venv/bin/python -m pip install --upgrade pip
-
-rm -rf build dist *.egg-info
-.venv/bin/python -m pip uninstall -y easy-rem 2>/dev/null || true
-
-WHEEL_DIR="$(mktemp -d)"
-trap 'rm -rf "$WHEEL_DIR"' EXIT
-.venv/bin/python -m pip wheel --no-deps --no-build-isolation -w "$WHEEL_DIR" .
-WHEEL_FILE="$(ls "$WHEEL_DIR"/easyprent_accounting-*.whl | head -n 1)"
-
-if python3 -c '
-import sys, zipfile
-with zipfile.ZipFile(sys.argv[1]) as z:
-    bad = [n for n in z.namelist() if n.startswith("src/") or n.startswith("build/")]
-    if bad:
-        sys.exit(1)
-' "$WHEEL_FILE"; then
-  :
-else
-  echo "Fehler: Wheel enthält unerlaubte src/-Dateien." >&2
+if [[ "$(stat -c '%u' "$PROJECT_DIR/.venv")" != "$PROJECT_OWNER_UID" ]]; then
+  echo "Fehler: .venv gehört nicht dem Checkout-Eigentümer; bitte Eigentum prüfen." >&2
   exit 1
 fi
 
-.venv/bin/python -m pip install --upgrade "$WHEEL_FILE"
-.venv/bin/python -c 'from importlib import resources; import odf, reportlab; assert resources.files("easyprent_accounting").joinpath("templates").joinpath("utility_settlement.ods").is_file(); print("ODS-Vorlage sowie ODS- und PDF-Abhängigkeiten verfügbar.")'
-
-if command -v npm >/dev/null 2>&1 && [[ -f "package-lock.json" ]]; then
-  echo "Prüfe und installiere Node-Abhängigkeiten via Lockfile …"
-  npm ci
+ACTUAL_USER="$PROJECT_OWNER"
+if [[ "$(id -u)" -eq 0 ]]; then
+  "$PROJECT_DIR/.venv/bin/python" -m easyprent_accounting.deployment validate \
+    --project-root "$PROJECT_DIR" --runtime-user "$ACTUAL_USER"
+else
+  sudo "$PROJECT_DIR/.venv/bin/python" -m easyprent_accounting.deployment validate \
+    --project-root "$PROJECT_DIR" --runtime-user "$ACTUAL_USER"
 fi
+
+echo "Installiere EasyPrent Accounting …"
+"${OWNER_COMMAND[@]}" "$PROJECT_DIR/.venv/bin/python" -m easyprent_accounting.packaging preflight-install
+"${OWNER_COMMAND[@]}" "$PROJECT_DIR/.venv/bin/python" -m pip install --upgrade pip
+"${OWNER_COMMAND[@]}" "$PROJECT_DIR/.venv/bin/python" -m easyprent_accounting.packaging install "$PROJECT_DIR"
+"${OWNER_COMMAND[@]}" "$PROJECT_DIR/.venv/bin/python" -c 'from importlib import resources; import odf, reportlab; assert resources.files("easyprent_accounting").joinpath("templates").joinpath("utility_settlement.ods").is_file(); print("ODS-Vorlage sowie ODS- und PDF-Abhängigkeiten verfügbar.")'
 
 echo "Richte Autostart ein …"
-SERVICE_FILE="/etc/systemd/system/easy-prent.service"
-CANONICAL_SERVICE_FILE="/etc/systemd/system/easyprent-accounting.service"
-ACTUAL_USER="${SUDO_USER:-$(id -un)}"
-TMP_SERVICE="$(mktemp)"
-sed \
-  -e "s|^User=.*|User=${ACTUAL_USER}|" \
-  -e "s|^WorkingDirectory=.*|WorkingDirectory=${PROJECT_DIR}|" \
-  -e "s|^ExecStart=.*|ExecStart=${PROJECT_DIR}/.venv/bin/python -m easyprent_accounting.server|" \
-  "$PROJECT_DIR/easy-prent.service" > "$TMP_SERVICE"
+DEPLOY_COMMAND=(
+  "$PROJECT_DIR/.venv/bin/python"
+  -m easyprent_accounting.deployment install
+  --project-root "$PROJECT_DIR"
+  --runtime-user "$ACTUAL_USER"
+)
 
 if [[ "$(id -u)" -eq 0 ]]; then
-  install -m 0644 "$TMP_SERVICE" "$SERVICE_FILE"
-  ln -sf "$SERVICE_FILE" "$CANONICAL_SERVICE_FILE"
-  rm -f "$TMP_SERVICE"
-  systemctl daemon-reload
-  systemctl enable --now easy-prent.service
+  "${DEPLOY_COMMAND[@]}"
 else
-  sudo install -m 0644 "$TMP_SERVICE" "$SERVICE_FILE"
-  sudo ln -sf "$SERVICE_FILE" "$CANONICAL_SERVICE_FILE"
-  rm -f "$TMP_SERVICE"
-  sudo systemctl daemon-reload
-  sudo systemctl enable --now easy-prent.service
+  sudo "${DEPLOY_COMMAND[@]}"
 fi
+
+"${OWNER_COMMAND[@]}" "$PROJECT_DIR/.venv/bin/python" -m easyprent_accounting.packaging retire-legacy
 
 echo
 echo "Installation abgeschlossen. Starten mit:"
-echo "  systemctl status easy-prent.service"
+echo "  systemctl status easyprent-accounting.service"
 echo
 echo "Die Anwendung ist anschließend unter http://localhost:8020 erreichbar."

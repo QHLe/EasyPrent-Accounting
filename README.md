@@ -30,25 +30,41 @@ Verfügbare Befehle für einen direkt aus dem Checkout gestarteten Server:
 - `python3 -m easyprent_accounting.cli restart`
 - `python3 -m easyprent_accounting.cli update`
 
-`update` führt `git pull --ff-only` aus, installiert bei Bedarf Node- und
-Python-Abhängigkeiten neu und startet einen laufenden Server anschließend
-automatisch neu.
+`update` führt `git pull --ff-only` aus, installiert das Python-Paket aus dem
+aktualisierten Checkout neu und startet einen laufenden Server anschließend
+automatisch neu. Node.js ist keine Laufzeitabhängigkeit.
 
 Logs und PID-Datei liegen unter `.easyprent/`.
 
 Wurde die Anwendung mit `install.sh` als systemd-Dienst eingerichtet, wird der
-Server von `easy-prent.service` verwaltet. In diesem Fall dürfen nicht parallel
+Server von `easyprent-accounting.service` verwaltet. In diesem Fall dürfen nicht parallel
 die direkten `start`- oder `restart`-Befehle verwendet werden, da sonst Port
 8020 bereits belegt ist. Für den installierten Dienst gelten stattdessen:
 
 ```bash
-systemctl status easy-prent.service
-systemctl restart easy-prent.service
-journalctl -u easy-prent.service -n 100 --no-pager
+systemctl status easyprent-accounting.service
+systemctl restart easyprent-accounting.service
+journalctl -u easyprent-accounting.service -n 100 --no-pager
 ```
 
-`python3 -m easyprent_accounting.cli update` erkennt einen laufenden systemd-Dienst und startet ihn nach
-dem Update über systemd neu.
+Für eine systemd-Installation wird `update` mit root-Rechten ausgeführt:
+
+```bash
+sudo .venv/bin/python -m easyprent_accounting.cli update
+```
+
+Der Befehl ersetzt eine vorhandene alte `easy-prent.service`-Unit erst nach
+erfolgreichem Preflight und kanonischem Dienststart. Bei einem Fehler bleibt
+die Legacy-Unit für einen Rollback erhalten. Beim einmaligen Wechsel von
+einem Checkout vor dieser Update-Logik zuerst `git pull --ff-only` ausführen
+und danach `install.sh` aus dem aktualisierten Checkout erneut starten; bereits
+geladener alter CLI-Code kann sich nicht nachträglich selbst aktualisieren.
+
+`install.sh` und `update` ändern weder Besitzer noch Inhalte einer vorhandenen
+Datenbank. Ist `easyprent_accounting.db` aus einem alten root-Dienst nicht für
+den neuen Laufzeitbenutzer schreibbar oder enthält `.venv` fremde Besitzer,
+stoppt der Preflight mit dem betroffenen Pfad. Vor einer manuellen Korrektur
+die Datenbank sichern und Besitzer sowie Rechte gezielt prüfen.
 
 ## Tests
 
@@ -117,9 +133,12 @@ einmalig eingefügt und die Installationskopie aktualisiert:
 .venv/bin/python scripts/prepare_settlement_template.py /pfad/zur/vorlage.ods
 ```
 
-Der Server verwendet im Checkout automatisch die Master-Vorlage. Alternativ
-kann über `EASYPRENT_SETTLEMENT_TEMPLATE` ein anderer Vorlagenpfad angegeben
-werden. Absenderdaten können optional über `EASYPRENT_SENDER_NAME`,
+Der Server verwendet in einem verifizierten Checkout automatisch die
+Master-Vorlage. Außerhalb eines Checkouts wird ausschließlich die im
+Python-Paket enthaltene Vorlage verwendet; eine zufällig gleichnamige Datei im
+Arbeitsverzeichnis wird ignoriert. Alternativ kann über
+`EASYPRENT_SETTLEMENT_TEMPLATE` ein anderer Vorlagenpfad angegeben werden.
+Absenderdaten können optional über `EASYPRENT_SENDER_NAME`,
 `EASYPRENT_SENDER_STREET` und `EASYPRENT_SENDER_CITY` gesetzt werden. Ohne
 eigene Absenderkonfiguration wird nur der gespeicherte Organisationsname
 eingetragen, da das Datenmodell derzeit keine Organisationsanschrift enthält.
@@ -137,3 +156,7 @@ Lokal läuft derselbe Befehl wie in CI:
 ```bash
 python3 scripts/quality.py
 ```
+
+Der kanonische Qualitätslauf benötigt Python, Node.js und npm. Er installiert
+die Node-Abhängigkeiten reproduzierbar mit `npm ci --ignore-scripts`; die
+Produktionsinstallation und der laufende Server benötigen Node.js nicht.

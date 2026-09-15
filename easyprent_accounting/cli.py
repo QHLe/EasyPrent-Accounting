@@ -2,21 +2,24 @@ from __future__ import annotations
 
 import argparse
 import os
+import pwd
 import shlex
 import signal
-import shutil
 import subprocess
 import sys
-import tempfile
 import time
 from .config import load_config, get_global_config, set_global_config
-from .packaging import build_clean_wheel, uninstall_legacy_distribution
+from .deployment import (
+    CANONICAL_SERVICE_NAME,
+    DEFAULT_UNIT_DIRECTORY,
+    LEGACY_SERVICE_NAME,
+    deploy_systemd_unit,
+    validate_systemd_unit,
+)
+from .packaging import install_checkout, uninstall_legacy_distribution
 from pathlib import Path
 
 from .server import DEFAULT_PORT
-
-
-SYSTEMD_SERVICE_NAME = "easy-prent.service"
 
 
 def runtime_dir() -> Path:
@@ -160,76 +163,195 @@ def run_command(command: list[str]) -> int:
     return completed.returncode
 
 
-def systemd_service_is_running() -> bool:
-    if shutil.which("systemctl") is None:
-        return False
+def _run_as_checkout_owner(command: list[str], root: Path) -> int:
+    """Keep Git and venv writes owned by the checkout owner under sudo."""
+    owner_uid = root.stat().st_uid
+    if os.geteuid() != 0 or owner_uid == 0:
+        return run_command(command)
+    owner = pwd.getpwuid(owner_uid)
+    owner_env = os.environ.copy()
+    owner_env.update(HOME=owner.pw_dir, USER=owner.pw_name, LOGNAME=owner.pw_name)
+    print(f"$ [{owner.pw_name}] {shlex.join(command)}")
     completed = subprocess.run(
-        ["systemctl", "is-active", "--quiet", SYSTEMD_SERVICE_NAME],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    return completed.returncode == 0
-
-
-def update_project(env: dict[str, str]) -> int:
-    was_running = running_pid() is not None
-    systemd_service_was_running = systemd_service_is_running()
-    root = get_global_config().project_root
-    git_check = subprocess.run(
-        ["git", "rev-parse", "--is-inside-work-tree"],
+        command,
         cwd=root,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        env=owner_env,
+        user=owner_uid,
+        group=owner.pw_gid,
+        extra_groups=os.getgrouplist(owner.pw_name, owner.pw_gid),
     )
-    if git_check.returncode != 0:
-        print("Update nicht moeglich: dieses Verzeichnis ist kein gueltiges Git-Checkout.", file=sys.stderr)
-        return 1
+    return completed.returncode
 
-    if run_command(["git", "pull", "--ff-only"]) != 0:
-        return 1
 
-    package_lock = root / "package-lock.json"
-    package_json = root / "package.json"
-    if package_json.exists() and package_lock.exists():
-        if shutil.which("npm") is None:
+def _install_as_checkout_owner(root: Path, venv_python: Path) -> None:
+    owner_uid = root.stat().st_uid
+    if os.geteuid() != 0 or owner_uid == 0:
+        install_checkout(root, python_executable=str(venv_python))
+        return
+    if _run_as_checkout_owner(
+        [
+            str(venv_python),
+            "-m",
+            "easyprent_accounting.packaging",
+            "install",
+            str(root),
+        ],
+        root,
+    ) != 0:
+        raise RuntimeError("Packaging-Installation als Checkout-Eigentümer fehlgeschlagen")
+
+
+def _retire_as_checkout_owner(root: Path, venv_python: Path) -> None:
+    owner_uid = root.stat().st_uid
+    if os.geteuid() != 0 or owner_uid == 0:
+        uninstall_legacy_distribution(str(venv_python))
+        return
+    if _run_as_checkout_owner(
+        [str(venv_python), "-m", "easyprent_accounting.packaging", "retire-legacy"],
+        root,
+    ) != 0:
+        raise RuntimeError("Legacy-Paket konnte als Checkout-Eigentümer nicht entfernt werden")
+
+
+def installed_systemd_unit() -> Path | None:
+    canonical = DEFAULT_UNIT_DIRECTORY / CANONICAL_SERVICE_NAME
+    legacy = DEFAULT_UNIT_DIRECTORY / LEGACY_SERVICE_NAME
+    if canonical.is_file() or canonical.is_symlink():
+        return canonical
+    if legacy.is_file() or legacy.is_symlink():
+        return legacy
+    return None
+
+
+def runtime_user_for_unit(unit_path: Path) -> str:
+    for line in unit_path.read_text(encoding="utf-8").splitlines():
+        if line.startswith("User="):
+            return line.partition("=")[2].strip()
+    return pwd.getpwuid(os.geteuid()).pw_name
+
+
+def project_root_for_unit(unit_path: Path) -> Path:
+    for line in unit_path.read_text(encoding="utf-8").splitlines():
+        if line.startswith("WorkingDirectory="):
+            raw_path = line.partition("=")[2].strip().replace("%%", "%")
+            if not raw_path.startswith("/"):
+                raise ValueError(f"Unit hat keinen absoluten Projektpfad: {unit_path}")
+            return Path(raw_path).resolve()
+    raise ValueError(f"Unit enthält kein WorkingDirectory: {unit_path}")
+
+
+def systemd_unit_is_active() -> bool:
+    for name in (CANONICAL_SERVICE_NAME, LEGACY_SERVICE_NAME):
+        completed = subprocess.run(
+            ["systemctl", "is-active", "--quiet", name],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        if completed.returncode == 0:
+            return True
+    return False
+
+
+def finish_update(env: dict[str, str]) -> int:
+    root = get_global_config().project_root
+    was_running = running_pid() is not None
+    unit_path = installed_systemd_unit()
+    systemd_was_active = False
+    runtime_user: str | None = None
+    if unit_path is not None:
+        if os.geteuid() != 0:
             print(
-                "Warnung: npm ist nicht installiert; überspringe npm install.",
+                "Systemd-Update erfordert root-Rechte; bitte den Update-Befehl mit sudo ausführen.",
                 file=sys.stderr,
             )
-        elif run_command(["npm", "ci"]) != 0:
+            return 1
+        try:
+            unit_root = project_root_for_unit(unit_path)
+            if unit_root != root.resolve():
+                raise ValueError(
+                    f"Unit gehört zu {unit_root}, nicht zu diesem Checkout {root}"
+                )
+            systemd_was_active = systemd_unit_is_active()
+            if was_running and systemd_was_active:
+                raise RuntimeError("Systemd- und CLI-Server laufen gleichzeitig")
+            runtime_user = runtime_user_for_unit(unit_path)
+            validate_systemd_unit(root, runtime_user)
+        except (OSError, RuntimeError, ValueError) as exc:
+            print(f"Systemd-Preflight fehlgeschlagen: {exc}", file=sys.stderr)
             return 1
 
-    venv_pip = root / ".venv" / "bin" / "pip"
-    if venv_pip.exists():
-        uninstall_legacy_distribution(runtime_python())
-        with tempfile.TemporaryDirectory() as temp_dir:
-            try:
-                wheel_path = build_clean_wheel(
-                    root,
-                    Path(temp_dir),
-                    python_executable=runtime_python(),
-                )
-            except Exception as exc:
-                print(f"Fehler beim Bauen des Wheels: {exc}", file=sys.stderr)
-                return 1
-            if run_command([str(venv_pip), "install", "--upgrade", str(wheel_path)]) != 0:
-                return 1
+    venv_python = root / ".venv" / "bin" / "python"
+    if venv_python.exists():
+        try:
+            _install_as_checkout_owner(root, venv_python)
+        except (OSError, RuntimeError, ValueError) as exc:
+            print(f"Python-Installation fehlgeschlagen: {exc}", file=sys.stderr)
+            return 1
 
-    if systemd_service_was_running:
-        print("Systemd-Dienst war aktiv und wird neu gestartet.")
-        return run_command(["systemctl", "restart", SYSTEMD_SERVICE_NAME])
+    if unit_path is not None:
+        try:
+            assert runtime_user is not None
+            deploy_systemd_unit(
+                root,
+                runtime_user,
+                start_if_inactive=False,
+            )
+        except (OSError, RuntimeError, ValueError) as exc:
+            print(f"Systemd-Umstellung fehlgeschlagen: {exc}", file=sys.stderr)
+            return 1
+
+    if venv_python.exists():
+        try:
+            _retire_as_checkout_owner(root, venv_python)
+        except (OSError, RuntimeError, subprocess.CalledProcessError) as exc:
+            print(f"Legacy-Paket konnte nicht entfernt werden: {exc}", file=sys.stderr)
+            return 1
 
     if was_running:
         print("Server war aktiv und wird neu gestartet.")
         return restart_server(env)
 
+    if unit_path is not None:
+        print("Systemd-Dienst aktualisiert und bei Bedarf neu gestartet.")
+        return 0
+
     print("Update abgeschlossen.")
     return 0
 
 
+def update_project(env: dict[str, str]) -> int:
+    root = get_global_config().project_root
+    git_check = subprocess.run(
+        [
+            "git", "-c", f"safe.directory={root.resolve()}",
+            "rev-parse", "--show-toplevel",
+        ],
+        cwd=root,
+        stdout=subprocess.PIPE,
+        text=True,
+        stderr=subprocess.DEVNULL,
+    )
+    if git_check.returncode != 0 or Path(git_check.stdout.strip()).resolve() != root.resolve():
+        print("Update nicht moeglich: dieses Verzeichnis ist kein gueltiges Git-Checkout.", file=sys.stderr)
+        return 1
+
+    if _run_as_checkout_owner(["git", "pull", "--ff-only"], root) != 0:
+        return 1
+
+    venv_python = root / ".venv" / "bin" / "python"
+    python_executable = str(venv_python) if venv_python.exists() else sys.executable
+    # Re-enter through the pulled checkout; the importing CLI process may
+    # still contain pre-pull code and must not perform the new installation.
+    return run_command(
+        [python_executable, "-m", "easyprent_accounting.cli", "finish-update"]
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="EasyPrent Accounting CLI")
-    parser.add_argument("command", choices=("start", "stop", "restart", "update"))
+    parser.add_argument(
+        "command", choices=("start", "stop", "restart", "update", "finish-update")
+    )
     return parser
 
 
@@ -243,6 +365,8 @@ def main(argv: list[str] | None = None) -> int:
         return stop_server()
     if args.command == "restart":
         return restart_server(env)
+    if args.command == "finish-update":
+        return finish_update(env)
     return update_project(env)
 
 
