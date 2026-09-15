@@ -102,7 +102,7 @@ class MigrationCliTests(unittest.TestCase):
             self.assertEqual(active.read_bytes(), before)
             self.assertEqual(list(root.glob("*.legacy-backup-*.db")), [])
 
-    def test_unknown_schema_is_rejected_without_sidecars_or_source_changes(self) -> None:
+    def test_unknown_schema_is_rejected_without_backup_or_source_changes(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             active = root / "active.db"
@@ -121,6 +121,30 @@ class MigrationCliTests(unittest.TestCase):
             self.assertEqual(list(root.glob("*.legacy-backup-*.db")), [])
             self.assertEqual(json.loads(report_path.read_text(encoding="utf-8"))["errors"][0]["code"],
                              "unknown_schema_fingerprint")
+
+    def test_unknown_schema_without_report_flag_writes_dated_failure_report(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            active = root / "active.db"
+            create_legacy_fixture(active)
+            with sqlite3.connect(active) as altered:
+                altered.execute("ALTER TABLE tenants ADD COLUMN unknown_field TEXT")
+            before = active.read_bytes()
+
+            code, _, stderr = self._call(
+                ["migrate", "--database", str(active), "--dry-run"], root
+            )
+
+            self.assertEqual(code, 1, stderr)
+            self.assertEqual(active.read_bytes(), before)
+            self.assertEqual(list(root.glob("*.legacy-backup-*.db")), [])
+            reports = list(root.glob("active.db.migration-report-*.json"))
+            self.assertEqual(len(reports), 1)
+            self.assertIn(str(reports[0]), stderr)
+            self.assertEqual(
+                json.loads(reports[0].read_text(encoding="utf-8"))["errors"][0]["code"],
+                "unknown_schema_fingerprint",
+            )
 
     def test_missing_polymorphic_reference_aborts_without_activation(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

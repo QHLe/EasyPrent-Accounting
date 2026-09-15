@@ -15,15 +15,17 @@ python3 -m easyprent_accounting.cli migrate \
   --dry-run --report /path/to/migration-dry-run.json
 ```
 
-The command checks the source fingerprint before writing any sidecar, makes a
+The command checks the source fingerprint before creating a backup or staging
+database, makes a
 dated SQLite Backup API snapshot, restores that snapshot to a temporary proof
 database, migrates into a separate staging database, and validates it. The
 active file is unchanged; the staging file is removed. The verified dated
 backup remains. Inspect `success`, `schema_version.target`, `table_counts`,
 `foreign_key_check`, `integrity_check`, `checksums`, and `monetary_totals` in
 the JSON report. If `--report` is omitted, the CLI creates a dated report
-beside the database and prints its path. A failed migration writes
-`success: false` and error codes when a report destination is available.
+beside the database and prints its path. An unknown fingerprint or failed
+migration writes `success: false` and error codes to that report without
+changing the source database.
 
 With the application stopped, activate only after a successful dry run:
 

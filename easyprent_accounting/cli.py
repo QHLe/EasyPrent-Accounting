@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import pwd
 import shlex
@@ -20,7 +19,7 @@ from .deployment import (
 from .packaging import install_checkout, uninstall_legacy_distribution
 from pathlib import Path
 
-from .migration import MigrationFailure, migrate_database, restore_database
+from .migration import MigrationFailure, _persist_report, migrate_database, restore_database
 from .server import DEFAULT_PORT
 
 
@@ -376,14 +375,7 @@ def _write_json_report(path: Path | None, report: dict[str, object], active: Pat
     destination = path.expanduser().absolute()
     if destination == active.expanduser().absolute():
         raise MigrationFailure("report path must not be the active database")
-    if not destination.parent.is_dir():
-        raise MigrationFailure("report directory does not exist")
-    temporary = destination.with_name(f".{destination.name}.{os.getpid()}.tmp")
-    try:
-        temporary.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        os.replace(temporary, destination)
-    finally:
-        temporary.unlink(missing_ok=True)
+    _persist_report(destination, report)
 
 
 def _database_can_be_replaced() -> bool:
@@ -441,10 +433,19 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         except (MigrationFailure, OSError) as error:
             if args.command == "migrate" and isinstance(error, MigrationFailure):
-                try:
-                    _write_json_report(args.report, error.report, database)
-                except (MigrationFailure, OSError) as report_error:
-                    print(f"Could not write migration report: {report_error}", file=sys.stderr)
+                saved_path = error.report.get("report_path")
+                already_saved = (
+                    isinstance(saved_path, str)
+                    and Path(saved_path).is_file()
+                    and not error.report.get("report_persist_failed")
+                )
+                if already_saved:
+                    print(f"Failure report: {saved_path}", file=sys.stderr)
+                else:
+                    try:
+                        _write_json_report(args.report, error.report, database)
+                    except (MigrationFailure, OSError) as report_error:
+                        print(f"Could not write migration report: {report_error}", file=sys.stderr)
             elif args.command == "restore":
                 failure_report: dict[str, object] = {
                     "success": False,

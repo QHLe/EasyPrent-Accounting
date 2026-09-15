@@ -244,29 +244,39 @@ def migrate_database(
     if not report_destination.parent.is_dir():
         raise MigrationFailure("validation report directory does not exist")
 
-    # Reject unknown layouts before creating a backup or destination file.
-    with _readonly_connection(active) as original:
-        fingerprint = schema_fingerprint(original)
-        if fingerprint not in SUPPORTED_LEGACY_FINGERPRINTS:
-            raise MigrationFailure("unknown Legacy schema fingerprint", {
-                "success": False, "errors": [{"code": "unknown_schema_fingerprint", "fingerprint": fingerprint}],
-            })
-        if cutover and _wal_sidecars_or_mode(active, original):
-            raise MigrationFailure("WAL mode or sidecars make main-file cutover unsafe", {
-                "success": False, "errors": [{"code": "wal_cutover_unsafe"}],
-            })
-        # The peak footprint is the saved snapshot plus a restore proof or v1
-        # staging database. Leave room for SQLite journals and schema growth.
-        minimum_free = max(active.stat().st_size * 3, 1024 * 1024)
-        if shutil.disk_usage(active.parent).free < minimum_free:
-            raise MigrationFailure("insufficient free space for verified migration", {
-                "success": False, "errors": [{"code": "insufficient_space"}],
-            })
-        backup_path = _dated_sidecar(active, "legacy-backup")
-        try:
-            _backup_database(original, backup_path)
-        except (OSError, sqlite3.DatabaseError, MigrationFailure) as error:
-            raise MigrationFailure(f"verified SQLite backup failed: {error}") from error
+    # Reject unknown layouts before creating a backup or staging database.
+    try:
+        with _readonly_connection(active) as original:
+            fingerprint = schema_fingerprint(original)
+            if fingerprint not in SUPPORTED_LEGACY_FINGERPRINTS:
+                raise MigrationFailure("unknown Legacy schema fingerprint", {
+                    "success": False, "errors": [{"code": "unknown_schema_fingerprint", "fingerprint": fingerprint}],
+                })
+            if cutover and _wal_sidecars_or_mode(active, original):
+                raise MigrationFailure("WAL mode or sidecars make main-file cutover unsafe", {
+                    "success": False, "errors": [{"code": "wal_cutover_unsafe"}],
+                })
+            # The peak footprint is the saved snapshot plus a restore proof or
+            # v1 staging database. Leave room for journals and schema growth.
+            minimum_free = max(active.stat().st_size * 3, 1024 * 1024)
+            if shutil.disk_usage(active.parent).free < minimum_free:
+                raise MigrationFailure("insufficient free space for verified migration", {
+                    "success": False, "errors": [{"code": "insufficient_space"}],
+                })
+            backup_path = _dated_sidecar(active, "legacy-backup")
+            try:
+                _backup_database(original, backup_path)
+            except (OSError, sqlite3.DatabaseError, MigrationFailure) as error:
+                raise MigrationFailure(f"verified SQLite backup failed: {error}") from error
+    except (MigrationFailure, OSError, sqlite3.DatabaseError) as error:
+        preflight_report = error.report if isinstance(error, MigrationFailure) else {
+            "success": False,
+            "errors": [{"code": "migration_preflight_failed", "reason": str(error)}],
+        }
+        preflight_report["activated"] = False
+        preflight_report["cutover_requested"] = cutover
+        _persist_failure_report(report_destination, preflight_report)
+        raise MigrationFailure(str(error), preflight_report) from error
 
     report: dict[str, object] = {
         "success": False, "errors": [], "backup_path": str(backup_path), "activated": False,
