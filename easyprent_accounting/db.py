@@ -308,6 +308,12 @@ def get_connection(db_path: str | Path) -> sqlite3.Connection:
 def initialize_database(db_path: str | Path) -> None:
     connection = get_connection(db_path)
     try:
+        if connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations'"
+        ).fetchone() is not None:
+            raise RuntimeError(
+                "This database has a versioned schema and cannot start through the Legacy entry"
+            )
         connection.executescript(SCHEMA)
         ensure_schema_updates(connection)
         connection.commit()

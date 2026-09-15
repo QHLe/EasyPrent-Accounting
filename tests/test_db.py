@@ -3,9 +3,44 @@ from __future__ import annotations
 import unittest
 
 from tests.support import temporary_database
+from easyprent_accounting.legacy_schema import schema_fingerprint
+from easyprent_accounting.schema_v1 import apply_schema_v1
 
 
 class DatabaseInitializationTests(unittest.TestCase):
+    def test_legacy_entry_rejects_versioned_database_without_mutating_it(self) -> None:
+        with temporary_database(initialized=False) as database:
+            connection = database.connect()
+            try:
+                apply_schema_v1(connection)
+                connection.execute(
+                    """
+                    CREATE TABLE schema_migrations (
+                        version INTEGER PRIMARY KEY,
+                        name TEXT NOT NULL,
+                        applied_at TEXT NOT NULL
+                    )
+                    """
+                )
+                connection.execute(
+                    "INSERT INTO schema_migrations VALUES (1, 'initial', '2025-01-01')"
+                )
+                connection.commit()
+                before = schema_fingerprint(connection)
+            finally:
+                connection.close()
+
+            with self.assertRaisesRegex(RuntimeError, "versioned schema"):
+                database.initialize()
+
+            connection = database.connect()
+            try:
+                after = schema_fingerprint(connection)
+            finally:
+                connection.close()
+
+        self.assertEqual(after, before)
+
     def test_initialize_database_creates_an_empty_database(self) -> None:
         with temporary_database() as database:
             connection = database.connect()

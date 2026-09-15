@@ -36,6 +36,12 @@ automatisch neu. Node.js ist keine Laufzeitabhängigkeit.
 
 Logs und PID-Datei liegen unter `.easyprent/`.
 
+Die einmalige Migration des bekannten unversionierten SQLite-Schemas wird
+explizit über `migrate --dry-run` geprüft und erst mit `migrate --cutover`
+aktiviert. `restore --backup` stellt die datierte Sicherung wieder her. Die
+[Migrations- und Restore-Anleitung](docs/migration-and-restore.md) beschreibt
+die Befehle, Prüfberichte und den aktuell noch ausstehenden Anwendungscutover.
+
 Wurde die Anwendung mit `install.sh` als systemd-Dienst eingerichtet, wird der
 Server von `easyprent-accounting.service` verwaltet. In diesem Fall dürfen nicht parallel
 die direkten `start`- oder `restart`-Befehle verwendet werden, da sonst Port

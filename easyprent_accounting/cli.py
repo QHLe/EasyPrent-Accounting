@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import pwd
 import shlex
@@ -19,6 +20,7 @@ from .deployment import (
 from .packaging import install_checkout, uninstall_legacy_distribution
 from pathlib import Path
 
+from .migration import MigrationFailure, migrate_database, restore_database
 from .server import DEFAULT_PORT
 
 
@@ -349,16 +351,118 @@ def update_project(env: dict[str, str]) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="EasyPrent Accounting CLI")
-    parser.add_argument(
-        "command", choices=("start", "stop", "restart", "update", "finish-update")
-    )
+    commands = parser.add_subparsers(dest="command", required=True)
+    for command in ("start", "stop", "restart", "update", "finish-update"):
+        commands.add_parser(command)
+
+    migrate = commands.add_parser("migrate", help="Validate or activate the known Legacy database as schema v1")
+    migrate.add_argument("--database", type=Path, help="Active Legacy SQLite database")
+    migrate.add_argument("--target", type=Path, help="New staging file beside the active database")
+    migrate.add_argument("--report", type=Path, help="Machine-readable JSON validation report")
+    mode = migrate.add_mutually_exclusive_group()
+    mode.add_argument("--dry-run", action="store_true", help="Validate without replacing the active database (default)")
+    mode.add_argument("--cutover", action="store_true", help="Atomically activate a validated v1 database")
+
+    restore = commands.add_parser("restore", help="Atomically restore a saved SQLite migration backup")
+    restore.add_argument("--backup", type=Path, required=True, help="Dated migration backup")
+    restore.add_argument("--database", type=Path, help="Active SQLite database")
+    restore.add_argument("--report", type=Path, help="Machine-readable JSON result")
     return parser
+
+
+def _write_json_report(path: Path | None, report: dict[str, object], active: Path) -> None:
+    if path is None:
+        return
+    destination = path.expanduser().absolute()
+    if destination == active.expanduser().absolute():
+        raise MigrationFailure("report path must not be the active database")
+    if not destination.parent.is_dir():
+        raise MigrationFailure("report directory does not exist")
+    temporary = destination.with_name(f".{destination.name}.{os.getpid()}.tmp")
+    try:
+        temporary.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        os.replace(temporary, destination)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _database_can_be_replaced() -> bool:
+    if running_pid() is not None:
+        print("Migration requires the CLI server to be stopped.", file=sys.stderr)
+        return False
+    if installed_systemd_unit() is not None and systemd_unit_is_active():
+        print("Migration requires the systemd service to be stopped.", file=sys.stderr)
+        return False
+    return True
 
 
 def main(argv: list[str] | None = None) -> int:
     env = os.environ.copy()
     set_global_config(load_config(env))
     args = build_parser().parse_args(argv)
+    if args.command in ("migrate", "restore"):
+        database = args.database or get_global_config().db_path
+        if args.report is not None and args.report.expanduser().absolute() == database.expanduser().absolute():
+            print("Report path must not be the active database.", file=sys.stderr)
+            return 1
+        if args.command == "restore" and args.report is not None and args.report.expanduser().absolute() == args.backup.expanduser().absolute():
+            print("Report path must not be the backup database.", file=sys.stderr)
+            return 1
+        if args.command == "migrate" and args.report is not None and args.target is not None and args.report.expanduser().absolute() == args.target.expanduser().absolute():
+            print("Report path must not be the staging database.", file=sys.stderr)
+            return 1
+        if (args.command == "restore" or args.cutover) and not _database_can_be_replaced():
+            return 1
+        try:
+            if args.command == "migrate":
+                outcome = migrate_database(database, cutover=args.cutover, target_path=args.target)
+                print(f"Migration validated. Backup: {outcome.backup_path}")
+                if outcome.activated:
+                    print(f"Schema v1 activated: {database}")
+                    if not outcome.report.get("directory_synced", True):
+                        print("Directory sync after activation failed; verify the filesystem before restart.", file=sys.stderr)
+                try:
+                    _write_json_report(args.report, outcome.report, database)
+                except (MigrationFailure, OSError) as report_error:
+                    if not outcome.activated:
+                        raise
+                    print(f"Schema v1 is active, but the report could not be written: {report_error}", file=sys.stderr)
+            else:
+                restore_outcome = restore_database(args.backup, database)
+                preserved = restore_outcome.pre_restore_backup
+                result: dict[str, object] = {
+                    "success": True, "restored_from": str(args.backup),
+                    "active_database": str(database),
+                    "pre_restore_backup": str(preserved) if preserved is not None else None,
+                    "directory_synced": restore_outcome.directory_synced,
+                }
+                print(f"Backup restored: {database}")
+                if preserved is not None:
+                    print(f"Pre-restore database retained: {preserved}")
+                if not restore_outcome.directory_synced:
+                    print("Directory sync after restore failed; verify the filesystem before restart.", file=sys.stderr)
+                try:
+                    _write_json_report(args.report, result, database)
+                except (MigrationFailure, OSError) as report_error:
+                    print(f"Restore is active, but the report could not be written: {report_error}", file=sys.stderr)
+            return 0
+        except (MigrationFailure, OSError) as error:
+            if args.command == "migrate" and isinstance(error, MigrationFailure):
+                try:
+                    _write_json_report(args.report, error.report, database)
+                except (MigrationFailure, OSError) as report_error:
+                    print(f"Could not write migration report: {report_error}", file=sys.stderr)
+            elif args.command == "restore":
+                failure_report: dict[str, object] = {
+                    "success": False,
+                    "errors": [{"code": "restore_failed", "reason": str(error)}],
+                }
+                try:
+                    _write_json_report(args.report, failure_report, database)
+                except (MigrationFailure, OSError) as report_error:
+                    print(f"Could not write restore report: {report_error}", file=sys.stderr)
+            print(f"Migration command failed: {error}", file=sys.stderr)
+            return 1
     if args.command == "start":
         return start_server(env)
     if args.command == "stop":
