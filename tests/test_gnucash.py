@@ -16,9 +16,12 @@ from easyprent_accounting.services import (
     refresh_settlement_run_payments,
     set_settlement_payment_considered,
     settlement_for_period,
-    update_gnucash_settings,
     update_lease,
 )
+from easyprent_accounting.settings import (
+    update_gnucash_settings,
+)
+
 from tests.support import in_memory_database
 
 

@@ -15,7 +15,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from wsgiref.simple_server import WSGIServer
 
-from easyprent_accounting.db import SCHEMA, initialize_database, seed_demo_data
+from easyprent_accounting.db import SCHEMA, initialize_database
+from tests.fixtures.demo_data import seed_demo_data
 from easyprent_accounting.config import AppConfig, get_global_config, set_global_config
 from easyprent_accounting.server import create_server
 
