@@ -6,6 +6,7 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 import sqlite3
 from typing import Any
+from typing import NamedTuple
 
 
 COPY_ORDER = (
@@ -36,6 +37,27 @@ COPY_ORDER = (
 
 class LegacyMappingError(ValueError):
     """A source value or relationship has no unambiguous v1 representation."""
+
+
+class _TargetSpec(NamedTuple):
+    table: str
+    property_sql: str
+
+
+_TARGETS = {
+    "property": _TargetSpec("properties", "SELECT id FROM properties WHERE id = ?"),
+    "building": _TargetSpec("buildings", "SELECT property_id FROM buildings WHERE id = ?"),
+    "unit": _TargetSpec(
+        "units",
+        "SELECT b.property_id FROM units u LEFT JOIN buildings b ON b.id = u.building_id "
+        "WHERE u.id = ?",
+    ),
+    "room": _TargetSpec(
+        "rooms",
+        "SELECT b.property_id FROM rooms r JOIN units u ON u.id = r.unit_id "
+        "LEFT JOIN buildings b ON b.id = u.building_id WHERE r.id = ?",
+    ),
+}
 
 
 def _rows(connection: sqlite3.Connection, table: str) -> list[dict[str, Any]]:
@@ -174,32 +196,19 @@ def resolved_payment_leases(
 
 
 def _object_exists(source: sqlite3.Connection, kind: str, identifier: int) -> bool:
-    table = {
-        "property": "properties", "building": "buildings",
-        "unit": "units", "room": "rooms",
-    }.get(kind)
-    if table is None:
+    target = _TARGETS.get(kind)
+    if target is None:
         return False
-    return source.execute(f'SELECT 1 FROM "{table}" WHERE id = ?', (identifier,)).fetchone() is not None
+    return source.execute(
+        f'SELECT 1 FROM "{target.table}" WHERE id = ?', (identifier,)
+    ).fetchone() is not None
 
 
 def _parent_property(source: sqlite3.Connection, kind: str, identifier: int) -> int | None:
-    if kind == "property":
-        return identifier
-    if kind == "building":
-        row = source.execute("SELECT property_id FROM buildings WHERE id = ?", (identifier,)).fetchone()
-        return row[0] if row else None
-    if kind == "unit":
-        row = source.execute(
-            "SELECT b.property_id FROM units u LEFT JOIN buildings b ON b.id = u.building_id "
-            "WHERE u.id = ?", (identifier,)
-        ).fetchone()
-        return row[0] if row else None
-    row = source.execute(
-        "SELECT b.property_id FROM rooms r JOIN units u ON u.id = r.unit_id "
-        "LEFT JOIN buildings b ON b.id = u.building_id WHERE r.id = ?",
-        (identifier,),
-    ).fetchone()
+    target = _TARGETS.get(kind)
+    if target is None:
+        return None
+    row = source.execute(target.property_sql, (identifier,)).fetchone()
     return row[0] if row else None
 
 

@@ -415,36 +415,29 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         try:
             if args.command == "migrate":
-                outcome = migrate_database(database, cutover=args.cutover, target_path=args.target)
+                outcome = migrate_database(
+                    database, cutover=args.cutover, target_path=args.target,
+                    report_path=args.report,
+                )
                 print(f"Migration validated. Backup: {outcome.backup_path}")
+                print(f"Validation report: {outcome.report_path}")
                 if outcome.activated:
                     print(f"Schema v1 activated: {database}")
                     if not outcome.report.get("directory_synced", True):
                         print("Directory sync after activation failed; verify the filesystem before restart.", file=sys.stderr)
-                try:
-                    _write_json_report(args.report, outcome.report, database)
-                except (MigrationFailure, OSError) as report_error:
-                    if not outcome.activated:
-                        raise
-                    print(f"Schema v1 is active, but the report could not be written: {report_error}", file=sys.stderr)
+                    if outcome.report.get("report_update_failed"):
+                        print("Schema v1 is active; the pre-cutover validation report is retained, but its activation status could not be updated.", file=sys.stderr)
             else:
-                restore_outcome = restore_database(args.backup, database)
+                restore_outcome = restore_database(args.backup, database, report_path=args.report)
                 preserved = restore_outcome.pre_restore_backup
-                result: dict[str, object] = {
-                    "success": True, "restored_from": str(args.backup),
-                    "active_database": str(database),
-                    "pre_restore_backup": str(preserved) if preserved is not None else None,
-                    "directory_synced": restore_outcome.directory_synced,
-                }
                 print(f"Backup restored: {database}")
+                print(f"Restore report: {restore_outcome.report_path}")
                 if preserved is not None:
                     print(f"Pre-restore database retained: {preserved}")
                 if not restore_outcome.directory_synced:
                     print("Directory sync after restore failed; verify the filesystem before restart.", file=sys.stderr)
-                try:
-                    _write_json_report(args.report, result, database)
-                except (MigrationFailure, OSError) as report_error:
-                    print(f"Restore is active, but the report could not be written: {report_error}", file=sys.stderr)
+                if restore_outcome.report_update_failed:
+                    print("Restore is active; the pre-restore report is retained, but its activation status could not be updated.", file=sys.stderr)
             return 0
         except (MigrationFailure, OSError) as error:
             if args.command == "migrate" and isinstance(error, MigrationFailure):

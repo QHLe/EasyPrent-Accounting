@@ -21,7 +21,9 @@ database, migrates into a separate staging database, and validates it. The
 active file is unchanged; the staging file is removed. The verified dated
 backup remains. Inspect `success`, `schema_version.target`, `table_counts`,
 `foreign_key_check`, `integrity_check`, `checksums`, and `monetary_totals` in
-the JSON report. A failed migration writes `success: false` and error codes.
+the JSON report. If `--report` is omitted, the CLI creates a dated report
+beside the database and prints its path. A failed migration writes
+`success: false` and error codes when a report destination is available.
 
 With the application stopped, activate only after a successful dry run:
 
@@ -32,12 +34,21 @@ python3 -m easyprent_accounting.cli migrate \
 ```
 
 This repeats backup, transformation, and validation from the unchanged Legacy
-source. It confirms the active file still matches its backup, then atomically
-renames the validated staging database over the active path. The dated Legacy
+source. It writes and syncs the successful validation report before activation;
+a report write failure aborts while Legacy stays active. It confirms the active
+file still matches its backup, then atomically renames the validated staging
+database over the active path. The dated Legacy
 backup path is recorded in `backup_path` and retained. A target path supplied
 with `--target` must be an unused file beside the active database. Unknown
 fingerprints, insufficient storage, existing targets, failed validation, and
 failed activation leave the active file untouched.
+
+SQLite WAL mode and existing `-wal`/`-shm` sidecars make a main-file rename
+unsafe. Cutover and restore reject that state before activation; a dry run can
+still validate a WAL source. Quiesce all database users and use an explicit,
+backed-up SQLite maintenance step to checkpoint and leave WAL mode before
+retrying. Do not delete WAL sidecars by hand. The migration command itself
+only reads the original until the atomic activation.
 
 Restore that exact backup if needed:
 
@@ -50,6 +61,7 @@ python3 -m easyprent_accounting.cli restore \
 
 Restore verifies the backup, creates and checks a separate restored staging
 database, retains a dated `pre-restore` backup of any active database, and
-atomically replaces the active path. `pre_restore_backup` in the restore report
+persists its report before atomically replacing the active path.
+`pre_restore_backup` in the restore report
 records that retained v1 state. The end-to-end test performs dry run, cutover,
 and restore from the same fully synthetic Legacy fixture.

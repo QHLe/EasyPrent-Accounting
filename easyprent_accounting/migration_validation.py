@@ -37,6 +37,21 @@ class MigrationValidationError(ValueError):
         super().__init__(f"migration validation failed ({len(report['errors'])} errors)")
 
 
+def _empty_report() -> dict[str, Any]:
+    return {
+        "schema_version": {"source": None, "target": None, "expected": EXPECTED_VERSION},
+        "schema_fingerprint": {},
+        "table_counts": {},
+        "foreign_key_check": {},
+        "integrity_check": {},
+        "checksums": {},
+        "monetary_totals": [],
+        "link_checks": {"errors": []},
+        "errors": [],
+        "success": False,
+    }
+
+
 def _quote(identifier: str) -> str:
     return '"' + identifier.replace('"', '""') + '"'
 
@@ -189,18 +204,7 @@ def _validate_migration(
         APPLICATION_TABLES, EXPECTED_COLUMNS, EXPECTED_SCHEMA_FINGERPRINT,
     )
 
-    report: dict[str, Any] = {
-        "schema_version": {"source": None, "target": None, "expected": EXPECTED_VERSION},
-        "schema_fingerprint": {},
-        "table_counts": {},
-        "foreign_key_check": {},
-        "integrity_check": {},
-        "checksums": {},
-        "monetary_totals": [],
-        "link_checks": {"errors": []},
-        "errors": [],
-        "success": False,
-    }
+    report = _empty_report()
     errors: list[dict[str, Any]] = report["errors"]
     source_tables = _tables(source)
     target_tables = _tables(target)
@@ -320,12 +324,8 @@ def validate_migration(
     try:
         return _validate_migration(source, target)
     except sqlite3.DatabaseError as error:
-        report = {
-            "schema_version": {"source": None, "target": None, "expected": EXPECTED_VERSION},
-            "schema_fingerprint": {},
-            "table_counts": {}, "foreign_key_check": {}, "integrity_check": {},
-            "checksums": {}, "monetary_totals": [], "link_checks": {"errors": []},
-            "errors": [{"code": "sqlite_check_unavailable", "reason": type(error).__name__}],
-            "success": False,
-        }
+        report = _empty_report()
+        report["errors"].append({
+            "code": "sqlite_check_unavailable", "reason": type(error).__name__,
+        })
         raise MigrationValidationError(report) from error

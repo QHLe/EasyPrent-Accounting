@@ -12,7 +12,7 @@ import unittest
 from unittest.mock import patch
 from collections import namedtuple
 
-from easyprent_accounting import cli
+from easyprent_accounting import cli, migration
 from easyprent_accounting.legacy_schema import schema_fingerprint, SUPPORTED_LEGACY_FINGERPRINTS
 from tests.legacy_fixture import create_legacy_fixture
 
@@ -186,7 +186,14 @@ class MigrationCliTests(unittest.TestCase):
             create_legacy_fixture(active)
             before = active.read_bytes()
 
-            with patch("easyprent_accounting.migration.os.replace", side_effect=OSError("simulated interruption")):
+            actual_replace = os.replace
+
+            def interrupted_replace(source: os.PathLike[str] | str, destination: os.PathLike[str] | str) -> None:
+                if Path(destination) == active:
+                    raise OSError("simulated interruption")
+                actual_replace(source, destination)
+
+            with patch("easyprent_accounting.migration.os.replace", side_effect=interrupted_replace):
                 code, _, _ = self._call(
                     ["migrate", "--database", str(active), "--cutover"], root
                 )
@@ -285,21 +292,182 @@ class MigrationCliTests(unittest.TestCase):
             self.assertEqual(active.read_bytes(), before)
             self.assertTrue(list(root.glob("*.legacy-backup-*.db")))
 
-    def test_report_write_failure_after_atomic_cutover_reports_activation(self) -> None:
+    def test_report_status_update_failure_after_cutover_retains_pre_cutover_report(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             active = root / "active.db"
             create_legacy_fixture(active)
 
-            with patch.object(cli, "_write_json_report", side_effect=OSError("report disk error")):
+            actual_persist = migration._persist_report
+            write_count = 0
+
+            def fail_status_update(path: Path, report: dict[str, object]) -> None:
+                nonlocal write_count
+                write_count += 1
+                if write_count == 2:
+                    raise OSError("report disk error")
+                actual_persist(path, report)
+
+            report_path = root / "report.json"
+            with patch.object(migration, "_persist_report", side_effect=fail_status_update):
                 code, stdout, stderr = self._call(
-                    ["migrate", "--database", str(active), "--cutover", "--report", str(root / "report.json")], root
+                    ["migrate", "--database", str(active), "--cutover", "--report", str(report_path)], root
                 )
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("activated", stdout)
+            pending = json.loads(report_path.read_text(encoding="utf-8"))
+            self.assertTrue(pending["success"])
+            self.assertTrue(pending["cutover_requested"])
+            self.assertFalse(pending["activated"])
             with sqlite3.connect(active) as upgraded:
                 self.assertEqual(upgraded.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0], 1)
+
+    def test_validation_report_persistence_failure_aborts_before_cutover(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            active = root / "active.db"
+            create_legacy_fixture(active)
+            before = active.read_bytes()
+
+            with patch.object(migration, "_persist_report", side_effect=OSError("report disk error")):
+                code, _, _ = self._call(
+                    ["migrate", "--database", str(active), "--cutover"], root
+                )
+
+            self.assertEqual(code, 1)
+            self.assertEqual(active.read_bytes(), before)
+            self.assertTrue(list(root.glob("*.legacy-backup-*.db")))
+            self.assertEqual(list(root.glob("*.v1-staging-*.db")), [])
+
+    def test_missing_redundant_cadence_field_uses_canonical_charge_type(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            active = root / "active.db"
+            report_path = root / "cadence.json"
+            create_legacy_fixture(active)
+            with sqlite3.connect(active) as source:
+                source.execute("UPDATE expense_items SET interval_name = NULL WHERE id = 20")
+
+            code, _, stderr = self._call(
+                ["migrate", "--database", str(active), "--dry-run", "--report", str(report_path)], root
+            )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertTrue(json.loads(report_path.read_text(encoding="utf-8"))["success"])
+
+    def test_failed_mapping_without_report_flag_still_persists_machine_report(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            active = root / "active.db"
+            create_legacy_fixture(active)
+            with sqlite3.connect(active) as source:
+                source.execute("UPDATE expense_items SET object_id = 9999 WHERE id = 30")
+            before = active.read_bytes()
+
+            code, _, _ = self._call(
+                ["migrate", "--database", str(active), "--dry-run"], root
+            )
+
+            self.assertEqual(code, 1)
+            self.assertEqual(active.read_bytes(), before)
+            reports = list(root.glob("active.db.migration-report-*.json"))
+            self.assertEqual(len(reports), 1)
+            self.assertFalse(json.loads(reports[0].read_text(encoding="utf-8"))["success"])
+
+    def test_wal_mode_with_live_sidecars_rejects_cutover_before_activation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            active = root / "active.db"
+            report_path = root / "wal-rejected.json"
+            create_legacy_fixture(active)
+            writer = sqlite3.connect(active)
+            try:
+                self.assertEqual(writer.execute("PRAGMA journal_mode=WAL").fetchone()[0], "wal")
+                writer.execute("INSERT INTO tenants (id, full_name) VALUES (999, 'Synthetic WAL tenant')")
+                writer.commit()
+
+                code, _, _ = self._call(
+                    ["migrate", "--database", str(active), "--cutover", "--report", str(report_path)], root
+                )
+
+                self.assertEqual(code, 1)
+                self.assertEqual(writer.execute("SELECT COUNT(*) FROM tenants WHERE id = 999").fetchone()[0], 1)
+                self.assertEqual(writer.execute("PRAGMA integrity_check").fetchone()[0], "ok")
+                self.assertEqual(writer.execute("SELECT COUNT(*) FROM sqlite_master WHERE name='schema_migrations'").fetchone()[0], 0)
+                self.assertFalse(json.loads(report_path.read_text(encoding="utf-8"))["success"])
+            finally:
+                writer.close()
+
+    def test_wal_mode_with_live_sidecars_rejects_restore_before_activation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            active = root / "active.db"
+            cutover_report = root / "cutover.json"
+            restore_report = root / "restore-rejected.json"
+            create_legacy_fixture(active)
+            code, _, stderr = self._call(
+                ["migrate", "--database", str(active), "--cutover", "--report", str(cutover_report)], root
+            )
+            self.assertEqual(code, 0, stderr)
+            backup = Path(json.loads(cutover_report.read_text(encoding="utf-8"))["backup_path"])
+            writer = sqlite3.connect(active)
+            try:
+                self.assertEqual(writer.execute("PRAGMA journal_mode=WAL").fetchone()[0], "wal")
+                writer.execute("UPDATE application_settings SET sender_name = 'Synthetic change' WHERE id = 10")
+                writer.commit()
+
+                code, _, _ = self._call(
+                    ["restore", "--database", str(active), "--backup", str(backup), "--report", str(restore_report)], root
+                )
+
+                self.assertEqual(code, 1)
+                self.assertEqual(writer.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0], 1)
+                self.assertEqual(writer.execute("SELECT sender_name FROM application_settings WHERE id = 10").fetchone()[0],
+                                 "Synthetic change")
+                self.assertEqual(writer.execute("PRAGMA integrity_check").fetchone()[0], "ok")
+                self.assertFalse(json.loads(restore_report.read_text(encoding="utf-8"))["success"])
+            finally:
+                writer.close()
+
+    def test_unwritable_report_destination_aborts_cutover_before_activation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            active = root / "active.db"
+            create_legacy_fixture(active)
+            before = active.read_bytes()
+            missing_report = root / "missing" / "validation.json"
+
+            code, _, _ = self._call(
+                ["migrate", "--database", str(active), "--cutover", "--report", str(missing_report)], root
+            )
+
+            self.assertEqual(code, 1)
+            self.assertEqual(active.read_bytes(), before)
+            self.assertFalse((root / "missing").exists())
+
+    def test_unwritable_restore_report_destination_aborts_before_activation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            active = root / "active.db"
+            cutover_report = root / "cutover.json"
+            create_legacy_fixture(active)
+            code, _, stderr = self._call(
+                ["migrate", "--database", str(active), "--cutover", "--report", str(cutover_report)], root
+            )
+            self.assertEqual(code, 0, stderr)
+            backup = Path(json.loads(cutover_report.read_text(encoding="utf-8"))["backup_path"])
+            before = active.read_bytes()
+            missing_report = root / "missing" / "restore.json"
+
+            code, _, _ = self._call(
+                ["restore", "--database", str(active), "--backup", str(backup),
+                 "--report", str(missing_report)], root
+            )
+
+            self.assertEqual(code, 1)
+            self.assertEqual(active.read_bytes(), before)
+            self.assertFalse((root / "missing").exists())
 
 
 if __name__ == "__main__":
