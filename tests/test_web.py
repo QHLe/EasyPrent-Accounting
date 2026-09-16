@@ -1278,7 +1278,7 @@ for (const text of ["Heizung", "Gasabschlag", "2025-01-01 bis 2025-03-31", "Kost
             return FakePaperlessResponse()
 
         with mock.patch(
-            "easyprent_accounting.services.urllib.request.urlopen",
+            "easyprent_accounting.integrations.paperless.urllib.request.urlopen",
             side_effect=fake_urlopen,
         ):
             document_download_status, document_download_headers, document_download_body = self._call_app(
@@ -1559,7 +1559,7 @@ for (const text of ["Heizung", "Gasabschlag", "2025-01-01 bis 2025-03-31", "Kost
             raise AssertionError(f"unexpected URL {request.full_url}")
 
         with mock.patch(
-            "easyprent_accounting.services.urllib.request.urlopen",
+            "easyprent_accounting.integrations.paperless.urllib.request.urlopen",
             side_effect=fake_urlopen,
         ):
             upload_status, _, upload_body = self._call_app(
@@ -1785,7 +1785,7 @@ for (const text of ["Heizung", "Gasabschlag", "2025-01-01 bis 2025-03-31", "Kost
             raise AssertionError(f"unexpected URL {request.full_url}")
 
         with mock.patch(
-            "easyprent_accounting.services.urllib.request.urlopen",
+            "easyprent_accounting.integrations.paperless.urllib.request.urlopen",
             side_effect=fake_urlopen,
         ):
             upload_status, _, upload_body = self._call_app(
@@ -2043,7 +2043,7 @@ for (const text of ["Heizung", "Gasabschlag", "2025-01-01 bis 2025-03-31", "Kost
             return FakePaperlessResponse()
 
         with mock.patch(
-            "easyprent_accounting.services.urllib.request.urlopen",
+            "easyprent_accounting.integrations.paperless.urllib.request.urlopen",
             side_effect=fake_urlopen,
         ):
             open_status, open_headers, open_body = self._call_app(

@@ -9,6 +9,8 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from .db import get_connection
+from .integrations.paperless import PaperlessAdapter, UrllibPaperlessAdapter
+from .linked_documents import LinkedDocuments, get_paperless_status
 from .openapi import build_openapi_document
 from .services import (
     archive_object,
@@ -22,29 +24,19 @@ from .services import (
     create_meter_reading,
     update_meter,
     create_property,
-    delete_lease_document,
     delete_lease,
-    delete_tenant_document,
-    get_paperless_status,
     get_settlement_run_overview,
     find_settlement_run_id,
     refresh_settlement_run_payments,
     create_room,
     create_tenant,
     create_unit,
-    download_lease_document,
-    delete_expense_document,
     delete_meter_reading,
     delete_object,
-    download_tenant_document,
     delete_tenant,
     depreciation_schedule_for_year,
-    download_expense_document,
     import_gnucash_payments_for_period,
-    list_lease_documents,
     list_overview,
-    list_expense_documents,
-    list_tenant_documents,
     restore_object,
     settlement_for_period,
     settlement_pdf_for_period,
@@ -52,9 +44,6 @@ from .services import (
     settlement_run_ods,
     set_settlement_payment_considered,
     health_status,
-    upload_lease_documents,
-    upload_expense_documents,
-    upload_tenant_documents,
     update_building,
     update_property,
     update_room,
@@ -276,7 +265,9 @@ def render_app_shell() -> str:
 </html>"""
 
 
-def application(environ, start_response):
+def application(
+    environ, start_response, paperless_adapter: PaperlessAdapter | None = None
+):
     method = environ["REQUEST_METHOD"]
     parsed = urlparse(environ["PATH_INFO"])
     path = parsed.path
@@ -376,6 +367,8 @@ def application(environ, start_response):
 
     cfg = get_global_config()
     connection = get_connection(cfg.db_path)
+    paperless = paperless_adapter if paperless_adapter is not None else UrllibPaperlessAdapter()
+    documents = LinkedDocuments(connection, paperless)
     try:
         lifecycle_route = parse_object_lifecycle_path(path)
         if lifecycle_route is not None:
@@ -409,7 +402,9 @@ def application(environ, start_response):
             return json_response(start_response, HTTPStatus.OK, get_paperless_settings(connection))
 
         if method == "GET" and path == "/api/paperless-status":
-            return json_response(start_response, HTTPStatus.OK, get_paperless_status(connection))
+            return json_response(
+                start_response, HTTPStatus.OK, get_paperless_status(connection, paperless)
+            )
 
         if method == "GET" and path == "/api/application-settings":
             return json_response(start_response, HTTPStatus.OK, get_application_settings(connection))
@@ -474,22 +469,18 @@ def application(environ, start_response):
                     return json_response(
                         start_response,
                         HTTPStatus.OK,
-                        list_expense_documents(connection, expense_id),
+                        documents.list("expense", expense_id),
                     )
                 if method == "POST" and route_type == "collection":
-                    return json_response(
-                        start_response,
-                        HTTPStatus.CREATED,
-                        upload_expense_documents(connection, expense_id, read_json(environ)),
-                    )
+                    with connection:
+                        result = documents.add("expense", expense_id, read_json(environ))
+                    return json_response(start_response, HTTPStatus.CREATED, result)
                 if method == "DELETE" and route_type == "item" and document_id is not None:
-                    return json_response(
-                        start_response,
-                        HTTPStatus.OK,
-                        delete_expense_document(connection, expense_id, document_id),
-                    )
+                    with connection:
+                        result = documents.delete("expense", expense_id, document_id)
+                    return json_response(start_response, HTTPStatus.OK, result)
                 if method == "GET" and route_type == "download" and document_id is not None:
-                    document_payload = download_expense_document(connection, expense_id, document_id)
+                    document_payload = documents.download("expense", expense_id, document_id)
                     return bytes_response(
                         start_response,
                         HTTPStatus.OK,
@@ -508,22 +499,18 @@ def application(environ, start_response):
                     return json_response(
                         start_response,
                         HTTPStatus.OK,
-                        list_tenant_documents(connection, tenant_id),
+                        documents.list("tenant", tenant_id),
                     )
                 if method == "POST" and route_type == "collection":
-                    return json_response(
-                        start_response,
-                        HTTPStatus.CREATED,
-                        upload_tenant_documents(connection, tenant_id, read_json(environ)),
-                    )
+                    with connection:
+                        result = documents.add("tenant", tenant_id, read_json(environ))
+                    return json_response(start_response, HTTPStatus.CREATED, result)
                 if method == "DELETE" and route_type == "item" and document_id is not None:
-                    return json_response(
-                        start_response,
-                        HTTPStatus.OK,
-                        delete_tenant_document(connection, tenant_id, document_id),
-                    )
+                    with connection:
+                        result = documents.delete("tenant", tenant_id, document_id)
+                    return json_response(start_response, HTTPStatus.OK, result)
                 if method == "GET" and route_type == "download" and document_id is not None:
-                    document_payload = download_tenant_document(connection, tenant_id, document_id)
+                    document_payload = documents.download("tenant", tenant_id, document_id)
                     return bytes_response(
                         start_response,
                         HTTPStatus.OK,
@@ -542,22 +529,18 @@ def application(environ, start_response):
                     return json_response(
                         start_response,
                         HTTPStatus.OK,
-                        list_lease_documents(connection, lease_id),
+                        documents.list("lease", lease_id),
                     )
                 if method == "POST" and route_type == "collection":
-                    return json_response(
-                        start_response,
-                        HTTPStatus.CREATED,
-                        upload_lease_documents(connection, lease_id, read_json(environ)),
-                    )
+                    with connection:
+                        result = documents.add("lease", lease_id, read_json(environ))
+                    return json_response(start_response, HTTPStatus.CREATED, result)
                 if method == "DELETE" and route_type == "item" and document_id is not None:
-                    return json_response(
-                        start_response,
-                        HTTPStatus.OK,
-                        delete_lease_document(connection, lease_id, document_id),
-                    )
+                    with connection:
+                        result = documents.delete("lease", lease_id, document_id)
+                    return json_response(start_response, HTTPStatus.OK, result)
                 if method == "GET" and route_type == "download" and document_id is not None:
-                    document_payload = download_lease_document(connection, lease_id, document_id)
+                    document_payload = documents.download("lease", lease_id, document_id)
                     return bytes_response(
                         start_response,
                         HTTPStatus.OK,
