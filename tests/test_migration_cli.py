@@ -22,7 +22,11 @@ class MigrationCliTests(unittest.TestCase):
         stdout = StringIO()
         stderr = StringIO()
         environ = {"EASYPRENT_PROJECT_ROOT": str(root), "EASYPRENT_DB_PATH": str(root / "active.db")}
-        with patch.dict(os.environ, environ), redirect_stdout(stdout), redirect_stderr(stderr):
+        # These tests migrate a private temporary database, independent of any
+        # systemd unit installed on the machine running the suite.
+        with patch.dict(os.environ, environ), \
+             patch.object(cli, "installed_systemd_unit", return_value=None), \
+             redirect_stdout(stdout), redirect_stderr(stderr):
             code = cli.main(arguments)
         return code, stdout.getvalue(), stderr.getvalue()
 

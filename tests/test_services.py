@@ -3,10 +3,13 @@ from __future__ import annotations
 import unittest
 from decimal import Decimal
 
+from easyprent_accounting.domain import DomainError
 from easyprent_accounting.services import (
     archive_object,
     create_building,
+    create_depreciation_asset,
     create_expense,
+    create_lease,
     create_meter,
     create_meter_reading,
     create_room,
@@ -18,6 +21,8 @@ from easyprent_accounting.services import (
     settlement_for_period,
     update_meter,
     update_expense,
+    update_lease,
+    update_room,
     update_unit,
     _total_amount_for_expense_period,
 )
@@ -240,6 +245,32 @@ class ExpenseServiceTests(unittest.TestCase):
 
         self.assertEqual(created["amount"], "0.1234567891")
         self.assertEqual(created["total_amount"], "12.35")
+
+    def test_create_expense_rejects_non_finite_amount_before_insert(self) -> None:
+        existing_count = self.connection.execute(
+            "SELECT COUNT(*) FROM expense_items"
+        ).fetchone()[0]
+
+        with self.assertRaises(DomainError) as caught:
+            create_expense(
+                self.connection,
+                {
+                    "object_type": "unit",
+                    "object_id": 1,
+                    "expense_category": "Gas",
+                    "beneficiary_name": "Stadtwerke",
+                    "amount": "NaN",
+                    "allocation_method": "occupants",
+                    "recurrence": "one_time",
+                    "booking_date": "2025-05-01",
+                },
+            )
+
+        self.assertEqual("invalid_money", caught.exception.code)
+        self.assertEqual(
+            existing_count,
+            self.connection.execute("SELECT COUNT(*) FROM expense_items").fetchone()[0],
+        )
 
     def test_create_expense_rejects_more_than_ten_decimal_places(self) -> None:
         with self.assertRaises(ValueError) as error:
@@ -1001,6 +1032,41 @@ class ExpenseServiceTests(unittest.TestCase):
         self.assertEqual(row["object_id"], 1)
         self.assertEqual(row["label"], "Gebäudereinigung")
 
+    def test_update_expense_rejects_non_finite_amount_before_update(self) -> None:
+        created = create_expense(
+            self.connection,
+            {
+                "object_type": "unit",
+                "object_id": 1,
+                "label": "Türreparatur",
+                "amount": "240.00",
+                "allocation_method": "unit_count",
+                "recurrence": "one_time",
+                "booking_date": "2025-06-15",
+            },
+        )
+
+        with self.assertRaises(DomainError) as caught:
+            update_expense(
+                self.connection,
+                created["id"],
+                {
+                    "object_type": "unit",
+                    "object_id": 1,
+                    "label": "Türreparatur",
+                    "amount": "Infinity",
+                    "allocation_method": "unit_count",
+                    "recurrence": "one_time",
+                    "booking_date": "2025-06-15",
+                },
+            )
+
+        row = self.connection.execute(
+            "SELECT amount FROM expense_items WHERE id = ?", (created["id"],)
+        ).fetchone()
+        self.assertEqual("invalid_money", caught.exception.code)
+        self.assertEqual(Decimal("240.00"), Decimal(str(row["amount"])))
+
     def test_recurring_expense_without_end_date_remains_open_ended(self) -> None:
         baseline = settlement_for_period(self.connection, 1, "2025-01-01", "2025-03-31")
         created = create_expense(
@@ -1502,6 +1568,90 @@ class ExpenseServiceTests(unittest.TestCase):
         self.assertEqual(reading_rows[1]["meter_label"], "Heizzähler A-01")
 
 
+class LeaseMoneyBoundaryTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.connection = in_memory_database()
+
+    def tearDown(self) -> None:
+        self.connection.close()
+
+    def _payload(self, **overrides: object) -> dict:
+        payload = {
+            "unit_id": 3,
+            "tenant_id": 1,
+            "rent_cold": "900.00",
+            "additional_charges_advance": "180.00",
+            "occupant_count": 1,
+            "start_date": "2026-01-01",
+            "end_date": None,
+            "status": "active",
+        }
+        payload.update(overrides)
+        return payload
+
+    def test_create_lease_rejects_non_finite_rent_before_insert(self) -> None:
+        existing_count = self.connection.execute(
+            "SELECT COUNT(*) FROM leases"
+        ).fetchone()[0]
+
+        with self.assertRaises(DomainError) as caught:
+            create_lease(self.connection, self._payload(rent_cold="NaN"))
+
+        self.assertEqual("invalid_money", caught.exception.code)
+        self.assertEqual(
+            existing_count,
+            self.connection.execute("SELECT COUNT(*) FROM leases").fetchone()[0],
+        )
+
+    def test_update_lease_rejects_non_finite_advance_before_update(self) -> None:
+        original = self.connection.execute(
+            "SELECT additional_charges_advance FROM leases WHERE id = 1"
+        ).fetchone()[0]
+
+        with self.assertRaises(DomainError) as caught:
+            update_lease(
+                self.connection,
+                1,
+                self._payload(
+                    unit_id=1,
+                    additional_charges_advance="Infinity",
+                    start_date="2025-01-01",
+                ),
+            )
+
+        stored = self.connection.execute(
+            "SELECT additional_charges_advance FROM leases WHERE id = 1"
+        ).fetchone()[0]
+        self.assertEqual("invalid_money", caught.exception.code)
+        self.assertEqual(Decimal(str(original)), Decimal(str(stored)))
+
+    def test_create_lease_normalizes_dates_before_comparing_and_storing(self) -> None:
+        created = create_lease(
+            self.connection,
+            self._payload(start_date="20250101", end_date="2025-01-02"),
+        )
+
+        stored = self.connection.execute(
+            "SELECT start_date, end_date FROM leases WHERE id = ?", (created["id"],)
+        ).fetchone()
+        self.assertEqual(("2025-01-01", "2025-01-02"), tuple(stored))
+        self.assertEqual("2025-01-01", created["start_date"])
+
+    def test_create_lease_rejects_reversed_dates_in_mixed_iso_formats(self) -> None:
+        existing_count = self.connection.execute("SELECT COUNT(*) FROM leases").fetchone()[0]
+
+        with self.assertRaisesRegex(ValueError, "end_date must be after"):
+            create_lease(
+                self.connection,
+                self._payload(start_date="2025-01-02", end_date="20250101"),
+            )
+
+        self.assertEqual(
+            existing_count,
+            self.connection.execute("SELECT COUNT(*) FROM leases").fetchone()[0],
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
 
@@ -1577,6 +1727,24 @@ class PropertyRelationshipTests(unittest.TestCase):
 
         self.assertIn("mea_percent", str(error.exception))
 
+    def test_create_unit_rejects_non_finite_mea_percent(self) -> None:
+        with self.assertRaises(DomainError) as caught:
+            create_unit(
+                self.connection,
+                {
+                    "building_id": None,
+                    "label": "Whg-Solo-1",
+                    "area_sqm": "58.5",
+                    "mea_percent": "NaN",
+                    "room_count": 2,
+                    "street": "Sonnenallee 10",
+                    "city": "Berlin",
+                    "postal_code": "12045",
+                },
+            )
+
+        self.assertEqual("invalid_percentage", caught.exception.code)
+
     def test_create_unit_inherits_address_from_building(self) -> None:
         created = create_unit(
             self.connection,
@@ -1629,6 +1797,39 @@ class PropertyRelationshipTests(unittest.TestCase):
             "SELECT street, city, postal_code FROM units WHERE id = 1"
         ).fetchone()
         self.assertEqual(dict(row), {"street": "Birkenstraße 7", "city": "Potsdam", "postal_code": "14467"})
+
+    def test_update_unit_rejects_percentage_above_one_hundred(self) -> None:
+        original = self.connection.execute(
+            "SELECT mea_percent FROM units WHERE id = 1"
+        ).fetchone()[0]
+
+        with self.assertRaises(DomainError) as caught:
+            update_unit(
+                self.connection,
+                1,
+                {
+                    "building_id": 1,
+                    "label": "A-01",
+                    "area_sqm": "74.5",
+                    "mea_percent": "100.01",
+                    "room_count": 3,
+                    "street": "ignored",
+                    "city": "ignored",
+                    "postal_code": "00000",
+                },
+            )
+
+        self.assertEqual("invalid_percentage", caught.exception.code)
+        self.assertEqual(
+            Decimal(str(original)),
+            Decimal(
+                str(
+                    self.connection.execute(
+                        "SELECT mea_percent FROM units WHERE id = 1"
+                    ).fetchone()[0]
+                )
+            ),
+        )
 
     def test_create_room_requires_unit(self) -> None:
         with self.assertRaises(ValueError):
@@ -1685,6 +1886,117 @@ class PropertyRelationshipTests(unittest.TestCase):
             )
 
         self.assertIn("between 0 and 100", str(error.exception))
+
+    def test_update_room_rejects_non_finite_area_share_percent(self) -> None:
+        room = create_room(
+            self.connection,
+            {
+                "unit_id": 1,
+                "label": "Zimmer links",
+                "area_share_percent": "37.5",
+            },
+        )
+
+        with self.assertRaises(DomainError) as caught:
+            update_room(
+                self.connection,
+                room["id"],
+                {
+                    "unit_id": 1,
+                    "label": "Zimmer links",
+                    "area_share_percent": "Infinity",
+                },
+            )
+
+        stored = self.connection.execute(
+            "SELECT area_share_percent FROM rooms WHERE id = ?", (room["id"],)
+        ).fetchone()[0]
+        self.assertEqual("invalid_percentage", caught.exception.code)
+        self.assertEqual(Decimal("37.5"), Decimal(str(stored)))
+
+    def test_create_depreciation_asset_rejects_invalid_domain_values(self) -> None:
+        existing_count = self.connection.execute(
+            "SELECT COUNT(*) FROM depreciation_assets"
+        ).fetchone()[0]
+        invalid_values = (
+            ("Infinity", "80", "invalid_money"),
+            ("500000", "101", "invalid_percentage"),
+            ("500000", "NaN", "invalid_percentage"),
+        )
+
+        for acquisition_cost, building_share_percent, expected_code in invalid_values:
+            with self.subTest(
+                acquisition_cost=acquisition_cost,
+                building_share_percent=building_share_percent,
+            ):
+                with self.assertRaises(DomainError) as caught:
+                    create_depreciation_asset(
+                        self.connection,
+                        {
+                            "property_id": 1,
+                            "asset_name": "Gebäude",
+                            "acquisition_cost": acquisition_cost,
+                            "building_share_percent": building_share_percent,
+                            "useful_life_years": 40,
+                            "placed_in_service": "2025-01-01",
+                            "method": "linear",
+                        },
+                    )
+                self.assertEqual(expected_code, caught.exception.code)
+
+        self.assertEqual(
+            existing_count,
+            self.connection.execute(
+                "SELECT COUNT(*) FROM depreciation_assets"
+            ).fetchone()[0],
+        )
+
+    def test_create_depreciation_asset_validates_date_and_useful_life_before_insert(self) -> None:
+        payload = {
+            "property_id": 1,
+            "asset_name": "Gebäude",
+            "acquisition_cost": "500000",
+            "building_share_percent": "80",
+            "useful_life_years": 40,
+            "placed_in_service": "2025-01-01",
+        }
+        existing_count = self.connection.execute(
+            "SELECT COUNT(*) FROM depreciation_assets"
+        ).fetchone()[0]
+
+        for invalid in (
+            {"placed_in_service": "2025-02-30"},
+            {"useful_life_years": 0},
+            {"useful_life_years": -1},
+        ):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                create_depreciation_asset(self.connection, {**payload, **invalid})
+
+        self.assertEqual(
+            existing_count,
+            self.connection.execute("SELECT COUNT(*) FROM depreciation_assets").fetchone()[0],
+        )
+
+    def test_create_depreciation_asset_normalizes_date_and_useful_life(self) -> None:
+        created = create_depreciation_asset(
+            self.connection,
+            {
+                "property_id": 1,
+                "asset_name": "Gebäude",
+                "acquisition_cost": "500000",
+                "building_share_percent": "80",
+                "useful_life_years": "40",
+                "placed_in_service": "20250102",
+            },
+        )
+
+        stored = self.connection.execute(
+            "SELECT useful_life_years, placed_in_service FROM depreciation_assets WHERE id = ?",
+            (created["id"],),
+        ).fetchone()
+        self.assertEqual((40, "2025-01-02"), tuple(stored))
+        self.assertEqual(40, created["useful_life_years"])
+        self.assertEqual("2025-01-02", created["placed_in_service"])
 
     def test_create_room_rejects_more_rooms_than_unit_allows(self) -> None:
         create_room(

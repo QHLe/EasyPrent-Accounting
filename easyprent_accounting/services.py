@@ -12,14 +12,12 @@ import uuid
 from socket import timeout as socket_timeout
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
-from .config import AppConfig
-from .settings import (
-    _parse_int,
-    _row_dicts,
-    _require_payload_value,
 
-    _gnucash_connection_settings,
+from .config import AppConfig
+from .domain import Money, Percentage
+from .settings import (
     get_application_settings,
+    get_gnucash_connection_settings,
     get_paperless_settings,
 )
 
@@ -91,6 +89,26 @@ def _parse_decimal(value: object, field_name: str) -> Decimal:
         raise ValueError(f"{field_name} must be numeric") from error
 
 
+def _parse_int(value: object, field_name: str) -> int:
+    if value in (None, ""):
+        raise ValueError(f"{field_name} is required")
+    try:
+        return int(str(value))
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"{field_name} must be an integer") from error
+
+
+def _require_payload_value(payload: dict, field_name: str) -> str:
+    value = payload.get(field_name)
+    if value in (None, ""):
+        raise ValueError(f"{field_name} is required")
+    return str(value)
+
+
+def _row_dicts(rows: list[sqlite3.Row]) -> list[dict]:
+    return [dict(row) for row in rows]
+
+
 def _decimal_places(value: Decimal) -> int:
     normalized = value.normalize()
     exponent = normalized.as_tuple().exponent
@@ -98,7 +116,7 @@ def _decimal_places(value: Decimal) -> int:
 
 
 def _normalize_expense_amount(raw_value: object, charge_type: str) -> Decimal:
-    amount = _parse_decimal(raw_value, "amount")
+    amount = Money(_parse_decimal(raw_value, "amount")).amount
     max_places = 10
     if _decimal_places(amount) > max_places:
         raise ValueError(f"amount supports max {max_places} decimal places")
@@ -122,13 +140,10 @@ def _normalize_area_share_percent(value: object) -> str | None:
 
 
 def _normalize_percentage(value: object, field_name: str) -> str | None:
-    normalized = _normalize_optional_decimal_string(value, field_name)
-    if normalized is None:
+    if value in (None, ""):
         return None
-    percentage = Decimal(normalized)
-    if percentage < 0 or percentage > 100:
-        raise ValueError(f"{field_name} must be between 0 and 100")
-    return normalized
+    percentage = Percentage(_parse_decimal(value, field_name)).value
+    return _decimal_to_string(percentage)
 
 
 
@@ -2307,17 +2322,25 @@ def _normalize_lease_payload(
     if int(unit_row["is_archived"] or 0):
         raise ValueError("archived unit cannot be assigned to lease")
 
-    start_date = str(payload["start_date"])
-    parse_date(start_date)
-    end_date = payload.get("end_date")
-    if end_date not in (None, ""):
-        parse_date(str(end_date))
-        if str(end_date) < start_date:
+    start_date = parse_date(str(payload["start_date"])).isoformat()
+    raw_end_date = payload.get("end_date")
+    end_date = None
+    if raw_end_date not in (None, ""):
+        end_date = parse_date(str(raw_end_date)).isoformat()
+        if end_date < start_date:
             raise ValueError("end_date must be after or equal to start_date")
 
     occupant_count = int(payload["occupant_count"])
     if occupant_count < 1:
         raise ValueError("occupant_count must be at least 1")
+
+    rent_cold = Money(_parse_decimal(payload.get("rent_cold"), "rent_cold")).amount
+    additional_charges_advance = Money(
+        _parse_decimal(
+            payload.get("additional_charges_advance"),
+            "additional_charges_advance",
+        )
+    ).amount
 
     gnucash_account_guid = str(payload.get("gnucash_nk_account_guid") or "").strip() or None
     gnucash_account_name = str(payload.get("gnucash_nk_account_name") or "").strip() or None
@@ -2333,11 +2356,11 @@ def _normalize_lease_payload(
         "unit_id": unit_id,
         "room_id": room_id,
         "tenant_id": int(tenant_id),
-        "rent_cold": str(Decimal(str(payload["rent_cold"]))),
-        "additional_charges_advance": str(Decimal(str(payload["additional_charges_advance"]))),
+        "rent_cold": str(rent_cold),
+        "additional_charges_advance": str(additional_charges_advance),
         "occupant_count": occupant_count,
         "start_date": start_date,
-        "end_date": end_date if end_date not in ("",) else None,
+        "end_date": end_date,
         "status": payload.get("status", "active"),
         "gnucash_nk_account_guid": gnucash_account_guid,
         "gnucash_nk_account_name": gnucash_account_name,
@@ -2602,7 +2625,7 @@ def import_gnucash_payments_for_period(
         return {"imported": 0, "existing": 0, "accounts": 0}
 
     active_reader = reader or PiecashGnuCashReader()
-    connection_settings = _gnucash_connection_settings(connection)
+    connection_settings = get_gnucash_connection_settings(connection)
     payments = active_reader.list_payments(
         connection_settings, set(accounts), start, end
     )
@@ -2847,6 +2870,21 @@ def update_expense(connection: sqlite3.Connection, expense_id: int, payload: dic
 
 
 def create_depreciation_asset(connection: sqlite3.Connection, payload: dict) -> dict:
+    acquisition_cost = Money(
+        _parse_decimal(payload.get("acquisition_cost"), "acquisition_cost")
+    ).amount
+    building_share_percent = Percentage(
+        _parse_decimal(
+            payload.get("building_share_percent"),
+            "building_share_percent",
+        )
+    ).value
+    useful_life_years = _parse_int(payload.get("useful_life_years"), "useful_life_years")
+    if useful_life_years < 1:
+        raise ValueError("useful_life_years must be at least 1")
+    placed_in_service = parse_date(
+        _require_payload_value(payload, "placed_in_service")
+    ).isoformat()
     cursor = connection.execute(
         """
         INSERT INTO depreciation_assets (
@@ -2857,15 +2895,20 @@ def create_depreciation_asset(connection: sqlite3.Connection, payload: dict) -> 
         (
             payload["property_id"],
             payload["asset_name"],
-            str(Decimal(str(payload["acquisition_cost"]))),
-            str(Decimal(str(payload["building_share_percent"]))),
-            payload["useful_life_years"],
-            payload["placed_in_service"],
+            str(acquisition_cost),
+            str(building_share_percent),
+            useful_life_years,
+            placed_in_service,
             payload.get("method", "linear"),
         ),
     )
     connection.commit()
-    return {"id": cursor.lastrowid, **payload}
+    return {
+        "id": cursor.lastrowid,
+        **payload,
+        "useful_life_years": useful_life_years,
+        "placed_in_service": placed_in_service,
+    }
 
 
 def _allocation_basis_for_lease(lease_row: sqlite3.Row, method: str) -> Decimal:
@@ -3507,7 +3550,10 @@ def refresh_settlement_run_payments(
     if not accounts:
         return {"imported": 0, "existing": 0, "accounts": 0}
     payments = (reader or PiecashGnuCashReader()).list_payments(
-        _gnucash_connection_settings(connection), set(accounts), date(1900, 1, 1), date(2100, 12, 31)
+        get_gnucash_connection_settings(connection),
+        set(accounts),
+        date(1900, 1, 1),
+        date(2100, 12, 31),
     )
     imported = 0
     existing = 0

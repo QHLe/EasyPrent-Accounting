@@ -728,6 +728,49 @@ for (const text of ["Heizung", "Gasabschlag", "2025-01-01 bis 2025-03-31", "Kost
             "Mietvertrag Test:Nebenkosten",
         )
 
+    def test_api_rejects_non_finite_lease_money_as_bad_request(self) -> None:
+        status, _, body = self._call_app(
+            "POST",
+            "/api/leases",
+            json.dumps(
+                {
+                    "unit_id": 3,
+                    "tenant_id": 1,
+                    "rent_cold": "NaN",
+                    "additional_charges_advance": "180.00",
+                    "occupant_count": 1,
+                    "start_date": "2026-01-01",
+                    "end_date": None,
+                    "status": "active",
+                }
+            ).encode("utf-8"),
+        )
+
+        payload = json.loads(body.decode("utf-8"))
+        self.assertTrue(status.startswith("400"))
+        self.assertIn("invalid_money", payload["error"])
+
+    def test_api_rejects_invalid_depreciation_asset_as_bad_request(self) -> None:
+        status, _, body = self._call_app(
+            "POST",
+            "/api/depreciation-assets",
+            json.dumps(
+                {
+                    "property_id": 1,
+                    "asset_name": "Gebäude",
+                    "acquisition_cost": "Infinity",
+                    "building_share_percent": "80",
+                    "useful_life_years": 40,
+                    "placed_in_service": "2025-01-01",
+                    "method": "linear",
+                }
+            ).encode("utf-8"),
+        )
+
+        payload = json.loads(body.decode("utf-8"))
+        self.assertTrue(status.startswith("400"))
+        self.assertIn("invalid_money", payload["error"])
+
     def test_api_can_update_property_tenant_and_lease(self) -> None:
         update_property_status, _, update_property_body = self._call_app(
             "PUT",
@@ -1291,9 +1334,34 @@ for (const text of ["Heizung", "Gasabschlag", "2025-01-01 bis 2025-03-31", "Kost
         )
         target_tenant["gnucash_nk_account_guid"] = "legacy-backup-account"
         target_tenant["gnucash_nk_account_name"] = "Alt:Nebenkosten"
-        target_lease.pop("gnucash_nk_account_guid", None)
-        target_lease.pop("gnucash_nk_account_name", None)
+        for lease in export_payload["tables"]["leases"]:
+            lease.pop("gnucash_nk_account_guid", None)
+            lease.pop("gnucash_nk_account_name", None)
+        for meter in export_payload["tables"]["meters"]:
+            meter["property_id"] = None
+        for expense in export_payload["tables"]["expense_items"]:
+            expense["property_id"] = None
+            expense["recurrence"] = (
+                "recurring"
+                if expense["charge_type"] in {"monthly", "quarterly", "yearly"}
+                else "one_time"
+            )
+            expense["interval_name"] = (
+                expense["charge_type"]
+                if expense["recurrence"] == "recurring"
+                else None
+            )
+        for later_table in (
+            "gnucash_payments",
+            "settlement_runs",
+            "settlement_payment_assignments",
+        ):
+            del export_payload["tables"][later_table]
         export_payload["format_version"] = 1
+        export_payload["table_count"] = len(export_payload["tables"])
+        export_payload["row_count"] = sum(
+            len(rows) for rows in export_payload["tables"].values()
+        )
 
         import_status, _, import_body = self._call_app(
             "POST",

@@ -8,12 +8,51 @@ from easyprent_accounting.calculations import (
     SettlementExpense,
     SettlementLease,
     calculate_depreciation_schedule,
-    expense_amount_for_period,
     calculate_settlement,
+    expense_amount_for_period,
+    parse_date,
+    quantize_money,
 )
+from easyprent_accounting.domain import DomainError
+
+
+class DomainValueBoundaryTests(unittest.TestCase):
+    def test_quantize_money_rejects_non_finite_amount(self) -> None:
+        with self.assertRaises(DomainError) as caught:
+            quantize_money(Decimal("Infinity"))
+
+        self.assertEqual("invalid_money", caught.exception.code)
+
+    def test_parse_date_maps_malformed_input_to_domain_error(self) -> None:
+        with self.assertRaises(DomainError) as caught:
+            parse_date("2025-02-29")
+
+        self.assertEqual("invalid_date", caught.exception.code)
+
+    def test_expense_amount_rejects_reversed_billing_period(self) -> None:
+        expense = SettlementExpense(
+            label="Insurance",
+            amount=Decimal("100"),
+            allocation_method="unit_count",
+        )
+
+        with self.assertRaises(DomainError) as caught:
+            expense_amount_for_period(
+                expense,
+                date(2025, 12, 31),
+                date(2025, 1, 1),
+            )
+
+        self.assertEqual("invalid_date_range", caught.exception.code)
 
 
 class SettlementTests(unittest.TestCase):
+    def test_settlement_rejects_reversed_period_without_expenses(self) -> None:
+        with self.assertRaises(DomainError) as caught:
+            calculate_settlement([], [], date(2025, 12, 31), date(2025, 1, 1))
+
+        self.assertEqual("invalid_date_range", caught.exception.code)
+
     def test_settlement_uses_allocation_methods_and_advances(self) -> None:
         leases = [
             SettlementLease(
@@ -269,6 +308,21 @@ class DepreciationTests(unittest.TestCase):
         )
         self.assertEqual(result["total"], "5000.00")
         self.assertEqual(result["rows"][0]["months_in_year"], 6)
+
+    def test_depreciation_rejects_percentage_outside_domain_range(self) -> None:
+        asset = {
+            "asset_name": "Gebäude",
+            "acquisition_cost": "500000",
+            "building_share_percent": "100.01",
+            "useful_life_years": 40,
+            "placed_in_service": "2025-07-01",
+            "method": "linear",
+        }
+
+        with self.assertRaises(DomainError) as caught:
+            calculate_depreciation_schedule([asset], 2025)
+
+        self.assertEqual("invalid_percentage", caught.exception.code)
 
 
 if __name__ == "__main__":

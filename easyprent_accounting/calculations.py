@@ -5,16 +5,19 @@ from calendar import monthrange
 from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 
+from .domain import Date as DomainDate
+from .domain import DateRange, Money, Percentage
+
 
 TWOPLACES = Decimal("0.01")
 
 
 def quantize_money(value: Decimal) -> Decimal:
-    return value.quantize(TWOPLACES, rounding=ROUND_HALF_UP)
+    return Money(value).amount.quantize(TWOPLACES, rounding=ROUND_HALF_UP)
 
 
 def parse_date(value: str) -> date:
-    return date.fromisoformat(value)
+    return DomainDate.from_isoformat(value).value
 
 
 def overlap_months(start_a: date, end_a: date, start_b: date, end_b: date) -> int:
@@ -150,6 +153,9 @@ class SettlementExpense:
 
 
 def expense_amount_for_period(expense: SettlementExpense, period_start: date, period_end: date) -> Decimal:
+    period = DateRange(DomainDate(period_start), DomainDate(period_end))
+    period_start = period.start.value
+    period_end = period.end.value
     expense_start = expense.expense_start or period_start
     expense_end = expense.expense_end or period_end
     if expense_end < period_start or expense_start > period_end:
@@ -192,6 +198,9 @@ def calculate_settlement(
     period_start: date,
     period_end: date,
 ) -> dict:
+    period = DateRange(DomainDate(period_start), DomainDate(period_end))
+    period_start = period.start.value
+    period_end = period.end.value
     active_leases = []
     for lease in leases:
         lease_end = lease.lease_end or period_end
@@ -314,8 +323,11 @@ def calculate_depreciation_schedule(assets: list[dict], year: int) -> dict:
     for asset in assets:
         start_date = parse_date(asset["placed_in_service"])
         useful_life_years = Decimal(str(asset["useful_life_years"]))
-        acquisition_cost = Decimal(str(asset["acquisition_cost"]))
-        building_share = Decimal(str(asset["building_share_percent"])) / Decimal("100")
+        acquisition_cost = Money(Decimal(str(asset["acquisition_cost"]))).amount
+        building_share_percentage = Percentage(
+            Decimal(str(asset["building_share_percent"]))
+        )
+        building_share = building_share_percentage.value / Decimal("100")
         depreciable_basis = acquisition_cost * building_share
         yearly_value = depreciable_basis / useful_life_years
 

@@ -863,7 +863,14 @@ def application(environ, start_response):
                 except ValueError as error:
                     return json_response(start_response, HTTPStatus.BAD_REQUEST, {"error": str(error)})
         if method == "POST" and path == "/api/leases":
-            return json_response(start_response, HTTPStatus.CREATED, create_lease(connection, read_json(environ)))
+            try:
+                return json_response(
+                    start_response,
+                    HTTPStatus.CREATED,
+                    create_lease(connection, read_json(environ)),
+                )
+            except ValueError as error:
+                return json_response(start_response, HTTPStatus.BAD_REQUEST, {"error": str(error)})
         if path.startswith("/api/leases/"):
             lease_id = path.removeprefix("/api/leases/")
             if lease_id.isdigit():
@@ -903,11 +910,14 @@ def application(environ, start_response):
                 except ValueError as error:
                     return json_response(start_response, HTTPStatus.BAD_REQUEST, {"error": str(error)})
         if method == "POST" and path == "/api/depreciation-assets":
-            return json_response(
-                start_response,
-                HTTPStatus.CREATED,
-                create_depreciation_asset(connection, read_json(environ)),
-            )
+            try:
+                return json_response(
+                    start_response,
+                    HTTPStatus.CREATED,
+                    create_depreciation_asset(connection, read_json(environ)),
+                )
+            except ValueError as error:
+                return json_response(start_response, HTTPStatus.BAD_REQUEST, {"error": str(error)})
     finally:
         connection.close()
 
