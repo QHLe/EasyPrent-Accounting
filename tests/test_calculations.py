@@ -4,291 +4,126 @@ import unittest
 from datetime import date
 from decimal import Decimal
 
-from easyprent_accounting.calculations import (
-    SettlementExpense,
-    SettlementLease,
-    calculate_depreciation_schedule,
-    calculate_settlement,
-    expense_amount_for_period,
-    parse_date,
-    quantize_money,
-)
+from easyprent_accounting.calculations import calculate_depreciation_schedule, parse_date, quantize_money
 from easyprent_accounting.domain import DomainError
+from easyprent_accounting.settlements import (
+    ExpenseSnapshot, LeaseSnapshot, SettlementSnapshot, calculate_settlement_snapshot,
+)
 
 
 class DomainValueBoundaryTests(unittest.TestCase):
     def test_quantize_money_rejects_non_finite_amount(self) -> None:
         with self.assertRaises(DomainError) as caught:
             quantize_money(Decimal("Infinity"))
-
         self.assertEqual("invalid_money", caught.exception.code)
 
     def test_parse_date_maps_malformed_input_to_domain_error(self) -> None:
         with self.assertRaises(DomainError) as caught:
             parse_date("2025-02-29")
-
         self.assertEqual("invalid_date", caught.exception.code)
 
-    def test_expense_amount_rejects_reversed_billing_period(self) -> None:
-        expense = SettlementExpense(
-            label="Insurance",
-            amount=Decimal("100"),
-            allocation_method="unit_count",
-        )
 
-        with self.assertRaises(DomainError) as caught:
-            expense_amount_for_period(
-                expense,
-                date(2025, 12, 31),
-                date(2025, 1, 1),
-            )
+def _lease(lease_id: int, name: str, mea: str, occupants: int,
+           start: date, end: date | None = None) -> LeaseSnapshot:
+    return LeaseSnapshot(
+        id=lease_id, tenant_name=name, unit_label=f"A-{lease_id:02d}",
+        unit_id=lease_id, room_id=None, building_id=1, mea_percent=Decimal(mea),
+        area_share_percent=None, occupant_count=occupants,
+        additional_charges_advance=Decimal("0"), start_date=start, end_date=end,
+    )
 
-        self.assertEqual("invalid_date_range", caught.exception.code)
+
+def _expense(expense_id: int, label: str, amount: str, method: str,
+             start: date, end: date, charge_type: str = "one_time",
+             consumption_value: Decimal | None = None,
+             consumption_unit: str | None = None) -> ExpenseSnapshot:
+    return ExpenseSnapshot(
+        id=expense_id, label=label, category=label, amount=Decimal(amount),
+        allocation_method=method, charge_type=charge_type,
+        recurrence="recurring" if charge_type in {"monthly", "quarterly", "yearly"} else "one_time",
+        interval_name=charge_type if charge_type in {"monthly", "quarterly", "yearly"} else None,
+        period_start=start, period_end=end, object_type="property", object_id=1,
+        consumption_value=consumption_value, consumption_unit=consumption_unit,
+    )
+
+
+def _calculate(start: date, end: date, leases: list[LeaseSnapshot],
+               expenses: list[ExpenseSnapshot]) -> dict:
+    return calculate_settlement_snapshot(SettlementSnapshot(
+        period_start=start, period_end=end, property_id=1, unit_id=None,
+        leases=tuple(leases), expenses=tuple(expenses), meter_readings=(), payments=(),
+    ))
 
 
 class SettlementTests(unittest.TestCase):
-    def test_settlement_rejects_reversed_period_without_expenses(self) -> None:
+    def test_reversed_period_is_rejected_without_expenses(self) -> None:
         with self.assertRaises(DomainError) as caught:
-            calculate_settlement([], [], date(2025, 12, 31), date(2025, 1, 1))
-
+            _calculate(date(2025, 12, 31), date(2025, 1, 1), [], [])
         self.assertEqual("invalid_date_range", caught.exception.code)
 
-    def test_settlement_uses_allocation_methods_and_advances(self) -> None:
-        leases = [
-            SettlementLease(
-                lease_id=1,
-                tenant_name="Anna",
-                unit_label="A-01",
-                unit_area_sqm=Decimal("80"),
-                occupant_count=2,
-                additional_charges_advance=Decimal("200"),
-                lease_start=date(2025, 1, 1),
-                lease_end=None,
-            ),
-            SettlementLease(
-                lease_id=2,
-                tenant_name="Ben",
-                unit_label="A-02",
-                unit_area_sqm=Decimal("40"),
-                occupant_count=1,
-                additional_charges_advance=Decimal("150"),
-                lease_start=date(2025, 1, 1),
-                lease_end=None,
-            ),
-        ]
-        expenses = [
-            SettlementExpense(
-                label="Heizung",
-                amount=Decimal("1200"),
-                allocation_method="area",
-                charge_type="one_time",
-            ),
-            SettlementExpense(
-                label="Wasser",
-                amount=Decimal("300"),
-                allocation_method="occupants",
-                charge_type="one_time",
-            ),
-            SettlementExpense(
-                label="Reinigung",
-                amount=Decimal("240"),
-                allocation_method="unit_count",
-                charge_type="one_time",
-            ),
-        ]
-
-        result = calculate_settlement(leases, expenses, date(2025, 1, 1), date(2025, 12, 31))
-        self.assertEqual(result["totals"]["costs"], "1740.00")
-        self.assertIsNone(result["totals"]["advances"])
-        self.assertEqual(result["results"][0]["allocated_costs"], "1120.00")
-        self.assertIsNone(result["results"][0]["balance"])
-        self.assertEqual(result["results"][1]["allocated_costs"], "620.00")
-        self.assertIsNone(result["results"][1]["balance"])
+    def test_allocation_uses_mea_occupants_and_unit_count(self) -> None:
+        start, end = date(2025, 1, 1), date(2025, 12, 31)
+        result = _calculate(
+            start, end,
+            [_lease(1, "Anna", "80", 2, start), _lease(2, "Ben", "40", 1, start)],
+            [
+                _expense(1, "Heizung", "1200", "area", start, end),
+                _expense(2, "Wasser", "300", "occupants", start, end),
+                _expense(3, "Reinigung", "240", "unit_count", start, end),
+            ],
+        )
+        self.assertEqual(result["totals"], {"costs": "1740.00", "advances": "0.00", "balance": "1740.00"})
+        self.assertEqual([row["allocated_costs"] for row in result["results"]], ["1120.00", "620.00"])
         heating = result["results"][0]["line_items"][0]
-        self.assertEqual(heating["period_amount"], "1200.00")
-        self.assertEqual(heating["basis_value"], "80")
-        self.assertEqual(heating["basis_total"], "120")
+        self.assertEqual((heating["period_amount"], heating["basis_value"], heating["basis_total"]),
+                         ("1200.00", "80", "120"))
 
-    def test_settlement_respects_partial_year_contract(self) -> None:
-        lease = SettlementLease(
-            lease_id=3,
-            tenant_name="Cara",
-            unit_label="B-01",
-            unit_area_sqm=Decimal("60"),
-            occupant_count=1,
-            additional_charges_advance=Decimal("100"),
-            lease_start=date(2025, 7, 15),
-            lease_end=None,
+    def test_partial_year_contract_receives_only_active_days(self) -> None:
+        start, end = date(2025, 1, 1), date(2025, 12, 31)
+        result = _calculate(
+            start, end,
+            [_lease(3, "Cara", "60", 1, date(2025, 7, 15))],
+            [_expense(1, "Hausstrom", "600", "unit_count", start, end)],
         )
-        result = calculate_settlement(
-            [lease],
-            [
-                SettlementExpense(
-                    label="Hausstrom",
-                    amount=Decimal("600"),
-                    allocation_method="unit_count",
-                    charge_type="one_time",
-                )
-            ],
-            date(2025, 1, 1),
-            date(2025, 12, 31),
-        )
-        self.assertIsNone(result["results"][0]["advances_paid"])
-        self.assertEqual(result["results"][0]["allocated_costs"], "279.45")
-        self.assertEqual(result["results"][0]["billing_period_start"], "2025-07-15")
-        self.assertEqual(result["results"][0]["billing_period_end"], "2025-12-31")
+        lease = result["results"][0]
+        self.assertEqual(lease["allocated_costs"], "279.45")
+        self.assertEqual((lease["billing_period_start"], lease["billing_period_end"]),
+                         ("2025-07-15", "2025-12-31"))
 
-    def test_settlement_multiplies_monthly_expense_by_overlap_months(self) -> None:
-        lease = SettlementLease(
-            lease_id=1,
-            tenant_name="Anna",
-            unit_label="A-01",
-            unit_area_sqm=Decimal("80"),
-            occupant_count=2,
-            additional_charges_advance=Decimal("0"),
-            lease_start=date(2025, 1, 1),
-            lease_end=None,
-        )
-        result = calculate_settlement(
-            [lease],
-            [
-                SettlementExpense(
-                    label="Hausmeister",
-                    amount=Decimal("100"),
-                    allocation_method="unit_count",
-                    charge_type="monthly",
-                    expense_start=date(2025, 3, 1),
-                    expense_end=date(2025, 5, 31),
-                )
-            ],
-            date(2025, 1, 1),
-            date(2025, 12, 31),
+    def test_monthly_recurrence_is_priced_for_active_months(self) -> None:
+        start, end = date(2025, 1, 1), date(2025, 12, 31)
+        result = _calculate(
+            start, end, [_lease(1, "Anna", "80", 2, start)],
+            [_expense(1, "Hausmeister", "100", "unit_count",
+                      date(2025, 3, 1), date(2025, 5, 31), "monthly")],
         )
         self.assertEqual(result["totals"]["costs"], "300.00")
         self.assertEqual(result["results"][0]["line_items"][0]["share"], "300.00")
 
-    def test_settlement_keeps_consumption_metadata(self) -> None:
-        lease = SettlementLease(
-            lease_id=1,
-            tenant_name="Anna",
-            unit_label="A-01",
-            unit_area_sqm=Decimal("80"),
-            occupant_count=2,
-            additional_charges_advance=Decimal("0"),
-            lease_start=date(2025, 1, 1),
-            lease_end=None,
+    def test_consumption_metadata_follows_priced_quantity(self) -> None:
+        start, end = date(2025, 1, 1), date(2025, 12, 31)
+        result = _calculate(
+            start, end, [_lease(1, "Anna", "80", 2, start)],
+            [_expense(1, "Wasserverbrauch", "2", "occupants", start, end,
+                      "consumption", Decimal("32.5"), "m3")],
         )
-        result = calculate_settlement(
-            [lease],
-            [
-                SettlementExpense(
-                    label="Wasserverbrauch",
-                    amount=Decimal("2"),
-                    allocation_method="occupants",
-                    charge_type="consumption",
-                    consumption_unit="m3",
-                    consumption_value=Decimal("32.5"),
-                )
-            ],
-            date(2025, 1, 1),
-            date(2025, 12, 31),
-        )
+        item = result["results"][0]["line_items"][0]
         self.assertEqual(result["totals"]["costs"], "65.00")
-        self.assertEqual(result["results"][0]["line_items"][0]["charge_type"], "consumption")
-        self.assertEqual(result["results"][0]["line_items"][0]["consumption_unit"], "m3")
-        self.assertEqual(result["results"][0]["line_items"][0]["consumption_value"], "32.5")
+        self.assertEqual((item["charge_type"], item["consumption_unit"], item["consumption_value"]),
+                         ("consumption", "m3", "32.5"))
 
-    def test_settlement_counts_yearly_expense_once_per_year(self) -> None:
-        lease = SettlementLease(
-            lease_id=1,
-            tenant_name="Anna",
-            unit_label="A-01",
-            unit_area_sqm=Decimal("80"),
-            occupant_count=2,
-            additional_charges_advance=Decimal("0"),
-            lease_start=date(2025, 1, 1),
-            lease_end=None,
-        )
-        result = calculate_settlement(
-            [lease],
+    def test_yearly_and_quarterly_recurrence(self) -> None:
+        start, end = date(2025, 1, 1), date(2025, 12, 31)
+        result = _calculate(
+            start, end, [_lease(1, "Anna", "80", 2, start)],
             [
-                SettlementExpense(
-                    label="Versicherung",
-                    amount=Decimal("500"),
-                    allocation_method="unit_count",
-                    charge_type="yearly",
-                    recurrence="recurring",
-                    interval_name="yearly",
-                    expense_start=date(2025, 3, 1),
-                    expense_end=date(2027, 12, 31),
-                )
+                _expense(1, "Versicherung", "500", "unit_count", start, end, "yearly"),
+                _expense(2, "Aufzug", "300", "unit_count", start, end, "quarterly"),
             ],
-            date(2026, 1, 1),
-            date(2026, 12, 31),
         )
-        self.assertEqual(result["totals"]["costs"], "500.00")
-
-    def test_settlement_counts_quarterly_expense_four_times_per_year(self) -> None:
-        lease = SettlementLease(
-            lease_id=1,
-            tenant_name="Anna",
-            unit_label="A-01",
-            unit_area_sqm=Decimal("80"),
-            occupant_count=2,
-            additional_charges_advance=Decimal("0"),
-            lease_start=date(2025, 1, 1),
-            lease_end=None,
-        )
-        result = calculate_settlement(
-            [lease],
-            [
-                SettlementExpense(
-                    label="Aufzugswartung",
-                    amount=Decimal("300"),
-                    allocation_method="unit_count",
-                    charge_type="quarterly",
-                    recurrence="recurring",
-                    interval_name="quarterly",
-                    expense_start=date(2025, 1, 1),
-                    expense_end=date(2025, 12, 31),
-                )
-            ],
-            date(2025, 1, 1),
-            date(2025, 12, 31),
-        )
-        self.assertEqual(result["totals"]["costs"], "1200.00")
-
-    def test_single_date_expense_only_counts_on_matching_day(self) -> None:
-        expense = SettlementExpense(
-            label="Einmalige Reparatur",
-            amount=Decimal("250"),
-            allocation_method="unit_count",
-            charge_type="one_time",
-            expense_start=date(2025, 6, 15),
-            expense_end=date(2025, 6, 15),
-        )
-
-        inside = expense_amount_for_period(expense, date(2025, 6, 1), date(2025, 6, 30))
-        outside = expense_amount_for_period(expense, date(2025, 7, 1), date(2025, 7, 31))
-
-        self.assertEqual(inside, Decimal("250.00"))
-        self.assertEqual(outside, Decimal("0"))
-
-    def test_one_time_expense_with_a_period_is_prorated_to_billing_period(self) -> None:
-        expense = SettlementExpense(
-            label="Warmwasser",
-            amount=Decimal("865.92"),
-            allocation_method="occupants",
-            charge_type="one_time",
-            expense_start=date(2024, 12, 1),
-            expense_end=date(2025, 11, 30),
-        )
-
-        amount = expense_amount_for_period(
-            expense, date(2025, 1, 1), date(2025, 12, 31)
-        )
-
-        self.assertEqual(amount, Decimal("792.38"))
+        self.assertEqual(result["totals"]["costs"], "1700.00")
+        self.assertEqual([item["share"] for item in result["results"][0]["line_items"]],
+                         ["500.00", "1200.00"])
 
 
 class DepreciationTests(unittest.TestCase):

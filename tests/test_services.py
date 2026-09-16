@@ -5,21 +5,18 @@ from decimal import Decimal
 
 from easyprent_accounting.asset_registry import AssetRegistry
 from easyprent_accounting.domain import DomainError
-from easyprent_accounting.services import (
-    archive_object,
-    create_depreciation_asset,
+from easyprent_accounting.metering import Metering
+from easyprent_accounting.expenses import (
+    Expenses,
     create_expense,
-    create_lease,
-    create_meter,
-    create_meter_reading,
-    delete_meter_reading,
-    list_overview,
-    settlement_for_period,
-    update_meter,
     update_expense,
-    update_lease,
     _total_amount_for_expense_period,
 )
+from easyprent_accounting.tenancy import Tenancy
+from easyprent_accounting.services import (
+    create_depreciation_asset,
+)
+from easyprent_accounting.settlements import Settlements
 from tests.support import in_memory_database
 
 
@@ -27,6 +24,8 @@ class ExpenseServiceTests(unittest.TestCase):
     def setUp(self) -> None:
         self.connection = in_memory_database()
         self.registry = AssetRegistry(self.connection)
+        self.metering = Metering(self.connection)
+        self.expenses = Expenses(self.connection)
 
     def tearDown(self) -> None:
         self.connection.close()
@@ -354,8 +353,8 @@ class ExpenseServiceTests(unittest.TestCase):
         )
         self.connection.commit()
 
-        settlement = settlement_for_period(
-            self.connection, 1, "2025-01-01", "2025-12-31"
+        settlement = Settlements(self.connection).for_period(
+            1, "2025-01-01", "2025-12-31"
         )
         line_items = [result["line_items"][0] for result in settlement["results"]]
 
@@ -444,9 +443,7 @@ class ExpenseServiceTests(unittest.TestCase):
         self.assertEqual(created["total_amount"], "698.36")
 
     def test_create_meter_and_reading_store_target_and_unit(self) -> None:
-        meter = create_meter(
-            self.connection,
-            {
+        meter = self.metering.create_meter({
                 "object_type": "unit",
                 "object_id": 1,
                 "label": "Wasserzähler Küche",
@@ -454,9 +451,7 @@ class ExpenseServiceTests(unittest.TestCase):
                 "unit": "m3",
             },
         )
-        reading = create_meter_reading(
-            self.connection,
-            {
+        reading = self.metering.create_reading({
                 "meter_id": meter["id"],
                 "reading_date": "2025-03-31",
                 "reading_value": "125.4",
@@ -482,9 +477,7 @@ class ExpenseServiceTests(unittest.TestCase):
         self.assertEqual(str(reading_row["reading_value"]), "125.4")
 
     def test_update_meter_allows_correcting_master_data(self) -> None:
-        meter = create_meter(
-            self.connection,
-            {
+        meter = self.metering.create_meter({
                 "object_type": "unit",
                 "object_id": 1,
                 "label": "Wasserzähler Küche",
@@ -494,9 +487,7 @@ class ExpenseServiceTests(unittest.TestCase):
             },
         )
 
-        updated = update_meter(
-            self.connection,
-            meter["id"],
+        updated = self.metering.update_meter(meter["id"],
             {
                 "object_type": "unit",
                 "object_id": 1,
@@ -512,18 +503,14 @@ class ExpenseServiceTests(unittest.TestCase):
         self.assertEqual(updated["serial_number"], "NEU-2")
 
     def test_update_meter_rejects_unit_change_with_existing_readings(self) -> None:
-        meter = create_meter(
-            self.connection,
-            {
+        meter = self.metering.create_meter({
                 "object_type": "unit",
                 "object_id": 1,
                 "label": "Wasserzähler Küche",
                 "unit": "m3",
             },
         )
-        create_meter_reading(
-            self.connection,
-            {
+        self.metering.create_reading({
                 "meter_id": meter["id"],
                 "reading_date": "2025-03-31",
                 "reading_value": "125.4",
@@ -531,9 +518,7 @@ class ExpenseServiceTests(unittest.TestCase):
         )
 
         with self.assertRaisesRegex(ValueError, "unit cannot be changed"):
-            update_meter(
-                self.connection,
-                meter["id"],
+            self.metering.update_meter(meter["id"],
                 {
                     "object_type": "unit",
                     "object_id": 1,
@@ -543,9 +528,7 @@ class ExpenseServiceTests(unittest.TestCase):
             )
 
     def test_create_meter_reading_rejects_non_increasing_later_value(self) -> None:
-        meter = create_meter(
-            self.connection,
-            {
+        meter = self.metering.create_meter({
                 "object_type": "unit",
                 "object_id": 1,
                 "label": "Stromzähler A-01",
@@ -553,9 +536,7 @@ class ExpenseServiceTests(unittest.TestCase):
                 "unit": "kWh",
             },
         )
-        create_meter_reading(
-            self.connection,
-            {
+        self.metering.create_reading({
                 "meter_id": meter["id"],
                 "reading_date": "2025-03-01",
                 "reading_value": "100",
@@ -563,9 +544,7 @@ class ExpenseServiceTests(unittest.TestCase):
         )
 
         with self.assertRaises(ValueError) as error:
-            create_meter_reading(
-                self.connection,
-                {
+            self.metering.create_reading({
                     "meter_id": meter["id"],
                     "reading_date": "2025-04-01",
                     "reading_value": "95",
@@ -575,9 +554,7 @@ class ExpenseServiceTests(unittest.TestCase):
         self.assertIn("previous", str(error.exception))
 
     def test_create_meter_reading_accepts_equal_values(self) -> None:
-        meter = create_meter(
-            self.connection,
-            {
+        meter = self.metering.create_meter({
                 "object_type": "unit",
                 "object_id": 1,
                 "label": "Stromzähler A-02",
@@ -585,26 +562,20 @@ class ExpenseServiceTests(unittest.TestCase):
                 "unit": "kWh",
             },
         )
-        create_meter_reading(
-            self.connection,
-            {
+        self.metering.create_reading({
                 "meter_id": meter["id"],
                 "reading_date": "2025-03-01",
                 "reading_value": "100",
             },
         )
 
-        equal_later = create_meter_reading(
-            self.connection,
-            {
+        equal_later = self.metering.create_reading({
                 "meter_id": meter["id"],
                 "reading_date": "2025-05-01",
                 "reading_value": "100",
             },
         )
-        equal_between = create_meter_reading(
-            self.connection,
-            {
+        equal_between = self.metering.create_reading({
                 "meter_id": meter["id"],
                 "reading_date": "2025-04-01",
                 "reading_value": "100",
@@ -615,9 +586,7 @@ class ExpenseServiceTests(unittest.TestCase):
         self.assertEqual(equal_between["reading_value"], "100")
 
     def test_create_meter_reading_rejects_value_above_later_reading(self) -> None:
-        meter = create_meter(
-            self.connection,
-            {
+        meter = self.metering.create_meter({
                 "object_type": "unit",
                 "object_id": 1,
                 "label": "Wasserzähler A-01",
@@ -625,17 +594,13 @@ class ExpenseServiceTests(unittest.TestCase):
                 "unit": "m3",
             },
         )
-        create_meter_reading(
-            self.connection,
-            {
+        self.metering.create_reading({
                 "meter_id": meter["id"],
                 "reading_date": "2025-03-01",
                 "reading_value": "100",
             },
         )
-        create_meter_reading(
-            self.connection,
-            {
+        self.metering.create_reading({
                 "meter_id": meter["id"],
                 "reading_date": "2025-05-01",
                 "reading_value": "150",
@@ -643,9 +608,7 @@ class ExpenseServiceTests(unittest.TestCase):
         )
 
         with self.assertRaises(ValueError) as error:
-            create_meter_reading(
-                self.connection,
-                {
+            self.metering.create_reading({
                     "meter_id": meter["id"],
                     "reading_date": "2025-04-01",
                     "reading_value": "160",
@@ -655,9 +618,7 @@ class ExpenseServiceTests(unittest.TestCase):
         self.assertIn("later", str(error.exception))
 
     def test_create_meter_reading_rejects_duplicate_date(self) -> None:
-        meter = create_meter(
-            self.connection,
-            {
+        meter = self.metering.create_meter({
                 "object_type": "unit",
                 "object_id": 1,
                 "label": "Heizzähler A-01",
@@ -665,9 +626,7 @@ class ExpenseServiceTests(unittest.TestCase):
                 "unit": "kWh",
             },
         )
-        create_meter_reading(
-            self.connection,
-            {
+        self.metering.create_reading({
                 "meter_id": meter["id"],
                 "reading_date": "2025-03-01",
                 "reading_value": "100",
@@ -675,9 +634,7 @@ class ExpenseServiceTests(unittest.TestCase):
         )
 
         with self.assertRaises(ValueError) as error:
-            create_meter_reading(
-                self.connection,
-                {
+            self.metering.create_reading({
                     "meter_id": meter["id"],
                     "reading_date": "2025-03-01",
                     "reading_value": "110",
@@ -687,9 +644,7 @@ class ExpenseServiceTests(unittest.TestCase):
         self.assertIn("reading_date", str(error.exception))
 
     def test_delete_meter_reading_removes_entry_and_updates_overview(self) -> None:
-        meter = create_meter(
-            self.connection,
-            {
+        meter = self.metering.create_meter({
                 "object_type": "unit",
                 "object_id": 1,
                 "label": "Heizzähler A-01",
@@ -697,25 +652,21 @@ class ExpenseServiceTests(unittest.TestCase):
                 "unit": "kWh",
             },
         )
-        first = create_meter_reading(
-            self.connection,
-            {
+        first = self.metering.create_reading({
                 "meter_id": meter["id"],
                 "reading_date": "2025-01-15",
                 "reading_value": "10",
             },
         )
-        second = create_meter_reading(
-            self.connection,
-            {
+        second = self.metering.create_reading({
                 "meter_id": meter["id"],
                 "reading_date": "2025-02-15",
                 "reading_value": "18",
             },
         )
 
-        deleted = delete_meter_reading(self.connection, second["id"])
-        overview = list_overview(self.connection)
+        deleted = self.metering.delete_reading(second["id"])
+        overview = self.metering.list_meters()
         remaining_row = self.connection.execute(
             "SELECT id FROM meter_readings WHERE id = ?",
             (second["id"],),
@@ -731,14 +682,12 @@ class ExpenseServiceTests(unittest.TestCase):
 
     def test_delete_meter_reading_rejects_unknown_id(self) -> None:
         with self.assertRaises(ValueError) as error:
-            delete_meter_reading(self.connection, 9999)
+            self.metering.delete_reading(9999)
 
         self.assertIn("not found", str(error.exception))
 
     def test_create_expense_accepts_meter_for_consumption_costs(self) -> None:
-        meter = create_meter(
-            self.connection,
-            {
+        meter = self.metering.create_meter({
                 "object_type": "unit",
                 "object_id": 1,
                 "label": "Wasserzähler Bad",
@@ -775,9 +724,7 @@ class ExpenseServiceTests(unittest.TestCase):
         self.assertIsNone(row["consumption_value"])
 
     def test_create_expense_requires_conversion_factor_for_different_meter_unit(self) -> None:
-        meter = create_meter(
-            self.connection,
-            {
+        meter = self.metering.create_meter({
                 "object_type": "unit",
                 "object_id": 1,
                 "label": "Gaszähler Bad",
@@ -806,9 +753,7 @@ class ExpenseServiceTests(unittest.TestCase):
         self.assertIn("conversion_factor", str(error.exception))
 
     def test_create_expense_rejects_meter_from_different_target_object(self) -> None:
-        meter = create_meter(
-            self.connection,
-            {
+        meter = self.metering.create_meter({
                 "object_type": "unit",
                 "object_id": 2,
                 "label": "Wasserzähler A-02",
@@ -836,9 +781,7 @@ class ExpenseServiceTests(unittest.TestCase):
         self.assertIn("same target object", str(error.exception))
 
     def test_create_expense_with_meter_and_conversion_calculates_total_amount(self) -> None:
-        meter = create_meter(
-            self.connection,
-            {
+        meter = self.metering.create_meter({
                 "object_type": "unit",
                 "object_id": 1,
                 "label": "Gaszähler A-01",
@@ -846,17 +789,13 @@ class ExpenseServiceTests(unittest.TestCase):
                 "unit": "m3",
             },
         )
-        create_meter_reading(
-            self.connection,
-            {
+        self.metering.create_reading({
                 "meter_id": meter["id"],
                 "reading_date": "2025-01-01",
                 "reading_value": "100",
             },
         )
-        create_meter_reading(
-            self.connection,
-            {
+        self.metering.create_reading({
                 "meter_id": meter["id"],
                 "reading_date": "2026-01-01",
                 "reading_value": "130",
@@ -898,9 +837,7 @@ class ExpenseServiceTests(unittest.TestCase):
         self.assertIsNone(row["consumption_value"])
 
     def test_create_expense_uses_linear_interpolation_for_meter_consumption(self) -> None:
-        meter = create_meter(
-            self.connection,
-            {
+        meter = self.metering.create_meter({
                 "object_type": "unit",
                 "object_id": 1,
                 "label": "Wasserzähler A-01",
@@ -908,17 +845,13 @@ class ExpenseServiceTests(unittest.TestCase):
                 "unit": "m3",
             },
         )
-        create_meter_reading(
-            self.connection,
-            {
+        self.metering.create_reading({
                 "meter_id": meter["id"],
                 "reading_date": "2025-01-01",
                 "reading_value": "100",
             },
         )
-        create_meter_reading(
-            self.connection,
-            {
+        self.metering.create_reading({
                 "meter_id": meter["id"],
                 "reading_date": "2025-01-31",
                 "reading_value": "130",
@@ -944,9 +877,7 @@ class ExpenseServiceTests(unittest.TestCase):
         self.assertEqual(created["total_amount"], "11.00")
 
     def test_consumption_expense_without_end_date_uses_latest_meter_reading(self) -> None:
-        meter = create_meter(
-            self.connection,
-            {
+        meter = self.metering.create_meter({
                 "object_type": "unit",
                 "object_id": 1,
                 "label": "Wasserzähler A-01",
@@ -954,13 +885,9 @@ class ExpenseServiceTests(unittest.TestCase):
                 "unit": "m3",
             },
         )
-        create_meter_reading(
-            self.connection,
-            {"meter_id": meter["id"], "reading_date": "2025-01-01", "reading_value": "100"},
+        self.metering.create_reading({"meter_id": meter["id"], "reading_date": "2025-01-01", "reading_value": "100"},
         )
-        create_meter_reading(
-            self.connection,
-            {"meter_id": meter["id"], "reading_date": "2025-02-15", "reading_value": "130"},
+        self.metering.create_reading({"meter_id": meter["id"], "reading_date": "2025-02-15", "reading_value": "130"},
         )
 
         created = create_expense(
@@ -1063,7 +990,7 @@ class ExpenseServiceTests(unittest.TestCase):
         self.assertEqual(Decimal("240.00"), Decimal(str(row["amount"])))
 
     def test_recurring_expense_without_end_date_remains_open_ended(self) -> None:
-        baseline = settlement_for_period(self.connection, 1, "2025-01-01", "2025-03-31")
+        baseline = Settlements(self.connection).for_period(1, "2025-01-01", "2025-03-31")
         created = create_expense(
             self.connection,
             {
@@ -1086,17 +1013,15 @@ class ExpenseServiceTests(unittest.TestCase):
         self.assertIsNone(created["period_end"])
         self.assertEqual(row["period_end"], "9999-12-31")
 
-        settlement = settlement_for_period(self.connection, 1, "2025-01-01", "2025-03-31")
+        settlement = Settlements(self.connection).for_period(1, "2025-01-01", "2025-03-31")
         self.assertEqual(
             Decimal(settlement["totals"]["costs"]) - Decimal(baseline["totals"]["costs"]),
             Decimal("203.87"),
         )
 
     def test_settlement_uses_meter_based_consumption_total(self) -> None:
-        baseline = settlement_for_period(self.connection, 1, "2025-01-01", "2025-12-31")
-        meter = create_meter(
-            self.connection,
-            {
+        baseline = Settlements(self.connection).for_period(1, "2025-01-01", "2025-12-31")
+        meter = self.metering.create_meter({
                 "object_type": "unit",
                 "object_id": 1,
                 "label": "Heizzähler A-01",
@@ -1104,17 +1029,13 @@ class ExpenseServiceTests(unittest.TestCase):
                 "unit": "kWh",
             },
         )
-        create_meter_reading(
-            self.connection,
-            {
+        self.metering.create_reading({
                 "meter_id": meter["id"],
                 "reading_date": "2025-01-01",
                 "reading_value": "100",
             },
         )
-        create_meter_reading(
-            self.connection,
-            {
+        self.metering.create_reading({
                 "meter_id": meter["id"],
                 "reading_date": "2026-01-01",
                 "reading_value": "125",
@@ -1135,7 +1056,7 @@ class ExpenseServiceTests(unittest.TestCase):
             },
         )
 
-        settlement = settlement_for_period(self.connection, 1, "2025-01-01", "2025-12-31")
+        settlement = Settlements(self.connection).for_period(1, "2025-01-01", "2025-12-31")
 
         self.assertEqual(
             Decimal(settlement["totals"]["costs"]) - Decimal(baseline["totals"]["costs"]),
@@ -1150,9 +1071,7 @@ class ExpenseServiceTests(unittest.TestCase):
         self.assertEqual(created_line["expense_category"], "Heizstrom A-01")
 
     def test_settlement_limits_tenant_consumption_to_expense_period(self) -> None:
-        meter = create_meter(
-            self.connection,
-            {
+        meter = self.metering.create_meter({
                 "object_type": "unit",
                 "object_id": 2,
                 "label": "Heizzähler A-02",
@@ -1165,9 +1084,7 @@ class ExpenseServiceTests(unittest.TestCase):
             ("2025-07-01", "100"),
             ("2026-01-01", "200"),
         ):
-            create_meter_reading(
-                self.connection,
-                {
+            self.metering.create_reading({
                     "meter_id": meter["id"],
                     "reading_date": reading_date,
                     "reading_value": reading_value,
@@ -1188,8 +1105,8 @@ class ExpenseServiceTests(unittest.TestCase):
             },
         )
 
-        settlement = settlement_for_period(
-            self.connection, 1, "2025-01-01", "2025-12-31"
+        settlement = Settlements(self.connection).for_period(
+            1, "2025-01-01", "2025-12-31"
         )
         tenant_result = next(
             result for result in settlement["results"] if result["lease_id"] == 2
@@ -1225,8 +1142,8 @@ class ExpenseServiceTests(unittest.TestCase):
         )
         self.connection.commit()
 
-        settlement = settlement_for_period(
-            self.connection, 1, "2025-01-01", "2025-12-31"
+        settlement = Settlements(self.connection).for_period(
+            1, "2025-01-01", "2025-12-31"
         )
 
         self.assertEqual(settlement["totals"]["costs"], "365.00")
@@ -1293,8 +1210,8 @@ class ExpenseServiceTests(unittest.TestCase):
         )
         self.connection.commit()
 
-        settlement = settlement_for_period(
-            self.connection, 1, "2025-01-01", "2025-12-31"
+        settlement = Settlements(self.connection).for_period(
+            1, "2025-01-01", "2025-12-31"
         )
 
         self.assertEqual(
@@ -1324,8 +1241,8 @@ class ExpenseServiceTests(unittest.TestCase):
         )
         self.connection.commit()
 
-        settlement = settlement_for_period(
-            self.connection, 1, "2025-01-01", "2025-12-31"
+        settlement = Settlements(self.connection).for_period(
+            1, "2025-01-01", "2025-12-31"
         )
 
         self.assertEqual(
@@ -1368,7 +1285,7 @@ class ExpenseServiceTests(unittest.TestCase):
             },
         )
 
-        settlement = settlement_for_period(self.connection, 1, "2025-01-01", "2025-12-31")
+        settlement = Settlements(self.connection).for_period(1, "2025-01-01", "2025-12-31")
         labels = {
             line_item["label"]
             for result in settlement["results"]
@@ -1427,9 +1344,9 @@ class ExpenseServiceTests(unittest.TestCase):
                 "period_end": "2025-12-31",
             },
         )
-        archive_object(self.connection, "expenses", created["id"])
+        self.expenses.archive(created["id"])
 
-        settlement = settlement_for_period(self.connection, 1, "2025-01-01", "2025-12-31")
+        settlement = Settlements(self.connection).for_period(1, "2025-01-01", "2025-12-31")
         labels = {
             line_item["label"]
             for result in settlement["results"]
@@ -1482,7 +1399,7 @@ class ExpenseServiceTests(unittest.TestCase):
             },
         )
 
-        settlement = settlement_for_period(self.connection, 1, "2025-01-01", "2025-12-31")
+        settlement = Settlements(self.connection).for_period(1, "2025-01-01", "2025-12-31")
         labels = {
             line_item["label"]
             for result in settlement["results"]
@@ -1514,9 +1431,7 @@ class ExpenseServiceTests(unittest.TestCase):
         self.assertEqual(allocation_methods["Zimmeranstrich"], "unit_count")
 
     def test_list_overview_includes_meters_with_latest_reading(self) -> None:
-        meter = create_meter(
-            self.connection,
-            {
+        meter = self.metering.create_meter({
                 "object_type": "unit",
                 "object_id": 1,
                 "label": "Heizzähler A-01",
@@ -1524,24 +1439,20 @@ class ExpenseServiceTests(unittest.TestCase):
                 "unit": "kWh",
             },
         )
-        create_meter_reading(
-            self.connection,
-            {
+        self.metering.create_reading({
                 "meter_id": meter["id"],
                 "reading_date": "2025-01-15",
                 "reading_value": "10",
             },
         )
-        create_meter_reading(
-            self.connection,
-            {
+        self.metering.create_reading({
                 "meter_id": meter["id"],
                 "reading_date": "2025-02-15",
                 "reading_value": "18",
             },
         )
 
-        overview = list_overview(self.connection)
+        overview = self.metering.list_meters()
         meter_row = overview["meters"][0]
 
         self.assertEqual(meter_row["label"], "Heizzähler A-01")
@@ -1587,7 +1498,7 @@ class LeaseMoneyBoundaryTests(unittest.TestCase):
         ).fetchone()[0]
 
         with self.assertRaises(DomainError) as caught:
-            create_lease(self.connection, self._payload(rent_cold="NaN"))
+            Tenancy(self.connection).create_lease(self._payload(rent_cold="NaN"))
 
         self.assertEqual("invalid_money", caught.exception.code)
         self.assertEqual(
@@ -1601,8 +1512,7 @@ class LeaseMoneyBoundaryTests(unittest.TestCase):
         ).fetchone()[0]
 
         with self.assertRaises(DomainError) as caught:
-            update_lease(
-                self.connection,
+            Tenancy(self.connection).update_lease(
                 1,
                 self._payload(
                     unit_id=1,
@@ -1618,8 +1528,7 @@ class LeaseMoneyBoundaryTests(unittest.TestCase):
         self.assertEqual(Decimal(str(original)), Decimal(str(stored)))
 
     def test_create_lease_normalizes_dates_before_comparing_and_storing(self) -> None:
-        created = create_lease(
-            self.connection,
+        created = Tenancy(self.connection).create_lease(
             self._payload(start_date="20250101", end_date="2025-01-02"),
         )
 
@@ -1633,8 +1542,7 @@ class LeaseMoneyBoundaryTests(unittest.TestCase):
         existing_count = self.connection.execute("SELECT COUNT(*) FROM leases").fetchone()[0]
 
         with self.assertRaisesRegex(ValueError, "end_date must be after"):
-            create_lease(
-                self.connection,
+            Tenancy(self.connection).create_lease(
                 self._payload(start_date="2025-01-02", end_date="20250101"),
             )
 
@@ -1646,5 +1554,4 @@ class LeaseMoneyBoundaryTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
 

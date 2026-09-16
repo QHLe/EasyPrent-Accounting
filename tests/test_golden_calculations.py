@@ -4,14 +4,13 @@ import unittest
 from datetime import date, timedelta
 from decimal import Decimal
 
-from easyprent_accounting.calculations import (
-    SettlementExpense,
-    SettlementLease,
-    calculate_settlement,
-    expense_amount_for_period,
+from easyprent_accounting.expense_pricer import ExpensePricer, ExpensePricing
+from easyprent_accounting.metering import meter_consumption_for_period
+from easyprent_accounting.expenses import create_expense
+from easyprent_accounting.settlements import (
+    ExpenseSnapshot, LeaseSnapshot, SettlementSnapshot, Settlements,
+    calculate_settlement_snapshot,
 )
-from easyprent_accounting.expense_math import meter_consumption_for_period
-from easyprent_accounting.services import create_expense, settlement_for_period
 from tests.support import in_memory_database
 
 
@@ -78,17 +77,9 @@ class ExpenseAmountGoldenCases(unittest.TestCase):
 
         for case in cases:
             with self.subTest(case["name"]):
-                expense = SettlementExpense(
-                    label=case["name"],
+                expense = ExpensePricing(
                     amount=Decimal(case["amount"]),
-                    allocation_method="unit_count",
                     charge_type=case["charge_type"],
-                    recurrence=case["recurrence"],
-                    interval_name=(
-                        case["charge_type"]
-                        if case["recurrence"] == "recurring"
-                        else None
-                    ),
                     expense_start=case["expense_start"],
                     expense_end=case["expense_end"],
                     consumption_value=(
@@ -98,7 +89,7 @@ class ExpenseAmountGoldenCases(unittest.TestCase):
                     ),
                 )
 
-                actual = expense_amount_for_period(
+                actual = ExpensePricer.price(
                     expense,
                     case["period_start"],
                     case["period_end"],
@@ -125,8 +116,7 @@ class ExpenseAmountGoldenCases(unittest.TestCase):
                 },
             )
 
-            settlement = settlement_for_period(
-                connection,
+            settlement = Settlements(connection).for_period(
                 1,
                 "2025-01-01",
                 "2025-12-31",
@@ -190,8 +180,7 @@ class ExpenseAmountGoldenCases(unittest.TestCase):
                             "period_start": case["expense_start"].isoformat(),
                         },
                     )
-                    settlement = settlement_for_period(
-                        connection,
+                    settlement = Settlements(connection).for_period(
                         1,
                         case["period_start"].isoformat(),
                         case["period_end"].isoformat(),
@@ -300,8 +289,7 @@ class SettlementGoldenCases(unittest.TestCase):
                     "period_end": "2025-12-31",
                 },
             )
-            return settlement_for_period(
-                connection,
+            return Settlements(connection).for_period(
                 1,
                 "2025-01-01",
                 "2025-12-31",
@@ -379,43 +367,27 @@ class SettlementGoldenCases(unittest.TestCase):
         for case in cases:
             with self.subTest(case["name"]):
                 old_lease_end = case["new_lease_start"] - timedelta(days=1)
-                leases = [
-                    SettlementLease(
-                        lease_id=1,
-                        tenant_name="Previous tenant",
-                        unit_label="A-01",
-                        unit_area_sqm=Decimal("1"),
-                        occupant_count=1,
-                        additional_charges_advance=Decimal("0"),
-                        lease_start=case["period_start"],
-                        lease_end=old_lease_end,
-                    ),
-                    SettlementLease(
-                        lease_id=2,
-                        tenant_name="Next tenant",
-                        unit_label="A-01",
-                        unit_area_sqm=Decimal("1"),
-                        occupant_count=1,
-                        additional_charges_advance=Decimal("0"),
-                        lease_start=case["new_lease_start"],
-                        lease_end=None,
-                    ),
-                ]
-                expense = SettlementExpense(
-                    label="Annual building cost",
-                    amount=Decimal(case["amount"]),
-                    allocation_method="unit_count",
-                    charge_type="one_time",
-                    expense_start=case["period_start"],
-                    expense_end=case["period_end"],
+                leases = (
+                    LeaseSnapshot(1, "Previous tenant", "A-01", 1, None, 1,
+                                  Decimal("1"), None, 1, Decimal("0"),
+                                  case["period_start"], old_lease_end),
+                    LeaseSnapshot(2, "Next tenant", "A-01", 1, None, 1,
+                                  Decimal("1"), None, 1, Decimal("0"),
+                                  case["new_lease_start"], None),
+                )
+                expense = ExpenseSnapshot(
+                    id=1, label="Annual building cost", category="Annual building cost",
+                    amount=Decimal(case["amount"]), allocation_method="unit_count",
+                    charge_type="one_time", recurrence="one_time", interval_name=None,
+                    period_start=case["period_start"], period_end=case["period_end"],
+                    object_type="property", object_id=1,
                 )
 
-                settlement = calculate_settlement(
-                    leases,
-                    [expense],
-                    case["period_start"],
-                    case["period_end"],
-                )
+                settlement = calculate_settlement_snapshot(SettlementSnapshot(
+                    period_start=case["period_start"], period_end=case["period_end"],
+                    property_id=1, unit_id=None, leases=leases, expenses=(expense,),
+                    meter_readings=(), payments=(),
+                ))
 
                 self.assertEqual(
                     [result["allocated_costs"] for result in settlement["results"]],

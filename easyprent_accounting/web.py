@@ -12,38 +12,26 @@ from .asset_registry import AssetRegistry
 from .db import get_connection
 from .integrations.paperless import PaperlessAdapter, UrllibPaperlessAdapter
 from .linked_documents import LinkedDocuments, get_paperless_status
+from .metering import Metering
+from .expenses import Expenses
 from .openapi import build_openapi_document
-from .services import (
-    archive_object,
+from .tenancy import Tenancy
+from .settlement_documents import SettlementDocuments
+from .settlement_runs import (
     create_or_open_settlement_run,
     consider_all_settlement_payments,
-    create_depreciation_asset,
-    create_expense,
-    create_lease,
-    create_meter,
-    create_meter_reading,
-    update_meter,
-    delete_lease,
     get_settlement_run_overview,
     find_settlement_run_id,
-    refresh_settlement_run_payments,
-    create_tenant,
-    delete_meter_reading,
-    delete_object,
-    delete_tenant,
-    depreciation_schedule_for_year,
     import_gnucash_payments_for_period,
-    list_overview,
-    restore_object,
-    settlement_for_period,
-    settlement_pdf_for_period,
-    settlement_ods_for_period,
-    settlement_run_ods,
+    refresh_settlement_run_payments,
     set_settlement_payment_considered,
+)
+from .settlements import Settlements
+from .services import (
+    create_depreciation_asset,
+    depreciation_schedule_for_year,
+    list_overview,
     health_status,
-    update_tenant,
-    update_lease,
-    update_expense,
 )
 from .settings import (
     get_application_settings,
@@ -369,6 +357,9 @@ def application(
     paperless = paperless_adapter if paperless_adapter is not None else UrllibPaperlessAdapter()
     documents = LinkedDocuments(connection, paperless)
     assets = AssetRegistry(connection)
+    metering = Metering(connection)
+    expenses = Expenses(connection)
+    tenancy = Tenancy(connection)
     try:
         lifecycle_route = parse_object_lifecycle_path(path)
         if lifecycle_route is not None:
@@ -383,13 +374,13 @@ def application(
                         )
                         with connection:
                             result = operation(object_id)
+                    elif resource_name == "meters":
+                        operation = getattr(metering, f"{action}_meter")
+                        with connection:
+                            result = operation(object_id)
                     else:
-                        operation = {
-                            "archive": archive_object,
-                            "restore": restore_object,
-                            "delete": delete_object,
-                        }[action]
-                        result = operation(connection, resource_name, object_id)
+                        with connection:
+                            result = getattr(expenses, action)(object_id)
                     return json_response(start_response, HTTPStatus.OK, result)
             except ValueError as error:
                 return json_response(start_response, HTTPStatus.BAD_REQUEST, {"error": str(error)})
@@ -557,8 +548,8 @@ def application(
                 property_id = _optional_query_int(params, "property_id")
                 period_start = params.get("period_start", ["2025-01-01"])[0]
                 period_end = params.get("period_end", ["2025-12-31"])[0]
-                settlement = settlement_for_period(
-                    connection, property_id, period_start, period_end, unit_id
+                settlement = Settlements(connection).for_period(
+                    property_id, period_start, period_end, unit_id
                 )
             except (TypeError, ValueError) as error:
                 return json_response(
@@ -581,9 +572,10 @@ def application(
 
         if method == "POST" and path == "/api/settlement-runs":
             try:
-                settlement_run, created = create_or_open_settlement_run(
-                    connection, read_json(environ)
-                )
+                with connection:
+                    settlement_run, created = create_or_open_settlement_run(
+                        connection, read_json(environ)
+                    )
                 return json_response(
                     start_response,
                     HTTPStatus.CREATED if created else HTTPStatus.OK,
@@ -599,24 +591,24 @@ def application(
             settlement_id, separator, payment_path = suffix.partition("/payments/")
             try:
                 if separator and payment_path == "refresh":
-                    refreshed = refresh_settlement_run_payments(connection, settlement_id)
-                    return json_response(
-                        start_response,
-                        HTTPStatus.OK,
-                        {"import": refreshed, "overview": get_settlement_run_overview(connection, settlement_id)},
-                    )
+                    with connection:
+                        refreshed = refresh_settlement_run_payments(connection, settlement_id)
+                        overview = get_settlement_run_overview(connection, settlement_id)
+                    return json_response(start_response, HTTPStatus.OK, {"import": refreshed, "overview": overview})
                 if separator and payment_path == "consider-all":
-                    return json_response(
-                        start_response, HTTPStatus.OK, consider_all_settlement_payments(connection, settlement_id)
-                    )
+                    with connection:
+                        overview = consider_all_settlement_payments(connection, settlement_id)
+                    return json_response(start_response, HTTPStatus.OK, overview)
                 split_guid, action_separator, action = payment_path.rpartition("/")
                 if separator and action in {"consider", "unassign"} and split_guid:
+                    with connection:
+                        overview = set_settlement_payment_considered(
+                            connection, settlement_id, split_guid, action == "consider"
+                        )
                     return json_response(
                         start_response,
                         HTTPStatus.OK,
-                        set_settlement_payment_considered(
-                            connection, settlement_id, split_guid, action == "consider"
-                        ),
+                        overview,
                     )
             except (TypeError, ValueError) as error:
                 return json_response(
@@ -628,7 +620,9 @@ def application(
             lease_id_text, _, document_name = lease_path.partition("/")
             if document_name == "document.ods":
                 try:
-                    document, filename = settlement_run_ods(cfg, connection, settlement_id, int(lease_id_text))
+                    document, filename = SettlementDocuments(connection, cfg).ods_for_run(
+                        settlement_id, int(lease_id_text)
+                    )
                     return bytes_response(
                         start_response, HTTPStatus.OK, document,
                         "application/vnd.oasis.opendocument.spreadsheet", filename, "attachment"
@@ -659,11 +653,12 @@ def application(
                 unit_id = None if raw_unit_id in (None, "") else int(raw_unit_id)
                 period_start = str(payload.get("period_start") or "")
                 period_end = str(payload.get("period_end") or "")
-                imported = import_gnucash_payments_for_period(
-                    connection, property_id, period_start, period_end, unit_id
-                )
-                settlement = settlement_for_period(
-                    connection, property_id, period_start, period_end, unit_id
+                with connection:
+                    imported = import_gnucash_payments_for_period(
+                        connection, property_id, period_start, period_end, unit_id
+                    )
+                settlement = Settlements(connection).for_period(
+                    property_id, period_start, period_end, unit_id
                 )
                 return json_response(
                     start_response,
@@ -681,8 +676,8 @@ def application(
                 lease_id = int(params.get("lease_id", [""])[0])
                 period_start = params.get("period_start", [""])[0]
                 period_end = params.get("period_end", [""])[0]
-                document, filename = settlement_pdf_for_period(
-                        connection, property_id, lease_id, period_start, period_end, unit_id
+                document, filename = SettlementDocuments(connection).pdf_for_period(
+                    property_id, lease_id, period_start, period_end, unit_id
                 )
                 return bytes_response(
                     start_response, HTTPStatus.OK, document, "application/pdf", filename, "attachment"
@@ -698,7 +693,9 @@ def application(
                 lease_id = int(params.get("lease_id", [""])[0])
                 period_start = params.get("period_start", [""])[0]
                 period_end = params.get("period_end", [""])[0]
-                document, filename = settlement_ods_for_period(cfg, connection, property_id, lease_id, period_start, period_end, unit_id)
+                document, filename = SettlementDocuments(connection, cfg).ods_for_period(
+                    property_id, lease_id, period_start, period_end, unit_id
+                )
                 return bytes_response(start_response, HTTPStatus.OK, document, "application/vnd.oasis.opendocument.spreadsheet", filename, "attachment")
             except (TypeError, ValueError) as error:
                 return text_response(start_response, HTTPStatus.BAD_REQUEST, str(error), "text/plain; charset=utf-8")
@@ -720,7 +717,8 @@ def application(
             if payload.get("recurrence") == "one_time" and not payload.get("booking_date"):
                 payload["booking_date"] = payload.get("period_start") or payload.get("period_end")
             try:
-                create_expense(connection, payload)
+                with connection:
+                    expenses.create(payload)
                 return redirect_response(start_response, "/?tab=costs&created=1")
             except ValueError as error:
                 return json_response(start_response, HTTPStatus.BAD_REQUEST, {"error": str(error)})
@@ -782,10 +780,12 @@ def application(
                     return json_response(start_response, HTTPStatus.BAD_REQUEST, {"error": str(error)})
         if method == "POST" and path == "/api/meters":
             try:
+                with connection:
+                    result = metering.create_meter(read_json(environ))
                 return json_response(
                     start_response,
                     HTTPStatus.CREATED,
-                    create_meter(connection, read_json(environ)),
+                    result,
                 )
             except ValueError as error:
                 return json_response(start_response, HTTPStatus.BAD_REQUEST, {"error": str(error)})
@@ -793,19 +793,23 @@ def application(
             meter_id = path.removeprefix("/api/meters/")
             if meter_id.isdigit():
                 try:
+                    with connection:
+                        result = metering.update_meter(int(meter_id), read_json(environ))
                     return json_response(
                         start_response,
                         HTTPStatus.OK,
-                        update_meter(connection, int(meter_id), read_json(environ)),
+                        result,
                     )
                 except ValueError as error:
                     return json_response(start_response, HTTPStatus.BAD_REQUEST, {"error": str(error)})
         if method == "POST" and path == "/api/meter-readings":
             try:
+                with connection:
+                    result = metering.create_reading(read_json(environ))
                 return json_response(
                     start_response,
                     HTTPStatus.CREATED,
-                    create_meter_reading(connection, read_json(environ)),
+                    result,
                 )
             except ValueError as error:
                 return json_response(start_response, HTTPStatus.BAD_REQUEST, {"error": str(error)})
@@ -813,39 +817,52 @@ def application(
             reading_id = path.removeprefix("/api/meter-readings/")
             if reading_id.isdigit():
                 try:
+                    with connection:
+                        result = metering.delete_reading(int(reading_id))
                     return json_response(
                         start_response,
                         HTTPStatus.OK,
-                        delete_meter_reading(connection, int(reading_id)),
+                        result,
                     )
                 except ValueError as error:
                     return json_response(start_response, HTTPStatus.BAD_REQUEST, {"error": str(error)})
         if method == "POST" and path == "/api/tenants":
-            return json_response(start_response, HTTPStatus.CREATED, create_tenant(connection, read_json(environ)))
+            try:
+                with connection:
+                    result = tenancy.create_tenant(read_json(environ))
+                return json_response(start_response, HTTPStatus.CREATED, result)
+            except ValueError as error:
+                return json_response(start_response, HTTPStatus.BAD_REQUEST, {"error": str(error)})
         if path.startswith("/api/tenants/"):
             tenant_id = path.removeprefix("/api/tenants/")
             if tenant_id.isdigit():
                 try:
                     if method == "PUT":
+                        with connection:
+                            result = tenancy.update_tenant(int(tenant_id), read_json(environ))
                         return json_response(
                             start_response,
                             HTTPStatus.OK,
-                            update_tenant(connection, int(tenant_id), read_json(environ)),
+                            result,
                         )
                     if method == "DELETE":
+                        with connection:
+                            result = tenancy.delete_tenant(int(tenant_id))
                         return json_response(
                             start_response,
                             HTTPStatus.OK,
-                            delete_tenant(connection, int(tenant_id)),
+                            result,
                         )
                 except ValueError as error:
                     return json_response(start_response, HTTPStatus.BAD_REQUEST, {"error": str(error)})
         if method == "POST" and path == "/api/leases":
             try:
+                with connection:
+                    result = tenancy.create_lease(read_json(environ))
                 return json_response(
                     start_response,
                     HTTPStatus.CREATED,
-                    create_lease(connection, read_json(environ)),
+                    result,
                 )
             except ValueError as error:
                 return json_response(start_response, HTTPStatus.BAD_REQUEST, {"error": str(error)})
@@ -854,25 +871,31 @@ def application(
             if lease_id.isdigit():
                 try:
                     if method == "PUT":
+                        with connection:
+                            result = tenancy.update_lease(int(lease_id), read_json(environ))
                         return json_response(
                             start_response,
                             HTTPStatus.OK,
-                            update_lease(connection, int(lease_id), read_json(environ)),
+                            result,
                         )
                     if method == "DELETE":
+                        with connection:
+                            result = tenancy.delete_lease(int(lease_id))
                         return json_response(
                             start_response,
                             HTTPStatus.OK,
-                            delete_lease(connection, int(lease_id)),
+                            result,
                         )
                 except ValueError as error:
                     return json_response(start_response, HTTPStatus.BAD_REQUEST, {"error": str(error)})
         if method == "POST" and path == "/api/expenses":
             try:
+                with connection:
+                    result = expenses.create(read_json(environ))
                 return json_response(
                     start_response,
                     HTTPStatus.CREATED,
-                    create_expense(connection, read_json(environ)),
+                    result,
                 )
             except ValueError as error:
                 return json_response(start_response, HTTPStatus.BAD_REQUEST, {"error": str(error)})
@@ -880,10 +903,12 @@ def application(
             expense_id = path.removeprefix("/api/expenses/")
             if expense_id.isdigit():
                 try:
+                    with connection:
+                        result = expenses.update(int(expense_id), read_json(environ))
                     return json_response(
                         start_response,
                         HTTPStatus.OK,
-                        update_expense(connection, int(expense_id), read_json(environ)),
+                        result,
                     )
                 except ValueError as error:
                     return json_response(start_response, HTTPStatus.BAD_REQUEST, {"error": str(error)})

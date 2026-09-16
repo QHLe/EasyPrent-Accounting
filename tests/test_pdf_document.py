@@ -10,7 +10,7 @@ import re
 import unittest
 import zlib
 
-from easyprent_accounting.services import settlement_pdf_for_period
+from easyprent_accounting.settlement_documents import SettlementDocuments
 from tests.support import temporary_database
 
 
@@ -46,8 +46,7 @@ class PdfDocumentTest(unittest.TestCase):
         self.addCleanup(self.connection.close)
 
     def test_pdf_is_valid_and_contains_settlement_content(self) -> None:
-        document_bytes, filename = settlement_pdf_for_period(
-            self.connection,
+        document_bytes, filename = SettlementDocuments(self.connection).pdf_for_period(
             property_id=1,
             lease_id=1,
             period_start="2025-01-01",

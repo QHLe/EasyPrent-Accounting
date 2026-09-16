@@ -8,16 +8,15 @@ from types import SimpleNamespace
 from unittest import mock
 
 from easyprent_accounting.integrations.gnucash import GnuCashPayment, PiecashGnuCashReader
-from easyprent_accounting.services import (
+from easyprent_accounting.tenancy import Tenancy
+from easyprent_accounting.settlement_runs import (
     create_or_open_settlement_run,
-    delete_lease,
     get_settlement_run_overview,
     import_gnucash_payments_for_period,
     refresh_settlement_run_payments,
     set_settlement_payment_considered,
-    settlement_for_period,
-    update_lease,
 )
+from easyprent_accounting.settlements import Settlements
 from easyprent_accounting.settings import (
     update_gnucash_settings,
 )
@@ -56,8 +55,7 @@ class GnuCashPaymentImportTests(unittest.TestCase):
         self.property_id = int(
             self.connection.execute("SELECT id FROM properties ORDER BY id LIMIT 1").fetchone()["id"]
         )
-        update_lease(
-            self.connection,
+        Tenancy(self.connection).update_lease(
             int(lease["id"]),
             {
                 "unit_id": lease["unit_id"],
@@ -94,8 +92,7 @@ class GnuCashPaymentImportTests(unittest.TestCase):
         lease = self.connection.execute("SELECT * FROM leases WHERE id = 1").fetchone()
         assert lease is not None
 
-        updated = update_lease(
-            self.connection,
+        updated = Tenancy(self.connection).update_lease(
             1,
             {
                 "unit_id": lease["unit_id"],
@@ -146,8 +143,7 @@ class GnuCashPaymentImportTests(unittest.TestCase):
             "2025-12-31",
             reader=reader,
         )
-        settlement = settlement_for_period(
-            self.connection,
+        settlement = Settlements(self.connection).for_period(
             self.property_id,
             "2025-01-01",
             "2025-12-31",
@@ -175,8 +171,7 @@ class GnuCashPaymentImportTests(unittest.TestCase):
     def test_ignores_payment_before_lease_start(self) -> None:
         lease = self.connection.execute("SELECT * FROM leases WHERE id = 1").fetchone()
         assert lease is not None
-        update_lease(
-            self.connection,
+        Tenancy(self.connection).update_lease(
             1,
             {
                 "unit_id": lease["unit_id"],
@@ -247,8 +242,8 @@ class GnuCashPaymentImportTests(unittest.TestCase):
         )
         self.connection.commit()
 
-        settlement = settlement_for_period(
-            self.connection, self.property_id, "2025-01-01", "2025-12-31"
+        settlement = Settlements(self.connection).for_period(
+            self.property_id, "2025-01-01", "2025-12-31"
         )
         tenant_result = next(result for result in settlement["results"] if result["lease_id"] == 1)
         self.assertEqual(tenant_result["advances_paid"], "0.00")
@@ -312,8 +307,8 @@ class GnuCashPaymentImportTests(unittest.TestCase):
         import_gnucash_payments_for_period(
             self.connection, self.property_id, "2025-01-01", "2025-12-31", reader=reader
         )
-        settlement = settlement_for_period(
-            self.connection, self.property_id, "2025-01-01", "2025-12-31"
+        settlement = Settlements(self.connection).for_period(
+            self.property_id, "2025-01-01", "2025-12-31"
         )
 
         tenant_result = next(result for result in settlement["results"] if result["lease_id"] == 1)
@@ -358,8 +353,7 @@ class GnuCashPaymentImportTests(unittest.TestCase):
         lease = self.connection.execute("SELECT * FROM leases WHERE id = 2").fetchone()
         assert lease is not None
         with self.assertRaisesRegex(ValueError, "only be assigned to one lease"):
-            update_lease(
-                self.connection,
+            Tenancy(self.connection).update_lease(
                 2,
                 {
                     "unit_id": lease["unit_id"],
@@ -394,7 +388,7 @@ class GnuCashPaymentImportTests(unittest.TestCase):
         )
 
         with self.assertRaisesRegex(ValueError, "GnuCash payments exist"):
-            delete_lease(self.connection, 1)
+            Tenancy(self.connection).delete_lease(1)
 
 
 class PiecashGnuCashReaderTests(unittest.TestCase):
