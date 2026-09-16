@@ -8,13 +8,13 @@ from http import HTTPStatus
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from .asset_registry import AssetRegistry
 from .db import get_connection
 from .integrations.paperless import PaperlessAdapter, UrllibPaperlessAdapter
 from .linked_documents import LinkedDocuments, get_paperless_status
 from .openapi import build_openapi_document
 from .services import (
     archive_object,
-    create_building,
     create_or_open_settlement_run,
     consider_all_settlement_payments,
     create_depreciation_asset,
@@ -23,14 +23,11 @@ from .services import (
     create_meter,
     create_meter_reading,
     update_meter,
-    create_property,
     delete_lease,
     get_settlement_run_overview,
     find_settlement_run_id,
     refresh_settlement_run_payments,
-    create_room,
     create_tenant,
-    create_unit,
     delete_meter_reading,
     delete_object,
     delete_tenant,
@@ -44,12 +41,8 @@ from .services import (
     settlement_run_ods,
     set_settlement_payment_considered,
     health_status,
-    update_building,
-    update_property,
-    update_room,
     update_tenant,
     update_lease,
-    update_unit,
     update_expense,
 )
 from .settings import (
@@ -68,6 +61,12 @@ from .settings import (
 
 STATIC_DIR = Path(__file__).with_name("static")
 LIFECYCLE_RESOURCES = {"properties", "buildings", "units", "rooms", "meters", "expenses"}
+ASSET_RESOURCE_NAMES = {
+    "properties": "property",
+    "buildings": "building",
+    "units": "unit",
+    "rooms": "room",
+}
 
 
 def json_response(start_response, status: HTTPStatus, payload: dict | list) -> list[bytes]:
@@ -369,29 +368,29 @@ def application(
     connection = get_connection(cfg.db_path)
     paperless = paperless_adapter if paperless_adapter is not None else UrllibPaperlessAdapter()
     documents = LinkedDocuments(connection, paperless)
+    assets = AssetRegistry(connection)
     try:
         lifecycle_route = parse_object_lifecycle_path(path)
         if lifecycle_route is not None:
             resource_name, object_id, action = lifecycle_route
             try:
-                if method == "POST" and action == "archive":
-                    return json_response(
-                        start_response,
-                        HTTPStatus.OK,
-                        archive_object(connection, resource_name, object_id),
-                    )
-                if method == "POST" and action == "restore":
-                    return json_response(
-                        start_response,
-                        HTTPStatus.OK,
-                        restore_object(connection, resource_name, object_id),
-                    )
-                if method == "DELETE" and action == "delete":
-                    return json_response(
-                        start_response,
-                        HTTPStatus.OK,
-                        delete_object(connection, resource_name, object_id),
-                    )
+                if (method == "POST" and action in {"archive", "restore"}) or (
+                    method == "DELETE" and action == "delete"
+                ):
+                    if resource_name in ASSET_RESOURCE_NAMES:
+                        operation = getattr(
+                            assets, f"{action}_{ASSET_RESOURCE_NAMES[resource_name]}"
+                        )
+                        with connection:
+                            result = operation(object_id)
+                    else:
+                        operation = {
+                            "archive": archive_object,
+                            "restore": restore_object,
+                            "delete": delete_object,
+                        }[action]
+                        result = operation(connection, resource_name, object_id)
+                    return json_response(start_response, HTTPStatus.OK, result)
             except ValueError as error:
                 return json_response(start_response, HTTPStatus.BAD_REQUEST, {"error": str(error)})
 
@@ -727,62 +726,58 @@ def application(
                 return json_response(start_response, HTTPStatus.BAD_REQUEST, {"error": str(error)})
 
         if method == "POST" and path == "/api/properties":
-            return json_response(start_response, HTTPStatus.CREATED, create_property(connection, read_json(environ)))
+            with connection:
+                result = assets.create_property(read_json(environ))
+            return json_response(start_response, HTTPStatus.CREATED, result)
         if method == "PUT" and path.startswith("/api/properties/"):
             property_id = path.removeprefix("/api/properties/")
             if property_id.isdigit():
                 try:
-                    return json_response(
-                        start_response,
-                        HTTPStatus.OK,
-                        update_property(connection, int(property_id), read_json(environ)),
-                    )
+                    with connection:
+                        result = assets.update_property(int(property_id), read_json(environ))
+                    return json_response(start_response, HTTPStatus.OK, result)
                 except ValueError as error:
                     return json_response(start_response, HTTPStatus.BAD_REQUEST, {"error": str(error)})
         if method == "POST" and path == "/api/buildings":
-            return json_response(start_response, HTTPStatus.CREATED, create_building(connection, read_json(environ)))
+            with connection:
+                result = assets.create_building(read_json(environ))
+            return json_response(start_response, HTTPStatus.CREATED, result)
         if method == "PUT" and path.startswith("/api/buildings/"):
             building_id = path.removeprefix("/api/buildings/")
             if building_id.isdigit():
                 try:
-                    return json_response(
-                        start_response,
-                        HTTPStatus.OK,
-                        update_building(connection, int(building_id), read_json(environ)),
-                    )
+                    with connection:
+                        result = assets.update_building(int(building_id), read_json(environ))
+                    return json_response(start_response, HTTPStatus.OK, result)
                 except ValueError as error:
                     return json_response(start_response, HTTPStatus.BAD_REQUEST, {"error": str(error)})
         if method == "POST" and path == "/api/units":
-            return json_response(start_response, HTTPStatus.CREATED, create_unit(connection, read_json(environ)))
+            with connection:
+                result = assets.create_unit(read_json(environ))
+            return json_response(start_response, HTTPStatus.CREATED, result)
         if method == "PUT" and path.startswith("/api/units/"):
             unit_id = path.removeprefix("/api/units/")
             if unit_id.isdigit():
                 try:
-                    return json_response(
-                        start_response,
-                        HTTPStatus.OK,
-                        update_unit(connection, int(unit_id), read_json(environ)),
-                    )
+                    with connection:
+                        result = assets.update_unit(int(unit_id), read_json(environ))
+                    return json_response(start_response, HTTPStatus.OK, result)
                 except ValueError as error:
                     return json_response(start_response, HTTPStatus.BAD_REQUEST, {"error": str(error)})
         if method == "POST" and path == "/api/rooms":
             try:
-                return json_response(
-                    start_response,
-                    HTTPStatus.CREATED,
-                    create_room(connection, read_json(environ)),
-                )
+                with connection:
+                    result = assets.create_room(read_json(environ))
+                return json_response(start_response, HTTPStatus.CREATED, result)
             except ValueError as error:
                 return json_response(start_response, HTTPStatus.BAD_REQUEST, {"error": str(error)})
         if method == "PUT" and path.startswith("/api/rooms/"):
             room_id = path.removeprefix("/api/rooms/")
             if room_id.isdigit():
                 try:
-                    return json_response(
-                        start_response,
-                        HTTPStatus.OK,
-                        update_room(connection, int(room_id), read_json(environ)),
-                    )
+                    with connection:
+                        result = assets.update_room(int(room_id), read_json(environ))
+                    return json_response(start_response, HTTPStatus.OK, result)
                 except ValueError as error:
                     return json_response(start_response, HTTPStatus.BAD_REQUEST, {"error": str(error)})
         if method == "POST" and path == "/api/meters":

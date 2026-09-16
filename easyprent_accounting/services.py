@@ -7,6 +7,7 @@ import uuid
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
+from .asset_registry import AssetRegistry
 from .config import AppConfig
 from .domain import Money, Percentage
 from .settings import get_application_settings, get_gnucash_connection_settings
@@ -119,31 +120,6 @@ def _decimal_to_string(value: Decimal | None) -> str | None:
     return format(value.normalize(), "f")
 
 
-def _normalize_optional_decimal_string(value: object, field_name: str) -> str | None:
-    if value in (None, ""):
-        return None
-    return _decimal_to_string(_parse_decimal(value, field_name))
-
-
-def _normalize_area_share_percent(value: object) -> str | None:
-    return _normalize_percentage(value, "area_share_percent")
-
-
-def _normalize_percentage(value: object, field_name: str) -> str | None:
-    if value in (None, ""):
-        return None
-    percentage = Percentage(_parse_decimal(value, field_name)).value
-    return _decimal_to_string(percentage)
-
-
-
-
-
-
-
-
-
-
 def health_status() -> dict:
     return {
         "status": "ok",
@@ -164,56 +140,6 @@ def _lease_exists(connection: sqlite3.Connection, lease_id: int) -> sqlite3.Row 
     ).fetchone()
 
 
-SUPPORTED_OBJECT_TYPES = {"property", "building", "unit", "room"}
-
-
-def _lookup_object_target(
-    connection: sqlite3.Connection,
-    object_type: str,
-    object_id: int,
-) -> sqlite3.Row | None:
-    if object_type == "property":
-        return connection.execute(
-            """
-            SELECT id, id AS property_id, name AS object_name
-            FROM properties
-            WHERE id = ?
-            """,
-            (object_id,),
-        ).fetchone()
-    if object_type == "building":
-        return connection.execute(
-            """
-            SELECT id, property_id, name AS object_name
-            FROM buildings
-            WHERE id = ?
-            """,
-            (object_id,),
-        ).fetchone()
-    if object_type == "unit":
-        return connection.execute(
-            """
-            SELECT u.id, b.property_id, u.label AS object_name
-            FROM units u
-            LEFT JOIN buildings b ON b.id = u.building_id
-            WHERE u.id = ?
-            """,
-            (object_id,),
-        ).fetchone()
-    if object_type == "room":
-        return connection.execute(
-            """
-            SELECT r.id, b.property_id, r.label AS object_name
-            FROM rooms r
-            JOIN units u ON u.id = r.unit_id
-            LEFT JOIN buildings b ON b.id = u.building_id
-            WHERE r.id = ?
-            """,
-            (object_id,),
-        ).fetchone()
-    raise ValueError("object_type must be property, building, unit or room")
-
-
 def _normalize_expense_target(
     connection: sqlite3.Connection,
     payload: dict,
@@ -229,10 +155,10 @@ def _normalize_expense_target(
 
     object_type = str(object_type)
     object_id = _parse_int(object_id, "object_id")
-    target_row = _lookup_object_target(connection, object_type, object_id)
-    if target_row is None:
+    target = AssetRegistry(connection).resolve_target(object_type, object_id)
+    if target is None:
         raise ValueError("target object not found")
-    return object_type, object_id, target_row["property_id"]
+    return object_type, object_id, target.property_id
 
 
 def _normalize_meter_target(
@@ -240,13 +166,11 @@ def _normalize_meter_target(
     payload: dict,
 ) -> tuple[str, int, int | None]:
     object_type = _require_payload_value(payload, "object_type")
-    if object_type not in SUPPORTED_OBJECT_TYPES:
-        raise ValueError("object_type must be property, building, unit or room")
     object_id = _parse_int(payload.get("object_id"), "object_id")
-    target_row = _lookup_object_target(connection, object_type, object_id)
-    if target_row is None:
+    target = AssetRegistry(connection).resolve_target(object_type, object_id)
+    if target is None:
         raise ValueError("target object not found")
-    return object_type, object_id, target_row["property_id"]
+    return object_type, object_id, target.property_id
 
 
 def _lookup_meter(connection: sqlite3.Connection, meter_id: int) -> sqlite3.Row | None:
@@ -608,59 +532,11 @@ def _expense_response_payload(
     }
 
 
-def _expense_dependency_query(object_type: str) -> str:
-    return (
-        "SELECT COUNT(*) FROM expense_items "
-        f"WHERE object_type = '{object_type}' AND object_id = ?"
-    )
-
-
-def _meter_dependency_query(object_type: str) -> str:
-    return "SELECT COUNT(*) FROM meters " f"WHERE object_type = '{object_type}' AND object_id = ?"
-
-
 def _expense_meter_dependency_query() -> str:
     return "SELECT COUNT(*) FROM expense_items WHERE meter_id = ?"
 
 
 OBJECT_LIFECYCLE = {
-    "properties": {
-        "table": "properties",
-        "label": "property",
-        "dependencies": [
-            {"table": "buildings", "foreign_key": "property_id", "label": "buildings"},
-            {"query": _meter_dependency_query("property"), "label": "meters"},
-            {"query": _expense_dependency_query("property"), "label": "expenses"},
-            {"table": "depreciation_assets", "foreign_key": "property_id", "label": "depreciation_assets"},
-        ],
-    },
-    "buildings": {
-        "table": "buildings",
-        "label": "building",
-        "dependencies": [
-            {"table": "units", "foreign_key": "building_id", "label": "units"},
-            {"query": _meter_dependency_query("building"), "label": "meters"},
-            {"query": _expense_dependency_query("building"), "label": "expenses"},
-        ],
-    },
-    "units": {
-        "table": "units",
-        "label": "unit",
-        "dependencies": [
-            {"table": "rooms", "foreign_key": "unit_id", "label": "rooms"},
-            {"table": "leases", "foreign_key": "unit_id", "label": "leases"},
-            {"query": _meter_dependency_query("unit"), "label": "meters"},
-            {"query": _expense_dependency_query("unit"), "label": "expenses"},
-        ],
-    },
-    "rooms": {
-        "table": "rooms",
-        "label": "room",
-        "dependencies": [
-            {"query": _meter_dependency_query("room"), "label": "meters"},
-            {"query": _expense_dependency_query("room"), "label": "expenses"},
-        ],
-    },
     "meters": {
         "table": "meters",
         "label": "meter",
@@ -704,85 +580,11 @@ def _count_lifecycle_dependency(
 
 
 def list_overview(connection: sqlite3.Connection) -> dict:
-    properties = _row_dicts(
-        connection.execute(
-            """
-            SELECT
-                p.*,
-                o.name AS organization_name,
-                COUNT(DISTINCT b.id) AS building_count,
-                COUNT(DISTINCT u.id) AS unit_count,
-                COUNT(DISTINCT r.id) AS room_count,
-                COUNT(DISTINCT e.id) AS expense_count
-            FROM properties p
-            JOIN organizations o ON o.id = p.organization_id
-            LEFT JOIN buildings b ON b.property_id = p.id
-            LEFT JOIN units u ON u.building_id = b.id
-            LEFT JOIN rooms r ON r.unit_id = u.id
-            LEFT JOIN expense_items e ON e.property_id = p.id
-            GROUP BY p.id, o.name
-            ORDER BY p.id
-            """
-        ).fetchall()
-    )
-    buildings = _row_dicts(
-        connection.execute(
-            """
-            SELECT
-                b.*,
-                p.name AS property_name,
-                COUNT(DISTINCT u.id) AS unit_count,
-                COUNT(DISTINCT r.id) AS room_count
-            FROM buildings b
-            LEFT JOIN properties p ON p.id = b.property_id
-            LEFT JOIN units u ON u.building_id = b.id
-            LEFT JOIN rooms r ON r.unit_id = u.id
-            GROUP BY b.id, p.name
-            ORDER BY b.id
-            """
-        ).fetchall()
-    )
-    units = _row_dicts(
-        connection.execute(
-            """
-            SELECT
-                u.*,
-                b.property_id AS property_id,
-                b.name AS building_name,
-                p.name AS property_name,
-                COUNT(r.id) AS actual_room_count
-            FROM units u
-            LEFT JOIN buildings b ON b.id = u.building_id
-            LEFT JOIN properties p ON p.id = b.property_id
-            LEFT JOIN rooms r ON r.unit_id = u.id
-            GROUP BY u.id, b.property_id, b.name, p.name
-            ORDER BY u.id
-            """
-        ).fetchall()
-    )
-    rooms = _row_dicts(
-        connection.execute(
-            """
-            SELECT
-                r.*,
-                u.label AS unit_label,
-                u.building_id AS building_id,
-                b.property_id AS property_id,
-                b.name AS building_name,
-                p.name AS property_name
-            FROM rooms r
-            JOIN units u ON u.id = r.unit_id
-            LEFT JOIN buildings b ON b.id = u.building_id
-            LEFT JOIN properties p ON p.id = b.property_id
-            ORDER BY r.id
-            """
-        ).fetchall()
-    )
-    for room in rooms:
-        room["area_sqm"] = _normalize_optional_decimal_string(room.get("area_sqm"), "area_sqm")
-        room["area_share_percent"] = _normalize_area_share_percent(
-            room.get("area_share_percent")
-        )
+    assets = AssetRegistry(connection).list_assets()
+    properties = assets["properties"]
+    buildings = assets["buildings"]
+    units = assets["units"]
+    rooms = assets["rooms"]
     tenants = _row_dicts(
         connection.execute(
             """
@@ -1014,123 +816,6 @@ def list_overview(connection: sqlite3.Connection) -> dict:
         "expenses": expenses,
         "expense_categories": expense_categories,
         "depreciation_assets": depreciation_assets,
-    }
-
-
-def create_property(connection: sqlite3.Connection, payload: dict) -> dict:
-    cursor = connection.execute(
-        """
-        INSERT INTO properties (organization_id, name, street, city, postal_code)
-        VALUES (?, ?, ?, ?, ?)
-        """,
-        (
-            payload["organization_id"],
-            payload["name"],
-            payload["street"],
-            payload["city"],
-            payload["postal_code"],
-        ),
-    )
-    connection.commit()
-    return {"id": cursor.lastrowid, **payload}
-
-
-def create_building(connection: sqlite3.Connection, payload: dict) -> dict:
-    cursor = connection.execute(
-        """
-        INSERT INTO buildings (property_id, name, year_built, street, city, postal_code)
-        VALUES (?, ?, ?, ?, ?, ?)
-        """,
-        (
-            payload.get("property_id"),
-            payload["name"],
-            payload.get("year_built"),
-            payload["street"],
-            payload["city"],
-            payload["postal_code"],
-        ),
-    )
-    connection.commit()
-    return {"id": cursor.lastrowid, **payload}
-
-
-def _unit_address(connection: sqlite3.Connection, payload: dict) -> tuple[str, str, str]:
-    building_id = payload.get("building_id")
-    if building_id is None:
-        return payload["street"], payload["city"], payload["postal_code"]
-
-    building = connection.execute(
-        "SELECT street, city, postal_code FROM buildings WHERE id = ?",
-        (building_id,),
-    ).fetchone()
-    if building is None:
-        raise ValueError("building not found")
-    return building["street"], building["city"], building["postal_code"]
-
-
-def create_unit(connection: sqlite3.Connection, payload: dict) -> dict:
-    street, city, postal_code = _unit_address(connection, payload)
-    mea_percent = _normalize_percentage(
-        _require_payload_value(payload, "mea_percent"), "mea_percent"
-    )
-    cursor = connection.execute(
-        """
-        INSERT INTO units (building_id, label, area_sqm, mea_percent, room_count, street, city, postal_code)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            payload.get("building_id"),
-            payload["label"],
-            str(Decimal(str(payload["area_sqm"]))),
-            mea_percent,
-            payload["room_count"],
-            street,
-            city,
-            postal_code,
-        ),
-    )
-    connection.commit()
-    return {
-        "id": cursor.lastrowid,
-        **payload,
-        "street": street,
-        "city": city,
-        "postal_code": postal_code,
-    }
-
-
-def create_room(connection: sqlite3.Connection, payload: dict) -> dict:
-    unit_id = _parse_int(payload.get("unit_id"), "unit_id")
-    label = _require_payload_value(payload, "label")
-    area_sqm = _normalize_optional_decimal_string(payload.get("area_sqm"), "area_sqm")
-    area_share_percent = _normalize_area_share_percent(payload.get("area_share_percent"))
-
-    unit_row = connection.execute(
-        """
-        SELECT u.room_count, COUNT(r.id) AS actual_room_count
-        FROM units u
-        LEFT JOIN rooms r ON r.unit_id = u.id
-        WHERE u.id = ?
-        GROUP BY u.id, u.room_count
-        """,
-        (unit_id,),
-    ).fetchone()
-    if unit_row is None:
-        raise ValueError("room requires existing unit_id")
-    if unit_row["actual_room_count"] >= unit_row["room_count"]:
-        raise ValueError("room_count limit reached for unit")
-
-    cursor = connection.execute(
-        "INSERT INTO rooms (unit_id, label, area_sqm, area_share_percent) VALUES (?, ?, ?, ?)",
-        (unit_id, label, area_sqm, area_share_percent),
-    )
-    connection.commit()
-    return {
-        "id": cursor.lastrowid,
-        "unit_id": unit_id,
-        "label": label,
-        "area_sqm": area_sqm,
-        "area_share_percent": area_share_percent,
     }
 
 
@@ -1548,162 +1233,6 @@ def create_lease(connection: sqlite3.Connection, payload: dict) -> dict:
     )
     connection.commit()
     return {"id": cursor.lastrowid, **normalized_payload}
-
-
-def update_property(connection: sqlite3.Connection, property_id: int, payload: dict) -> dict:
-    row = connection.execute(
-        "SELECT id, is_archived FROM properties WHERE id = ?",
-        (property_id,),
-    ).fetchone()
-    if row is None:
-        raise ValueError("property not found")
-    if row["is_archived"]:
-        raise ValueError("archived property cannot be edited")
-
-    connection.execute(
-        """
-        UPDATE properties
-        SET organization_id = ?, name = ?, street = ?, city = ?, postal_code = ?
-        WHERE id = ?
-        """,
-        (
-            payload["organization_id"],
-            payload["name"],
-            payload["street"],
-            payload["city"],
-            payload["postal_code"],
-            property_id,
-        ),
-    )
-    connection.commit()
-    return {"id": property_id, **payload}
-
-
-def update_building(connection: sqlite3.Connection, building_id: int, payload: dict) -> dict:
-    row = connection.execute(
-        "SELECT id, is_archived FROM buildings WHERE id = ?",
-        (building_id,),
-    ).fetchone()
-    if row is None:
-        raise ValueError("building not found")
-    if row["is_archived"]:
-        raise ValueError("archived building cannot be edited")
-
-    connection.execute(
-        """
-        UPDATE buildings
-        SET property_id = ?, name = ?, year_built = ?, street = ?, city = ?, postal_code = ?
-        WHERE id = ?
-        """,
-        (
-            payload.get("property_id"),
-            payload["name"],
-            payload.get("year_built"),
-            payload["street"],
-            payload["city"],
-            payload["postal_code"],
-            building_id,
-        ),
-    )
-    connection.commit()
-    return {"id": building_id, **payload}
-
-
-def update_unit(connection: sqlite3.Connection, unit_id: int, payload: dict) -> dict:
-    row = connection.execute(
-        "SELECT id, is_archived FROM units WHERE id = ?",
-        (unit_id,),
-    ).fetchone()
-    if row is None:
-        raise ValueError("unit not found")
-    if row["is_archived"]:
-        raise ValueError("archived unit cannot be edited")
-
-    requested_room_count = int(payload["room_count"])
-    room_count_row = connection.execute(
-        """
-        SELECT COUNT(*) AS actual_room_count
-        FROM rooms
-        WHERE unit_id = ?
-        """,
-        (unit_id,),
-    ).fetchone()
-    if room_count_row is not None and room_count_row["actual_room_count"] > requested_room_count:
-        raise ValueError("room_count cannot be lower than existing rooms")
-
-    street, city, postal_code = _unit_address(connection, payload)
-    mea_percent = _normalize_percentage(
-        _require_payload_value(payload, "mea_percent"), "mea_percent"
-    )
-    connection.execute(
-        """
-        UPDATE units
-        SET building_id = ?, label = ?, area_sqm = ?, mea_percent = ?, room_count = ?, street = ?, city = ?, postal_code = ?
-        WHERE id = ?
-        """,
-        (
-            payload.get("building_id"),
-            payload["label"],
-            str(Decimal(str(payload["area_sqm"]))),
-            mea_percent,
-            requested_room_count,
-            street,
-            city,
-            postal_code,
-            unit_id,
-        ),
-    )
-    connection.commit()
-    return {
-        "id": unit_id,
-        **payload,
-        "street": street,
-        "city": city,
-        "postal_code": postal_code,
-    }
-
-
-def update_room(connection: sqlite3.Connection, room_id: int, payload: dict) -> dict:
-    row = connection.execute(
-        "SELECT id, is_archived FROM rooms WHERE id = ?",
-        (room_id,),
-    ).fetchone()
-    if row is None:
-        raise ValueError("room not found")
-    if row["is_archived"]:
-        raise ValueError("archived room cannot be edited")
-
-    unit_id = _parse_int(payload.get("unit_id"), "unit_id")
-    label = _require_payload_value(payload, "label")
-    area_sqm = _normalize_optional_decimal_string(payload.get("area_sqm"), "area_sqm")
-    area_share_percent = _normalize_area_share_percent(payload.get("area_share_percent"))
-    unit_row = connection.execute(
-        """
-        SELECT u.room_count, COUNT(r.id) AS actual_room_count
-        FROM units u
-        LEFT JOIN rooms r ON r.unit_id = u.id AND r.id != ?
-        WHERE u.id = ?
-        GROUP BY u.id, u.room_count
-        """,
-        (room_id, unit_id),
-    ).fetchone()
-    if unit_row is None:
-        raise ValueError("room requires existing unit_id")
-    if unit_row["actual_room_count"] >= unit_row["room_count"]:
-        raise ValueError("room_count limit reached for unit")
-
-    connection.execute(
-        "UPDATE rooms SET unit_id = ?, label = ?, area_sqm = ?, area_share_percent = ? WHERE id = ?",
-        (unit_id, label, area_sqm, area_share_percent, room_id),
-    )
-    connection.commit()
-    return {
-        "id": room_id,
-        "unit_id": unit_id,
-        "label": label,
-        "area_sqm": area_sqm,
-        "area_share_percent": area_share_percent,
-    }
 
 
 def update_tenant(connection: sqlite3.Connection, tenant_id: int, payload: dict) -> dict:

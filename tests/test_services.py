@@ -3,27 +3,21 @@ from __future__ import annotations
 import unittest
 from decimal import Decimal
 
+from easyprent_accounting.asset_registry import AssetRegistry
 from easyprent_accounting.domain import DomainError
 from easyprent_accounting.services import (
     archive_object,
-    create_building,
     create_depreciation_asset,
     create_expense,
     create_lease,
     create_meter,
     create_meter_reading,
-    create_room,
-    create_unit,
     delete_meter_reading,
-    delete_object,
     list_overview,
-    restore_object,
     settlement_for_period,
     update_meter,
     update_expense,
     update_lease,
-    update_room,
-    update_unit,
     _total_amount_for_expense_period,
 )
 from tests.support import in_memory_database
@@ -32,6 +26,7 @@ from tests.support import in_memory_database
 class ExpenseServiceTests(unittest.TestCase):
     def setUp(self) -> None:
         self.connection = in_memory_database()
+        self.registry = AssetRegistry(self.connection)
 
     def tearDown(self) -> None:
         self.connection.close()
@@ -1268,12 +1263,10 @@ class ExpenseServiceTests(unittest.TestCase):
 
     def test_settlement_uses_room_area_shares_for_area_allocation(self) -> None:
         self.connection.execute("DELETE FROM expense_items")
-        first_room = create_room(
-            self.connection,
+        first_room = self.registry.create_room(
             {"unit_id": 1, "label": "Zimmer Nord", "area_share_percent": "25"},
         )
-        second_room = create_room(
-            self.connection,
+        second_room = self.registry.create_room(
             {"unit_id": 1, "label": "Zimmer Süd", "area_share_percent": "75"},
         )
         self.connection.execute(
@@ -1446,8 +1439,7 @@ class ExpenseServiceTests(unittest.TestCase):
         self.assertNotIn("Archivierte Wartung", labels)
 
     def test_settlement_includes_expenses_from_building_unit_and_room_targets(self) -> None:
-        room = create_room(
-            self.connection,
+        room = self.registry.create_room(
             {
                 "unit_id": 1,
                 "label": "Abstellraum",
@@ -1659,13 +1651,13 @@ if __name__ == "__main__":
 class PropertyRelationshipTests(unittest.TestCase):
     def setUp(self) -> None:
         self.connection = in_memory_database()
+        self.registry = AssetRegistry(self.connection)
 
     def tearDown(self) -> None:
         self.connection.close()
 
     def test_create_building_allows_standalone_without_property(self) -> None:
-        created = create_building(
-            self.connection,
+        created = self.registry.create_building(
             {
                 "property_id": None,
                 "name": "Einzelgebaeude Nord",
@@ -1686,8 +1678,7 @@ class PropertyRelationshipTests(unittest.TestCase):
         self.assertEqual(row["postal_code"], "10115")
 
     def test_create_unit_allows_standalone_without_building(self) -> None:
-        created = create_unit(
-            self.connection,
+        created = self.registry.create_unit(
             {
                 "building_id": None,
                 "label": "Whg-Solo-1",
@@ -1712,8 +1703,7 @@ class PropertyRelationshipTests(unittest.TestCase):
 
     def test_create_unit_requires_mea_percent(self) -> None:
         with self.assertRaises(ValueError) as error:
-            create_unit(
-                self.connection,
+            self.registry.create_unit(
                 {
                     "building_id": None,
                     "label": "Whg-Solo-1",
@@ -1729,8 +1719,7 @@ class PropertyRelationshipTests(unittest.TestCase):
 
     def test_create_unit_rejects_non_finite_mea_percent(self) -> None:
         with self.assertRaises(DomainError) as caught:
-            create_unit(
-                self.connection,
+            self.registry.create_unit(
                 {
                     "building_id": None,
                     "label": "Whg-Solo-1",
@@ -1746,8 +1735,7 @@ class PropertyRelationshipTests(unittest.TestCase):
         self.assertEqual("invalid_percentage", caught.exception.code)
 
     def test_create_unit_inherits_address_from_building(self) -> None:
-        created = create_unit(
-            self.connection,
+        created = self.registry.create_unit(
             {
                 "building_id": 1,
                 "label": "A-04",
@@ -1766,8 +1754,7 @@ class PropertyRelationshipTests(unittest.TestCase):
         self.assertEqual(dict(row), {"street": "Lindenweg 12", "city": "Berlin", "postal_code": "10439"})
 
     def test_update_unit_inherits_address_from_new_building(self) -> None:
-        building = create_building(
-            self.connection,
+        building = self.registry.create_building(
             {
                 "property_id": 1,
                 "name": "Haus B",
@@ -1778,8 +1765,7 @@ class PropertyRelationshipTests(unittest.TestCase):
             },
         )
 
-        update_unit(
-            self.connection,
+        self.registry.update_unit(
             1,
             {
                 "building_id": building["id"],
@@ -1804,8 +1790,7 @@ class PropertyRelationshipTests(unittest.TestCase):
         ).fetchone()[0]
 
         with self.assertRaises(DomainError) as caught:
-            update_unit(
-                self.connection,
+            self.registry.update_unit(
                 1,
                 {
                     "building_id": 1,
@@ -1833,8 +1818,7 @@ class PropertyRelationshipTests(unittest.TestCase):
 
     def test_create_room_requires_unit(self) -> None:
         with self.assertRaises(ValueError):
-            create_room(
-                self.connection,
+            self.registry.create_room(
                 {
                     "unit_id": None,
                     "label": "Zimmer 1",
@@ -1842,8 +1826,7 @@ class PropertyRelationshipTests(unittest.TestCase):
             )
 
     def test_create_room_belongs_to_unit(self) -> None:
-        created = create_room(
-            self.connection,
+        created = self.registry.create_room(
             {
                 "unit_id": 1,
                 "label": "Zimmer links",
@@ -1857,8 +1840,7 @@ class PropertyRelationshipTests(unittest.TestCase):
         self.assertEqual(row["label"], "Zimmer links")
 
     def test_create_room_stores_area_share_percent(self) -> None:
-        created = create_room(
-            self.connection,
+        created = self.registry.create_room(
             {
                 "unit_id": 1,
                 "label": "Zimmer links",
@@ -1876,8 +1858,7 @@ class PropertyRelationshipTests(unittest.TestCase):
 
     def test_create_room_rejects_area_share_outside_percentage_range(self) -> None:
         with self.assertRaises(ValueError) as error:
-            create_room(
-                self.connection,
+            self.registry.create_room(
                 {
                     "unit_id": 1,
                     "label": "Zimmer links",
@@ -1888,8 +1869,7 @@ class PropertyRelationshipTests(unittest.TestCase):
         self.assertIn("between 0 and 100", str(error.exception))
 
     def test_update_room_rejects_non_finite_area_share_percent(self) -> None:
-        room = create_room(
-            self.connection,
+        room = self.registry.create_room(
             {
                 "unit_id": 1,
                 "label": "Zimmer links",
@@ -1898,8 +1878,7 @@ class PropertyRelationshipTests(unittest.TestCase):
         )
 
         with self.assertRaises(DomainError) as caught:
-            update_room(
-                self.connection,
+            self.registry.update_room(
                 room["id"],
                 {
                     "unit_id": 1,
@@ -1999,15 +1978,13 @@ class PropertyRelationshipTests(unittest.TestCase):
         self.assertEqual("2025-01-02", created["placed_in_service"])
 
     def test_create_room_rejects_more_rooms_than_unit_allows(self) -> None:
-        create_room(
-            self.connection,
+        self.registry.create_room(
             {
                 "unit_id": 2,
                 "label": "Zimmer 1",
             },
         )
-        create_room(
-            self.connection,
+        self.registry.create_room(
             {
                 "unit_id": 2,
                 "label": "Zimmer 2",
@@ -2015,8 +1992,7 @@ class PropertyRelationshipTests(unittest.TestCase):
         )
 
         with self.assertRaises(ValueError) as error:
-            create_room(
-                self.connection,
+            self.registry.create_room(
                 {
                     "unit_id": 2,
                     "label": "Zimmer 3",
@@ -2026,8 +2002,7 @@ class PropertyRelationshipTests(unittest.TestCase):
         self.assertIn("room_count", str(error.exception))
 
     def test_list_overview_enriches_object_relationships_for_preview(self) -> None:
-        create_room(
-            self.connection,
+        self.registry.create_room(
             {
                 "unit_id": 1,
                 "label": "Wohnzimmer",
@@ -2076,8 +2051,7 @@ class PropertyRelationshipTests(unittest.TestCase):
         )
 
     def test_archive_and_delete_room_requires_archive_first(self) -> None:
-        created = create_room(
-            self.connection,
+        created = self.registry.create_room(
             {
                 "unit_id": 1,
                 "label": "Archivzimmer",
@@ -2085,10 +2059,10 @@ class PropertyRelationshipTests(unittest.TestCase):
         )
 
         with self.assertRaises(ValueError) as error:
-            delete_object(self.connection, "rooms", created["id"])
+            self.registry.delete_room(created["id"])
         self.assertIn("archived", str(error.exception))
 
-        archived = archive_object(self.connection, "rooms", created["id"])
+        archived = self.registry.archive_room(created["id"])
         row = self.connection.execute(
             "SELECT is_archived, archived_at FROM rooms WHERE id = ?",
             (created["id"],),
@@ -2097,7 +2071,7 @@ class PropertyRelationshipTests(unittest.TestCase):
         self.assertEqual(row["is_archived"], 1)
         self.assertIsNotNone(row["archived_at"])
 
-        deleted = delete_object(self.connection, "rooms", created["id"])
+        deleted = self.registry.delete_room(created["id"])
         remaining = self.connection.execute(
             "SELECT id FROM rooms WHERE id = ?",
             (created["id"],),
@@ -2106,16 +2080,15 @@ class PropertyRelationshipTests(unittest.TestCase):
         self.assertIsNone(remaining)
 
     def test_restore_room_clears_archive_state(self) -> None:
-        created = create_room(
-            self.connection,
+        created = self.registry.create_room(
             {
                 "unit_id": 1,
                 "label": "Rueckholzimmer",
             },
         )
 
-        archive_object(self.connection, "rooms", created["id"])
-        restored = restore_object(self.connection, "rooms", created["id"])
+        self.registry.archive_room(created["id"])
+        restored = self.registry.restore_room(created["id"])
         row = self.connection.execute(
             "SELECT is_archived, archived_at FROM rooms WHERE id = ?",
             (created["id"],),
@@ -2127,9 +2100,9 @@ class PropertyRelationshipTests(unittest.TestCase):
         self.assertIsNone(row["archived_at"])
 
     def test_delete_building_rejects_archived_parent_with_child_units(self) -> None:
-        archive_object(self.connection, "buildings", 1)
+        self.registry.archive_building(1)
 
         with self.assertRaises(ValueError) as error:
-            delete_object(self.connection, "buildings", 1)
+            self.registry.delete_building(1)
 
         self.assertIn("dependencies", str(error.exception))
