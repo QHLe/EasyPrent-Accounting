@@ -1,22 +1,21 @@
 from __future__ import annotations
 
-from copy import copy, deepcopy
-from datetime import date
-from decimal import Decimal, ROUND_HALF_UP
+from copy import copy
 from importlib import resources
 from io import BytesIO
 from pathlib import Path
-import re
 from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile, ZipInfo
 import xml.etree.ElementTree as ET
 
-from .constants import *
-import easyprent_accounting.ods_template.markers as markers
-import easyprent_accounting.ods_template.rendering as rendering
+from .cells import (
+    CONFIG_NS, DC_NS, FO_NS, MANIFEST_NS, META_NS, NUMBER_NS,
+    NS, OF_NS, OFFICE_NS, STYLE_NS, TABLE_NS, _TEMPLATE_FILENAME,
+)
 
 def _archive_entries(document: bytes) -> list[tuple[ZipInfo, bytes]]:
     with ZipFile(BytesIO(document)) as archive:
         return [(copy(entry), archive.read(entry.filename)) for entry in archive.infolist()]
+
 
 def _without_thumbnail_entries(
     entries: list[tuple[ZipInfo, bytes]], replacements: dict[str, bytes]
@@ -49,6 +48,7 @@ def _without_thumbnail_entries(
     )
     return filtered_entries, updated_replacements
 
+
 def _write_archive(entries: list[tuple[ZipInfo, bytes]], replacements: dict[str, bytes]) -> bytes:
     entries, replacements = _without_thumbnail_entries(entries, replacements)
     output = BytesIO()
@@ -58,6 +58,7 @@ def _write_archive(entries: list[tuple[ZipInfo, bytes]], replacements: dict[str,
             entry.compress_type = ZIP_STORED if entry.filename == "mimetype" else ZIP_DEFLATED
             target.writestr(entry, replacements.get(entry.filename, data))
     return output.getvalue()
+
 
 def _sanitize_settings(
     document: bytes, sheet_name: str, old_sheet_name: str | None = None
@@ -89,6 +90,7 @@ def _sanitize_settings(
             item.text = sheet_name
     return ET.tostring(root, encoding="utf-8", xml_declaration=True)
 
+
 def _sanitize_metadata(document: bytes) -> bytes:
     root = ET.fromstring(document)
     office_meta = root.find(f".//{{{OFFICE_NS}}}meta")
@@ -106,6 +108,7 @@ def _sanitize_metadata(document: bytes) -> bytes:
     if statistic is not None:
         statistic.set(f"{{{META_NS}}}table-count", "1")
     return ET.tostring(root, encoding="utf-8", xml_declaration=True)
+
 
 def _sanitize_package_files(
     entries: list[tuple[ZipInfo, bytes]],
@@ -126,11 +129,13 @@ def _sanitize_package_files(
         )
     return updated
 
+
 def _packaged_template_bytes() -> bytes:
     packaged_template = resources.files("easyprent_accounting").joinpath("templates", _TEMPLATE_FILENAME)
     if not packaged_template.is_file():
         raise ValueError("packaged settlement template is missing")
     return packaged_template.read_bytes()
+
 
 def _read_template_bytes(template_path: Path | None) -> bytes:
     if template_path is not None:
@@ -139,6 +144,7 @@ def _read_template_bytes(template_path: Path | None) -> bytes:
         return template_path.read_bytes()
 
     return _packaged_template_bytes()
+
 
 def _serialize_content(root: ET.Element) -> bytes:
     content = ET.tostring(root, encoding="utf-8", xml_declaration=True)
@@ -149,6 +155,7 @@ def _serialize_content(root: ET.Element) -> bytes:
             1,
         )
     return content
+
 
 def _finish_prepared_template(
     entries: list[tuple[ZipInfo, bytes]], root: ET.Element
@@ -187,4 +194,5 @@ def _finish_prepared_template(
         sheet_name=sheet.get(f"{{{TABLE_NS}}}name", "Abrechnung"),
     )
     return _write_archive(entries, replacements)
+
 

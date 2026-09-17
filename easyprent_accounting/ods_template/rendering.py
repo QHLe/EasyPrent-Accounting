@@ -1,121 +1,24 @@
 from __future__ import annotations
 
-from copy import copy, deepcopy
+from copy import deepcopy
 from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
-from importlib import resources
-from io import BytesIO
 from pathlib import Path
 import re
-from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile, ZipInfo
 import xml.etree.ElementTree as ET
 
-from .constants import *
-import easyprent_accounting.ods_template.package as package
-import easyprent_accounting.ods_template.markers as markers
-
-def _cells(row: ET.Element) -> list[ET.Element]:
-    return [cell for cell in row if cell.tag in _CELL_TAGS]
-
-def _expand_repeated_cells(row: ET.Element) -> None:
-    repeated_attribute = f"{{{TABLE_NS}}}number-columns-repeated"
-    for cell in list(row):
-        if cell.tag not in _CELL_TAGS:
-            continue
-        repeated = int(cell.attrib.pop(repeated_attribute, "1"))
-        if repeated <= 1:
-            continue
-        if repeated > 1000 and not _cell_text(cell).strip():
-            # LibreOffice stores the unused tail of each row as thousands of
-            # repeated blank cells. A single representative is sufficient and
-            # avoids expanding a small template into millions of XML nodes.
-            continue
-        position = list(row).index(cell)
-        for offset in range(1, repeated):
-            row.insert(position + offset, deepcopy(cell))
-
-def _expand_repeated_rows(sheet: ET.Element) -> None:
-    repeated_attribute = f"{{{TABLE_NS}}}number-rows-repeated"
-    rows = [
-        row for row in list(sheet) if row.tag == f"{{{TABLE_NS}}}table-row"
-    ]
-    for row_index, row in enumerate(rows):
-        repeated = int(row.attrib.pop(repeated_attribute, "1"))
-        if repeated <= 1:
-            continue
-        if repeated > 1000:
-            row_has_text = any(_cell_text(cell).strip() for cell in _cells(row))
-            later_rows_have_text = any(
-                _cell_text(cell).strip()
-                for later_row in rows[row_index + 1 :]
-                for cell in _cells(later_row)
-            )
-            if row_has_text or later_rows_have_text:
-                raise ValueError("settlement template contains too many repeated rows")
-            # LibreOffice commonly stores the unused tail of a sheet as one
-            # repeated blank row. One representative row is sufficient here.
-            continue
-        position = list(sheet).index(row)
-        for offset in range(1, repeated):
-            sheet.insert(position + offset, deepcopy(row))
-
-def _cell_text(cell: ET.Element) -> str:
-    return "\n".join("".join(paragraph.itertext()) for paragraph in cell.findall("text:p", NS))
-
-def _clear_dynamic_cell_data(cell: ET.Element) -> None:
-    for child in list(cell):
-        if child.tag == f"{{{TEXT_NS}}}p":
-            cell.remove(child)
-    for attribute in (
-        "value",
-        "value-type",
-        "date-value",
-        "formula",
-        "string-value",
-        "currency",
-        "boolean-value",
-        "time-value",
-    ):
-        cell.attrib.pop(f"{{{OFFICE_NS}}}{attribute}", None)
-    cell.attrib.pop(f"{{{TABLE_NS}}}formula", None)
-    cell.attrib.pop(f"{{{CALCEXT_NS}}}value-type", None)
-
-def _set_cell(
-    row: ET.Element,
-    column: int,
-    text: str | list[str],
-    *,
-    number: Decimal | str | None = None,
-    currency: bool = False,
-    formula: str | None = None,
-) -> None:
-    cells = _cells(row)
-    if column < 1 or column > len(cells):
-        raise ValueError(f"template row has no column {column}")
-    cell = cells[column - 1]
-    if cell.tag == f"{{{TABLE_NS}}}covered-table-cell":
-        raise ValueError(f"template marker points to covered column {column}")
-    _clear_dynamic_cell_data(cell)
-
-    paragraphs = text if isinstance(text, list) else [text]
-    if number is not None:
-        decimal_value = Decimal(str(number))
-        cell.set(f"{{{OFFICE_NS}}}value", format(decimal_value, "f"))
-        if currency:
-            cell.set(f"{{{OFFICE_NS}}}value-type", "currency")
-            cell.set(f"{{{OFFICE_NS}}}currency", "EUR")
-            cell.set(f"{{{CALCEXT_NS}}}value-type", "currency")
-        else:
-            cell.set(f"{{{OFFICE_NS}}}value-type", "float")
-            cell.set(f"{{{CALCEXT_NS}}}value-type", "float")
-    else:
-        cell.set(f"{{{OFFICE_NS}}}value-type", "string")
-        cell.set(f"{{{CALCEXT_NS}}}value-type", "string")
-    if formula:
-        cell.set(f"{{{TABLE_NS}}}formula", formula)
-    for paragraph_text in paragraphs or [""]:
-        paragraph = ET.SubElement(cell, f"{{{TEXT_NS}}}p")
-        paragraph.text = paragraph_text
+from .cells import (
+    CALCEXT_NS, FO_NS, NS, OFFICE_NS, STYLE_NS, TABLE_NS, TEXT_NS,
+    _ALLOCATION_MARKERS,
+    _cell_text, _cells, _clear_dynamic_cell_data, _expand_repeated_cells,
+    _expand_repeated_rows, _find_marker, _find_marker_in_row,
+    _find_optional_marker_in_row, _find_position_prototype_row,
+    _find_row_containing, _set_cell,
+)
+from .package import (
+    _archive_entries, _read_template_bytes, _sanitize_package_files,
+    _serialize_content, _write_archive,
+)
 
 def _format_decimal(value: Decimal | str) -> str:
     decimal_value = Decimal(str(value))
@@ -130,10 +33,12 @@ def _format_decimal(value: Decimal | str) -> str:
     fraction = fraction.rstrip("0")
     return f"{sign}{grouped}{',' + fraction if separator and fraction else ''}"
 
+
 def _format_money(value: Decimal | str) -> str:
     decimal_value = Decimal(str(value)).quantize(Decimal("0.01"))
     raw = f"{decimal_value:,.2f}"
     return raw.replace(",", "_").replace(".", ",").replace("_", ".") + " €"
+
 
 def _format_allocation_period(value: object) -> str:
     raw = str(value or "")
@@ -142,11 +47,13 @@ def _format_allocation_period(value: object) -> str:
     except ValueError:
         return raw
 
+
 def _allocation_method(item: dict) -> str:
     method = str(item.get("allocation_method") or "").strip()
     if not method:
         raise ValueError("settlement line item is missing allocation_method")
     return method
+
 
 def _render_allocation_keys(
     sheet: ET.Element, line_items: list[dict]
@@ -161,9 +68,9 @@ def _render_allocation_keys(
     if not marker_locations:
         return {}
 
-    prototype, _ = markers._find_marker(sheet, "{{UMLAGE_NR}}")
+    prototype, _ = _find_marker(sheet, "{{UMLAGE_NR}}")
     columns = {
-        marker: markers._find_marker_in_row(prototype, marker)
+        marker: _find_marker_in_row(prototype, marker)
         for marker in _ALLOCATION_MARKERS
     }
     insert_index = list(sheet).index(prototype)
@@ -242,6 +149,7 @@ def _render_allocation_keys(
         sheet.insert(insert_index + offset, row)
     return references_by_item
 
+
 def _apply_object_row_style(root: ET.Element, row: ET.Element) -> None:
     style_name = "roEasyObject"
     automatic_styles = root.find("office:automatic-styles", NS)
@@ -269,6 +177,7 @@ def _apply_object_row_style(root: ET.Element, row: ET.Element) -> None:
             },
         )
     row.set(f"{{{TABLE_NS}}}style-name", style_name)
+
 
 def _apply_advance_payment_page_break(root: ET.Element, row: ET.Element) -> None:
     """Start the advance-payment section on its own printed page."""
@@ -311,6 +220,7 @@ def _apply_advance_payment_page_break(root: ET.Element, row: ET.Element) -> None
     row_properties.set(f"{{{FO_NS}}}break-before", "page")
     row.set(f"{{{TABLE_NS}}}style-name", style_name)
 
+
 def _apply_optimal_row_heights(root: ET.Element) -> None:
     """Remove fixed heights and enable content-based height on every row style."""
     automatic_styles = root.find("office:automatic-styles", NS)
@@ -326,6 +236,7 @@ def _apply_optimal_row_heights(root: ET.Element) -> None:
             )
         row_properties.attrib.pop(f"{{{STYLE_NS}}}row-height", None)
         row_properties.set(f"{{{STYLE_NS}}}use-optimal-row-height", "true")
+
 
 def _apply_subposition_styles(
     root: ET.Element,
@@ -383,6 +294,7 @@ def _apply_subposition_styles(
             styles_by_name[derived_name] = derived_style
         cell.set(f"{{{TABLE_NS}}}style-name", derived_name)
 
+
 def _group_line_items(line_items: list[dict]) -> list[tuple[str, list[dict]]]:
     groups: dict[str, tuple[str, list[dict]]] = {}
     for item in line_items:
@@ -394,6 +306,7 @@ def _group_line_items(line_items: list[dict]) -> list[tuple[str, list[dict]]]:
         groups[group_key][1].append(item)
     return list(groups.values())
 
+
 def _has_subpositions(category: str, items: list[dict]) -> bool:
     if len(items) > 1:
         return True
@@ -401,14 +314,15 @@ def _has_subpositions(category: str, items: list[dict]) -> bool:
         category.strip().casefold()
     )
 
+
 def _position_prototype_from_cost(
     root: ET.Element, cost_prototype: ET.Element
 ) -> ET.Element:
     position_prototype = deepcopy(cost_prototype)
-    label_column = markers._find_marker_in_row(position_prototype, "{{KOSTENART}}")
-    annual_column = markers._find_marker_in_row(position_prototype, "{{JAHRESKOSTEN}}")
-    share_column = markers._find_marker_in_row(position_prototype, "{{MIETERANTEIL}}")
-    consumption_column = markers._find_marker_in_row(position_prototype, "{{VERBRAUCH}}")
+    label_column = _find_marker_in_row(position_prototype, "{{KOSTENART}}")
+    annual_column = _find_marker_in_row(position_prototype, "{{JAHRESKOSTEN}}")
+    share_column = _find_marker_in_row(position_prototype, "{{MIETERANTEIL}}")
+    consumption_column = _find_marker_in_row(position_prototype, "{{VERBRAUCH}}")
     _set_cell(position_prototype, label_column, "{{POSITION}}")
     _set_cell(
         position_prototype, annual_column, "{{POSITION_JAHRESKOSTEN}}"
@@ -425,6 +339,7 @@ def _position_prototype_from_cost(
     )
     return position_prototype
 
+
 def _sum_formula_for_rows(column_name: str, row_numbers: list[int]) -> str | None:
     if not row_numbers:
         return None
@@ -438,8 +353,10 @@ def _sum_formula_for_rows(column_name: str, row_numbers: list[int]) -> str | Non
     )
     return f"of:=SUM({references})"
 
+
 def _row_number(sheet: ET.Element, target: ET.Element) -> int:
     return sheet.findall("table:table-row", NS).index(target) + 1
+
 
 def _column_name(column: int) -> str:
     if column < 1:
@@ -449,6 +366,7 @@ def _column_name(column: int) -> str:
         column, remainder = divmod(column - 1, 26)
         result = chr(ord("A") + remainder) + result
     return result
+
 
 def _sheet_name_for_period(period_label: str) -> str:
     years: list[str] = []
@@ -460,6 +378,7 @@ def _sheet_name_for_period(period_label: str) -> str:
     if len(years) == 1:
         return years[0]
     return f"{years[0]}-{years[-1]}"
+
 
 def render_settlement_template(
     template_path: Path | None = None,
@@ -480,7 +399,7 @@ def render_settlement_template(
     advance_payments: list[dict] | None = None,
 ) -> bytes:
     """Fill the editable master ODS while retaining its styles and merged cells."""
-    entries = package._archive_entries(package._read_template_bytes(template_path))
+    entries = _archive_entries(_read_template_bytes(template_path))
     content = next((data for entry, data in entries if entry.filename == "content.xml"), None)
     if content is None:
         raise ValueError("settlement template has no content.xml")
@@ -513,44 +432,44 @@ def render_settlement_template(
         "{{OBJEKT}}": (object_lines, None, False),
     }
     for marker, (text, number, is_currency) in scalar_values.items():
-        row, column = markers._find_marker(sheet, marker)
+        row, column = _find_marker(sheet, marker)
         _set_cell(row, column, text, number=number, currency=is_currency)
         if marker == "{{OBJEKT}}":
             _apply_object_row_style(root, row)
 
     allocation_references = _render_allocation_keys(sheet, line_items)
 
-    cost_row, _ = markers._find_marker(sheet, "{{KOSTENART}}")
-    total_row, annual_total_column = markers._find_marker(sheet, "{{SUMME_JAHRESKOSTEN}}")
-    _, tenant_total_column = markers._find_marker(sheet, "{{SUMME_MIETERANTEIL}}")
+    cost_row, _ = _find_marker(sheet, "{{KOSTENART}}")
+    total_row, annual_total_column = _find_marker(sheet, "{{SUMME_JAHRESKOSTEN}}")
+    _, tenant_total_column = _find_marker(sheet, "{{SUMME_MIETERANTEIL}}")
     rows = sheet.findall("table:table-row", NS)
     cost_index = rows.index(cost_row)
     cost_child_index = list(sheet).index(cost_row)
     total_index = rows.index(total_row)
     prototype = deepcopy(cost_row)
-    annual_cost_column = markers._find_marker_in_row(prototype, "{{JAHRESKOSTEN}}")
-    tenant_share_column = markers._find_marker_in_row(prototype, "{{MIETERANTEIL}}")
-    cost_label_column = markers._find_marker_in_row(prototype, "{{KOSTENART}}")
-    consumption_column = markers._find_marker_in_row(prototype, "{{VERBRAUCH}}")
-    allocation_reference_column = markers._find_optional_marker_in_row(
+    annual_cost_column = _find_marker_in_row(prototype, "{{JAHRESKOSTEN}}")
+    tenant_share_column = _find_marker_in_row(prototype, "{{MIETERANTEIL}}")
+    cost_label_column = _find_marker_in_row(prototype, "{{KOSTENART}}")
+    consumption_column = _find_marker_in_row(prototype, "{{VERBRAUCH}}")
+    allocation_reference_column = _find_optional_marker_in_row(
         prototype, "{{UMLAGE_REF}}"
     )
-    position_row = markers._find_position_prototype_row(sheet, cost_row, total_row)
+    position_row = _find_position_prototype_row(sheet, cost_row, total_row)
     if position_row is None:
         position_prototype = _position_prototype_from_cost(root, prototype)
     else:
         position_prototype = deepcopy(position_row)
-    position_label_column = markers._find_marker_in_row(position_prototype, "{{POSITION}}")
-    position_annual_column = markers._find_marker_in_row(
+    position_label_column = _find_marker_in_row(position_prototype, "{{POSITION}}")
+    position_annual_column = _find_marker_in_row(
         position_prototype, "{{POSITION_JAHRESKOSTEN}}"
     )
-    position_share_column = markers._find_marker_in_row(
+    position_share_column = _find_marker_in_row(
         position_prototype, "{{POSITION_MIETERANTEIL}}"
     )
-    position_consumption_column = markers._find_marker_in_row(
+    position_consumption_column = _find_marker_in_row(
         position_prototype, "{{POSITION_VERBRAUCH}}"
     )
-    position_allocation_reference_column = markers._find_optional_marker_in_row(
+    position_allocation_reference_column = _find_optional_marker_in_row(
         position_prototype, "{{POSITION_UMLAGE_REF}}"
     )
     for obsolete_row in rows[cost_index:total_index]:
@@ -672,8 +591,8 @@ def render_settlement_template(
         for item in category_items:
             insert_item_row(item, subposition=True)
 
-    total_row, annual_total_column = markers._find_marker(sheet, "{{SUMME_JAHRESKOSTEN}}")
-    _, tenant_total_column = markers._find_marker(sheet, "{{SUMME_MIETERANTEIL}}")
+    total_row, annual_total_column = _find_marker(sheet, "{{SUMME_JAHRESKOSTEN}}")
+    _, tenant_total_column = _find_marker(sheet, "{{SUMME_MIETERANTEIL}}")
     annual_formula = _sum_formula_for_rows(
         annual_cost_column_name, top_level_row_numbers
     )
@@ -697,18 +616,18 @@ def render_settlement_template(
         formula=share_formula,
     )
 
-    payment_period_row, payment_period_column = markers._find_marker(
+    payment_period_row, payment_period_column = _find_marker(
         sheet, "{{VORAUSZAHLUNG_ZEITRAUM}}"
     )
-    payment_title = markers._find_row_containing(
+    payment_title = _find_row_containing(
         sheet.findall("table:table-row", NS), "Geleistete Vorauszahlungen"
     )
     _apply_advance_payment_page_break(root, payment_title)
-    payment_row, payment_column = markers._find_marker(sheet, "{{VORAUSZAHLUNGEN}}")
-    advance_row, advance_column = markers._find_marker(sheet, "{{VORAUSZAHLUNGEN_SUMME}}")
-    balance_label_row, balance_label_column = markers._find_marker(sheet, "{{SALDO_BEZEICHNUNG}}")
-    balance_amount_row, balance_amount_column = markers._find_marker(sheet, "{{SALDO_BETRAG}}")
-    notice_row, notice_column = markers._find_marker(sheet, "{{ERGEBNIS_TEXT}}")
+    payment_row, payment_column = _find_marker(sheet, "{{VORAUSZAHLUNGEN}}")
+    advance_row, advance_column = _find_marker(sheet, "{{VORAUSZAHLUNGEN_SUMME}}")
+    balance_label_row, balance_label_column = _find_marker(sheet, "{{SALDO_BEZEICHNUNG}}")
+    balance_amount_row, balance_amount_column = _find_marker(sheet, "{{SALDO_BETRAG}}")
+    notice_row, notice_column = _find_marker(sheet, "{{ERGEBNIS_TEXT}}")
 
     if advances_paid is None or balance is None:
         # The lease stores an agreed monthly advance, but that is not proof of
@@ -823,11 +742,12 @@ def render_settlement_template(
     # precedence in LibreOffice even when optimal height is also enabled.
     _apply_optimal_row_heights(root)
 
-    replacements = package._sanitize_package_files(
+    replacements = _sanitize_package_files(
         entries,
-        {"content.xml": package._serialize_content(root)},
+        {"content.xml": _serialize_content(root)},
         sheet_name=new_sheet_name,
         old_sheet_name=old_sheet_name,
     )
-    return package._write_archive(entries, replacements)
+    return _write_archive(entries, replacements)
+
 
