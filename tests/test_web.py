@@ -762,7 +762,6 @@ for (const text of ["Heizung", "Gasabschlag", "2025-01-01 bis 2025-03-31", "Kost
                     "building_share_percent": "80",
                     "useful_life_years": 40,
                     "placed_in_service": "2025-01-01",
-                    "method": "linear",
                 }
             ).encode("utf-8"),
         )
@@ -770,6 +769,62 @@ for (const text of ["Heizung", "Gasabschlag", "2025-01-01 bis 2025-03-31", "Kost
         payload = json.loads(body.decode("utf-8"))
         self.assertTrue(status.startswith("400"))
         self.assertIn("invalid_money", payload["error"])
+
+    def test_depreciation_api_exposes_only_linear_calculation(self) -> None:
+        asset = {
+            "property_id": 1,
+            "asset_name": "Testabschreibung",
+            "acquisition_cost": "1200",
+            "building_share_percent": "100",
+            "useful_life_years": 1,
+            "placed_in_service": "2025-07-01",
+        }
+        for method in ("linear", "declining"):
+            rejected_status, _, _ = self._call_app(
+                "POST", "/api/depreciation-assets",
+                json.dumps({**asset, "method": method}).encode("utf-8"),
+            )
+            self.assertTrue(rejected_status.startswith("400"))
+
+        created_status, _, created_body = self._call_app(
+            "POST", "/api/depreciation-assets", json.dumps(asset).encode("utf-8")
+        )
+        created = json.loads(created_body)
+        self.assertTrue(created_status.startswith("201"))
+        self.assertNotIn("method", created)
+
+        overview_status, _, overview_body = self._call_app("GET", "/api/overview")
+        self.assertTrue(overview_status.startswith("200"))
+        assets = json.loads(overview_body)["depreciation_assets"]
+        self.assertNotIn("method", next(row for row in assets if row["id"] == created["id"]))
+
+        schedule_status, _, schedule_body = self._call_app(
+            "GET", "/api/depreciation-schedule", query_string="year=2025"
+        )
+        self.assertTrue(schedule_status.startswith("200"))
+        schedule_row = next(
+            row for row in json.loads(schedule_body)["rows"]
+            if row["asset_name"] == "Testabschreibung"
+        )
+        self.assertEqual("600.00", schedule_row["yearly_depreciation"])
+        self.assertNotIn("method", schedule_row)
+
+    def test_unsupported_stored_method_does_not_break_overview(self) -> None:
+        with sqlite3.connect(self.db_path) as connection:
+            connection.execute(
+                "UPDATE depreciation_assets SET method = 'declining' WHERE id = "
+                "(SELECT MIN(id) FROM depreciation_assets)"
+            )
+
+        overview_status, _, overview_body = self._call_app("GET", "/api/overview")
+        self.assertTrue(overview_status.startswith("200"))
+        self.assertNotIn("method", json.loads(overview_body)["depreciation_assets"][0])
+
+        schedule_status, _, schedule_body = self._call_app(
+            "GET", "/api/depreciation-schedule", query_string="year=2025"
+        )
+        self.assertTrue(schedule_status.startswith("400"))
+        self.assertIn("only linear", json.loads(schedule_body)["error"])
 
     def test_api_can_update_property_tenant_and_lease(self) -> None:
         update_property_status, _, update_property_body = self._call_app(

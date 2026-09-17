@@ -190,7 +190,7 @@
           "section",
           { className: "panel" },
           e("h2", null, "Abschreibung " + String(props.depreciationYear)),
-          table(["Objekt", "Methode", "AfA-Basis", "Monate", "Jahreswert"], props.depreciationRows),
+          table(["Objekt", "AfA-Basis", "Monate", "Jahreswert"], props.depreciationRows),
           props.depreciation ? e("p", { className: "hint" }, "Gesamt-AfA: ", props.depreciation.total) : null
         )
       )

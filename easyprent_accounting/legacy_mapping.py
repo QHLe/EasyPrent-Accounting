@@ -282,6 +282,10 @@ def _validate_source(source: sqlite3.Connection) -> None:
         if linked_meter_id is not None and int(linked_meter_id) not in meter_ids:
             raise LegacyMappingError("expense has a missing meter")
 
+    for asset in _rows(source, "depreciation_assets"):
+        if asset["method"] != "linear":
+            raise LegacyMappingError("depreciation asset has an unsupported method")
+
     for run in _rows(source, "settlement_runs"):
         start = _valid_date(run["period_start"], "settlement period_start")
         if _valid_date(run["period_end"], "settlement period_end") < start:

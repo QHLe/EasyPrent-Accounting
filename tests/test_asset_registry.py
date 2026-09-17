@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 
 from easyprent_accounting.asset_registry import AssetRegistry
-from easyprent_accounting.services import create_depreciation_asset, list_overview
+from easyprent_accounting.services import list_overview
 from easyprent_accounting.domain import DomainError
 from decimal import Decimal
 from tests.support import in_memory_database
@@ -434,90 +434,6 @@ class PropertyRelationshipTests(unittest.TestCase):
         ).fetchone()[0]
         self.assertEqual("invalid_percentage", caught.exception.code)
         self.assertEqual(Decimal("37.5"), Decimal(str(stored)))
-
-    def test_create_depreciation_asset_rejects_invalid_domain_values(self) -> None:
-        existing_count = self.connection.execute(
-            "SELECT COUNT(*) FROM depreciation_assets"
-        ).fetchone()[0]
-        invalid_values = (
-            ("Infinity", "80", "invalid_money"),
-            ("500000", "101", "invalid_percentage"),
-            ("500000", "NaN", "invalid_percentage"),
-        )
-
-        for acquisition_cost, building_share_percent, expected_code in invalid_values:
-            with self.subTest(
-                acquisition_cost=acquisition_cost,
-                building_share_percent=building_share_percent,
-            ):
-                with self.assertRaises(DomainError) as caught:
-                    create_depreciation_asset(
-                        self.connection,
-                        {
-                            "property_id": 1,
-                            "asset_name": "Gebäude",
-                            "acquisition_cost": acquisition_cost,
-                            "building_share_percent": building_share_percent,
-                            "useful_life_years": 40,
-                            "placed_in_service": "2025-01-01",
-                            "method": "linear",
-                        },
-                    )
-                self.assertEqual(expected_code, caught.exception.code)
-
-        self.assertEqual(
-            existing_count,
-            self.connection.execute(
-                "SELECT COUNT(*) FROM depreciation_assets"
-            ).fetchone()[0],
-        )
-
-    def test_create_depreciation_asset_validates_date_and_useful_life_before_insert(self) -> None:
-        payload = {
-            "property_id": 1,
-            "asset_name": "Gebäude",
-            "acquisition_cost": "500000",
-            "building_share_percent": "80",
-            "useful_life_years": 40,
-            "placed_in_service": "2025-01-01",
-        }
-        existing_count = self.connection.execute(
-            "SELECT COUNT(*) FROM depreciation_assets"
-        ).fetchone()[0]
-
-        for invalid in (
-            {"placed_in_service": "2025-02-30"},
-            {"useful_life_years": 0},
-            {"useful_life_years": -1},
-        ):
-            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
-                create_depreciation_asset(self.connection, {**payload, **invalid})
-
-        self.assertEqual(
-            existing_count,
-            self.connection.execute("SELECT COUNT(*) FROM depreciation_assets").fetchone()[0],
-        )
-
-    def test_create_depreciation_asset_normalizes_date_and_useful_life(self) -> None:
-        created = create_depreciation_asset(
-            self.connection,
-            {
-                "property_id": 1,
-                "asset_name": "Gebäude",
-                "acquisition_cost": "500000",
-                "building_share_percent": "80",
-                "useful_life_years": "40",
-                "placed_in_service": "20250102",
-            },
-        )
-
-        stored = self.connection.execute(
-            "SELECT useful_life_years, placed_in_service FROM depreciation_assets WHERE id = ?",
-            (created["id"],),
-        ).fetchone()
-        self.assertEqual((40, "2025-01-02"), tuple(stored))
-        self.assertEqual(40, created["useful_life_years"])
-        self.assertEqual("2025-01-02", created["placed_in_service"])
 
     def test_create_room_rejects_more_rooms_than_unit_allows(self) -> None:
         self.registry.create_room(

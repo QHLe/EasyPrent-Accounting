@@ -10,6 +10,7 @@ from urllib.parse import parse_qs, urlparse
 
 from .asset_registry import AssetRegistry
 from .db import get_connection
+from .depreciation import Depreciation
 from .integrations.paperless import PaperlessAdapter, UrllibPaperlessAdapter
 from .linked_documents import LinkedDocuments, get_paperless_status
 from .metering import Metering
@@ -28,8 +29,6 @@ from .settlement_runs import (
 )
 from .settlements import Settlements
 from .services import (
-    create_depreciation_asset,
-    depreciation_schedule_for_year,
     list_overview,
     health_status,
 )
@@ -702,12 +701,12 @@ def application(
 
         if method == "GET" and path == "/api/depreciation-schedule":
             params = parse_qs(environ.get("QUERY_STRING", ""))
-            year = int(params.get("year", ["2025"])[0])
-            return json_response(
-                start_response,
-                HTTPStatus.OK,
-                depreciation_schedule_for_year(connection, year),
-            )
+            try:
+                year = int(params.get("year", ["2025"])[0])
+                schedule = Depreciation(connection).schedule_for_year(year)
+                return json_response(start_response, HTTPStatus.OK, schedule)
+            except ValueError as error:
+                return json_response(start_response, HTTPStatus.BAD_REQUEST, {"error": str(error)})
 
         if method == "POST" and path == "/expenses/new":
             payload = read_form(environ)
@@ -914,10 +913,12 @@ def application(
                     return json_response(start_response, HTTPStatus.BAD_REQUEST, {"error": str(error)})
         if method == "POST" and path == "/api/depreciation-assets":
             try:
+                with connection:
+                    result = Depreciation(connection).create_asset(read_json(environ))
                 return json_response(
                     start_response,
                     HTTPStatus.CREATED,
-                    create_depreciation_asset(connection, read_json(environ)),
+                    result,
                 )
             except ValueError as error:
                 return json_response(start_response, HTTPStatus.BAD_REQUEST, {"error": str(error)})

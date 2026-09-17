@@ -831,6 +831,13 @@ def _validate_import_payload(
                 raise ValueError(
                     f"tables.gnucash_payments[{row_index}].lease_id is required"
                 )
+            if (
+                table_name == "depreciation_assets"
+                and validated_row.get("method") != "linear"
+            ):
+                raise ValueError(
+                    f"tables.depreciation_assets[{row_index}].method must be linear"
+                )
             validated_rows.append(validated_row)
         validated_tables[table_name] = validated_rows
 

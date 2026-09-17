@@ -321,6 +321,32 @@ class ApplicationImportValidationTests(unittest.TestCase):
 
         self.assert_database_is_unchanged()
 
+    def test_rejects_non_linear_depreciation_without_mutating_data(self) -> None:
+        payload = deepcopy(self.payload)
+        payload["tables"]["depreciation_assets"][0]["method"] = "declining"
+        original_assets = [
+            tuple(row)
+            for row in self.connection.execute(
+                "SELECT id, asset_name, method FROM depreciation_assets ORDER BY id"
+            )
+        ]
+
+        with self.assertRaisesRegex(
+            ValueError, r"tables\.depreciation_assets\[0\]\.method must be linear"
+        ):
+            import_application_data(self.connection, payload)
+
+        self.assert_database_is_unchanged()
+        self.assertEqual(
+            [
+                tuple(row)
+                for row in self.connection.execute(
+                    "SELECT id, asset_name, method FROM depreciation_assets ORDER BY id"
+                )
+            ],
+            original_assets,
+        )
+
     def test_rejects_active_caller_transaction_without_rolling_it_back(self) -> None:
         self.connection.execute(
             "UPDATE organizations SET name = 'Pending' WHERE id = 1"

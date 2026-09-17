@@ -458,7 +458,7 @@ Mietverträgen, Nebenkosten und abschreibungsrelevanten Objektdaten.
 - `REQ-DEPR-001`
   Das System muss abschreibungsrelevante Objektdaten erfassen und speichern können.
 - `REQ-DEPR-002`
-  Ein Abschreibungsobjekt muss mindestens Bezeichnung, Anschaffungskosten, Gebäudewertanteil, Nutzungsdauer, Inbetriebnahmedatum und Methode speichern können.
+  Ein Abschreibungsobjekt muss Bezeichnung, Anschaffungskosten, Gebäudewertanteil, Nutzungsdauer und Inbetriebnahmedatum speichern können. Das Verfahren ist linear.
 - `REQ-DEPR-003`
   Das System muss für ein Jahr einen Abschreibungswert berechnen können.
 - `REQ-DEPR-004`
@@ -466,7 +466,7 @@ Mietverträgen, Nebenkosten und abschreibungsrelevanten Objektdaten.
 - `REQ-DEPR-005`
   Die Abschreibung muss monatsgenau anteilig berechnet werden können, wenn ein Objekt nicht zum Jahresanfang in Betrieb genommen wurde.
 - `REQ-DEPR-006`
-  Die Datenstruktur muss eine spätere Erweiterung um zusätzliche steuerliche Abschreibungslogik ermöglichen.
+  Andere Abschreibungsmethoden als `linear` müssen abgewiesen werden, solange für sie keine eigene Berechnung implementiert ist.
 
 ### Mehrbenutzerfähigkeit und Rollenmodell
 

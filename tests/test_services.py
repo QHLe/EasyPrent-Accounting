@@ -13,9 +13,6 @@ from easyprent_accounting.expenses import (
     _total_amount_for_expense_period,
 )
 from easyprent_accounting.tenancy import Tenancy
-from easyprent_accounting.services import (
-    create_depreciation_asset,
-)
 from easyprent_accounting.settlements import Settlements
 from tests.support import in_memory_database
 
@@ -1554,4 +1551,3 @@ class LeaseMoneyBoundaryTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

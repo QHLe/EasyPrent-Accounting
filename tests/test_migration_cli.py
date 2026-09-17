@@ -189,6 +189,31 @@ class MigrationCliTests(unittest.TestCase):
             self.assertFalse(report["success"])
             self.assertIn("non-monotone", report["errors"][0]["reason"])
 
+    def test_non_linear_depreciation_method_aborts_without_activation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            active = root / "active.db"
+            report_path = root / "depreciation-method.json"
+            create_legacy_fixture(active)
+            with sqlite3.connect(active) as altered:
+                altered.execute(
+                    "UPDATE depreciation_assets SET method = ? WHERE id = 10",
+                    ("declining_balance",),
+                )
+            before = active.read_bytes()
+
+            code, _, _ = self._call(
+                ["migrate", "--database", str(active), "--cutover", "--report", str(report_path)], root
+            )
+
+            self.assertEqual(code, 1)
+            self.assertEqual(active.read_bytes(), before)
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            self.assertFalse(report["success"])
+            self.assertFalse(report["activated"])
+            self.assertIn("unsupported method", report["errors"][0]["reason"])
+            self.assertEqual(list(root.glob("*.v1-staging-*.db")), [])
+
     def test_existing_target_is_never_overwritten(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

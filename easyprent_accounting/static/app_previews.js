@@ -279,7 +279,6 @@
         "tr",
         { key: row.asset_name },
         e("td", null, row.asset_name),
-        e("td", null, row.method),
         e("td", null, row.depreciable_basis),
         e("td", null, String(row.months_in_year)),
         e("td", null, row.yearly_depreciation)

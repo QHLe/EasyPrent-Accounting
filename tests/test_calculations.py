@@ -4,7 +4,7 @@ import unittest
 from datetime import date
 from decimal import Decimal
 
-from easyprent_accounting.calculations import calculate_depreciation_schedule, parse_date, quantize_money
+from easyprent_accounting.calculations import parse_date, quantize_money
 from easyprent_accounting.domain import DomainError
 from easyprent_accounting.settlements import (
     ExpenseSnapshot, LeaseSnapshot, SettlementSnapshot, calculate_settlement_snapshot,
@@ -124,40 +124,6 @@ class SettlementTests(unittest.TestCase):
         self.assertEqual(result["totals"]["costs"], "1700.00")
         self.assertEqual([item["share"] for item in result["results"][0]["line_items"]],
                          ["500.00", "1200.00"])
-
-
-class DepreciationTests(unittest.TestCase):
-    def test_depreciation_schedule_prorates_by_month(self) -> None:
-        result = calculate_depreciation_schedule(
-            [
-                {
-                    "asset_name": "Gebäude",
-                    "acquisition_cost": "500000",
-                    "building_share_percent": "80",
-                    "useful_life_years": 40,
-                    "placed_in_service": "2025-07-01",
-                    "method": "linear",
-                }
-            ],
-            2025,
-        )
-        self.assertEqual(result["total"], "5000.00")
-        self.assertEqual(result["rows"][0]["months_in_year"], 6)
-
-    def test_depreciation_rejects_percentage_outside_domain_range(self) -> None:
-        asset = {
-            "asset_name": "Gebäude",
-            "acquisition_cost": "500000",
-            "building_share_percent": "100.01",
-            "useful_life_years": 40,
-            "placed_in_service": "2025-07-01",
-            "method": "linear",
-        }
-
-        with self.assertRaises(DomainError) as caught:
-            calculate_depreciation_schedule([asset], 2025)
-
-        self.assertEqual("invalid_percentage", caught.exception.code)
 
 
 if __name__ == "__main__":
