@@ -28,8 +28,8 @@ from .settlement_runs import (
     set_settlement_payment_considered,
 )
 from .settlements import Settlements
+from .dashboard import Dashboard
 from .services import (
-    list_overview,
     health_status,
 )
 from .settings import (
@@ -385,7 +385,24 @@ def application(
                 return json_response(start_response, HTTPStatus.BAD_REQUEST, {"error": str(error)})
 
         if method == "GET" and path == "/api/overview":
-            return json_response(start_response, HTTPStatus.OK, list_overview(connection))
+            overview = Dashboard(connection).summary()
+            asset_data = assets.list_assets()
+            tenancy_data = tenancy.list_tenancy()
+            expense_data = expenses.list_expenses()
+            meter_data = metering.list_meters()
+            depreciation_assets = Depreciation(connection).list_assets()
+            overview["properties"] = asset_data["properties"]
+            overview["buildings"] = asset_data["buildings"]
+            overview["units"] = asset_data["units"]
+            overview["rooms"] = asset_data["rooms"]
+            overview["tenants"] = tenancy_data["tenants"]
+            overview["leases"] = tenancy_data["leases"]
+            overview["expenses"] = expense_data["expenses"]
+            overview["expense_categories"] = expense_data["expense_categories"]
+            overview["meters"] = meter_data["meters"]
+            overview["meter_readings"] = meter_data["meter_readings"]
+            overview["depreciation_assets"] = depreciation_assets
+            return json_response(start_response, HTTPStatus.OK, overview)
 
         if method == "GET" and path == "/api/paperless-settings":
             return json_response(start_response, HTTPStatus.OK, get_paperless_settings(connection))

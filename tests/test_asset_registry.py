@@ -3,7 +3,6 @@ from __future__ import annotations
 import unittest
 
 from easyprent_accounting.asset_registry import AssetRegistry
-from easyprent_accounting.services import list_overview
 from easyprent_accounting.domain import DomainError
 from decimal import Decimal
 from tests.support import in_memory_database
@@ -460,6 +459,8 @@ class PropertyRelationshipTests(unittest.TestCase):
         self.assertIn("room_count", str(error.exception))
 
     def test_list_overview_enriches_object_relationships_for_preview(self) -> None:
+        from easyprent_accounting.expenses import Expenses
+
         self.registry.create_room(
             {
                 "unit_id": 1,
@@ -467,12 +468,14 @@ class PropertyRelationshipTests(unittest.TestCase):
             },
         )
 
-        overview = list_overview(self.connection)
-        property_row = overview["properties"][0]
-        building_row = overview["buildings"][0]
-        unit_row = overview["units"][0]
-        room_row = overview["rooms"][0]
-        expense_row = overview["expenses"][0]
+        assets = self.registry.list_assets()
+        property_row = assets["properties"][0]
+        building_row = assets["buildings"][0]
+        unit_row = assets["units"][0]
+        room_row = assets["rooms"][0]
+
+        expense_data = Expenses(self.connection).list_expenses()
+        expense_row = expense_data["expenses"][0]
 
         self.assertEqual(property_row["name"], "Wohnpark Lindenhof")
         self.assertEqual(property_row["building_count"], 1)
@@ -499,12 +502,12 @@ class PropertyRelationshipTests(unittest.TestCase):
         self.assertEqual(expense_row["beneficiary_name"], "Stadtwerke Berlin")
         self.assertEqual(expense_row["object_type"], "property")
         self.assertNotIn("property_name", expense_row)
-        self.assertTrue(overview["expense_categories"])
+        self.assertTrue(expense_data["expense_categories"])
         self.assertIn(
             ("Heizung", "Stadtwerke Berlin"),
             {
                 (category["expense_category"], category["beneficiary_name"])
-                for category in overview["expense_categories"]
+                for category in expense_data["expense_categories"]
             },
         )
 
