@@ -1244,14 +1244,15 @@
           ]);
         })
         .then(function (domainResults) {
+          const [dashboard, assetLists, tenancyLists, expenseLists, meterLists, depreciationAssets] = domainResults;
           const overviewPayload = Object.assign(
             {},
-            domainResults[0],
-            domainResults[1],
-            domainResults[2],
-            domainResults[3],
-            domainResults[4],
-            { depreciation_assets: domainResults[5] }
+            dashboard,
+            assetLists,
+            tenancyLists,
+            expenseLists,
+            meterLists,
+            { depreciation_assets: depreciationAssets }
           );
           const requestedProperty = (overviewPayload.properties || []).find(function (property) {
             return !property.is_archived && String(property.id) === String(nextPropertyId || "");

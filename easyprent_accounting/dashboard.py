@@ -49,16 +49,6 @@ class Dashboard:
         )
 
         return {
-            "summary": {
-                "properties": counts["properties"],
-                "buildings": counts["buildings"],
-                "units": counts["units"],
-                "rooms": counts["rooms"],
-                "meters": counts["meters"],
-                "tenants": counts["tenants"],
-                "leases": counts["leases"],
-                "expenses": counts["expenses"],
-                "depreciation_assets": counts["depreciation_assets"],
-            },
+            "summary": dict(counts),
             "roles": roles,
         }

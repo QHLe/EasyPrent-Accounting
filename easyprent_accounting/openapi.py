@@ -1,6 +1,12 @@
 from __future__ import annotations
 
 
+_DASHBOARD_COUNT_FIELDS = (
+    "properties", "buildings", "units", "rooms", "meters",
+    "tenants", "leases", "expenses", "depreciation_assets",
+)
+
+
 def build_object_lifecycle_paths() -> dict:
     objects = {
         "properties": ("Anlage", "eine", "eine archivierte"),
@@ -1613,16 +1619,10 @@ def build_openapi_document() -> dict:
                     "properties": {
                         "summary": {
                             "type": "object",
-                            "required": [
-                                "properties", "buildings", "units", "rooms", "meters",
-                                "tenants", "leases", "expenses", "depreciation_assets",
-                            ],
+                            "required": list(_DASHBOARD_COUNT_FIELDS),
                             "properties": {
                                 field: {"type": "integer", "minimum": 0}
-                                for field in (
-                                    "properties", "buildings", "units", "rooms", "meters",
-                                    "tenants", "leases", "expenses", "depreciation_assets",
-                                )
+                                for field in _DASHBOARD_COUNT_FIELDS
                             },
                         },
                         "roles": {"type": "array", "items": {"type": "object"}},
