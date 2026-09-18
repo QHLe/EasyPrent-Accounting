@@ -9,4 +9,3 @@ def health_status() -> dict:
         "reachable": True,
         "checked_at": datetime.now(UTC).replace(microsecond=0).isoformat(),
     }
-
