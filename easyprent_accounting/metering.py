@@ -133,6 +133,8 @@ class Metering:
         period_start: str,
         period_end: str,
     ) -> Decimal | None:
+        if self.lookup_meter(meter_id) is None:
+            raise ValueError("meter not found")
         reading_points = self._load_meter_reading_points(meter_id)
         return meter_consumption_for_period(reading_points, period_start, period_end)
 

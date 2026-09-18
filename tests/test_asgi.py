@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import sqlite3
 import unittest
+from unittest.mock import patch
 
 from easyprent_accounting.asgi import create_asgi_app
 from easyprent_accounting.config import AppConfig, SenderAddress
 from easyprent_accounting.domain import DomainError
+from easyprent_accounting.http_db import ReadConnection, WriteConnection
 from tests.support import temporary_database
 
 
@@ -118,6 +121,98 @@ class DomainErrorMappingTests(unittest.TestCase):
         body = response.json()
         self.assertEqual(list(body.keys()), ["error"])
         self.assertEqual(sorted(body["error"].keys()), ["code", "reason"])
+
+
+class DatabaseDependencyTests(unittest.TestCase):
+    """Write use cases commit or roll back at the HTTP application boundary."""
+
+    def setUp(self) -> None:
+        from starlette.testclient import TestClient
+
+        self.database = self.enterContext(temporary_database())
+        self.app = create_asgi_app(_test_config(str(self.database.path)))
+
+        @self.app.post("/api/v1/_test/write")
+        def write_two_rows(
+            read: ReadConnection, connection: WriteConnection
+        ) -> dict[str, int]:
+            assert read is connection
+            assert connection.in_transaction
+            connection.execute(
+                "INSERT INTO organizations (name, organization_type) VALUES (?, ?)",
+                ("First", "owner"),
+            )
+            connection.execute(
+                "INSERT INTO organizations (name, organization_type) VALUES (?, ?)",
+                ("Second", "owner"),
+            )
+            return {"written": 2}
+
+        @self.app.post("/api/v1/_test/write-error")
+        def write_then_fail(connection: WriteConnection) -> None:
+            connection.execute(
+                "INSERT INTO organizations (name, organization_type) VALUES (?, ?)",
+                ("Discarded", "owner"),
+            )
+            raise DomainError("invalid_value", "Write rejected.")
+
+        @self.app.post("/api/v1/_test/invalid-response", response_model=dict[str, int])
+        def write_then_return_invalid_response(connection: WriteConnection) -> dict:
+            connection.execute(
+                "INSERT INTO organizations (name, organization_type) VALUES (?, ?)",
+                ("Also discarded", "owner"),
+            )
+            return {"written": "invalid"}
+
+        self.client = TestClient(self.app, raise_server_exceptions=False)
+
+    def _organization_names(self) -> list[str]:
+        with self.database.connect() as connection:
+            return [
+                row[0]
+                for row in connection.execute("SELECT name FROM organizations ORDER BY id")
+            ]
+
+    def test_success_commits_one_transaction_and_closes_connection(self) -> None:
+        from easyprent_accounting.db import get_connection
+
+        statements: list[str] = []
+        opened: list[sqlite3.Connection] = []
+
+        def record_connection(*args, **kwargs) -> sqlite3.Connection:
+            connection = get_connection(*args, **kwargs)
+            connection.set_trace_callback(statements.append)
+            opened.append(connection)
+            return connection
+
+        with patch("easyprent_accounting.http_db.get_connection", record_connection):
+            response = self.client.post("/api/v1/_test/write")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"written": 2})
+        self.assertEqual(self._organization_names(), ["First", "Second"])
+        transaction_statements = [
+            statement for statement in statements if statement in {"BEGIN", "COMMIT", "ROLLBACK"}
+        ]
+        self.assertEqual(transaction_statements, ["BEGIN", "COMMIT"])
+        self.assertEqual(len(opened), 1)
+        with self.assertRaises(sqlite3.ProgrammingError):
+            opened[0].execute("SELECT 1")
+
+    def test_domain_error_rolls_back_entire_use_case(self) -> None:
+        response = self.client.post("/api/v1/_test/write-error")
+
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(
+            response.json(), {"error": {"code": "invalid_value", "reason": "Write rejected."}}
+        )
+        self.assertEqual(self._organization_names(), [])
+
+    def test_response_validation_error_rolls_back_write(self) -> None:
+        response = self.client.post("/api/v1/_test/invalid-response")
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(self._organization_names(), [])
 
 
 if __name__ == "__main__":

@@ -298,8 +298,10 @@ CREATE TABLE IF NOT EXISTS depreciation_assets (
 
 
 
-def get_connection(db_path: str | Path) -> sqlite3.Connection:
-    connection = sqlite3.connect(db_path)
+def get_connection(
+    db_path: str | Path, *, check_same_thread: bool = True
+) -> sqlite3.Connection:
+    connection = sqlite3.connect(db_path, check_same_thread=check_same_thread)
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys = ON")
     return connection

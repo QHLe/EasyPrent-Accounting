@@ -427,41 +427,37 @@ def application(
 
         if method == "PUT" and path == "/api/paperless-settings":
             try:
-                return json_response(
-                    start_response,
-                    HTTPStatus.OK,
-                    update_paperless_settings(connection, read_json(environ)),
-                )
+                payload = read_json(environ)
+                with connection:
+                    result = update_paperless_settings(connection, payload)
+                return json_response(start_response, HTTPStatus.OK, result)
             except ValueError as error:
                 return json_response(start_response, HTTPStatus.BAD_REQUEST, {"error": str(error)})
 
         if method == "PUT" and path == "/api/application-settings":
             try:
-                return json_response(
-                    start_response,
-                    HTTPStatus.OK,
-                    update_application_settings(connection, read_json(environ)),
-                )
+                payload = read_json(environ)
+                with connection:
+                    result = update_application_settings(connection, payload)
+                return json_response(start_response, HTTPStatus.OK, result)
             except ValueError as error:
                 return json_response(start_response, HTTPStatus.BAD_REQUEST, {"error": str(error)})
 
         if method == "PUT" and path == "/api/gnucash-settings":
             try:
-                return json_response(
-                    start_response,
-                    HTTPStatus.OK,
-                    update_gnucash_settings(connection, read_json(environ)),
-                )
+                payload = read_json(environ)
+                with connection:
+                    result = update_gnucash_settings(connection, payload)
+                return json_response(start_response, HTTPStatus.OK, result)
             except ValueError as error:
                 return json_response(start_response, HTTPStatus.BAD_REQUEST, {"error": str(error)})
 
         if method == "POST" and path == "/api/application-import":
             try:
-                return json_response(
-                    start_response,
-                    HTTPStatus.OK,
-                    import_application_data(connection, read_json(environ)),
-                )
+                payload = read_json(environ)
+                with connection:
+                    result = import_application_data(connection, payload)
+                return json_response(start_response, HTTPStatus.OK, result)
             except ValueError as error:
                 return json_response(start_response, HTTPStatus.BAD_REQUEST, {"error": str(error)})
 

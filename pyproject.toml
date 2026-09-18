@@ -13,8 +13,8 @@ dependencies = [
     "odfpy==1.4.1",
     "piecash==1.2.1",
     "psycopg2-binary==2.9.11",
-    "fastapi>=0.115,<1",
-    "pydantic>=2,<3",
+    "fastapi>=0.121,<1",
+    "pydantic>=2.9,<3",
     "uvicorn[standard]>=0.30,<1",
 ]
 

@@ -10,14 +10,19 @@ from pathlib import Path
 import sqlite3
 import tempfile
 import threading
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
+
+from fastapi.testclient import TestClient
 
 if TYPE_CHECKING:
     from wsgiref.simple_server import WSGIServer
 
 from easyprent_accounting.db import SCHEMA, initialize_database
 from tests.fixtures.demo_data import seed_demo_data
-from easyprent_accounting.config import AppConfig, get_global_config, set_global_config
+from easyprent_accounting.asgi import create_asgi_app
+from easyprent_accounting.config import AppConfig, SenderAddress, get_global_config, set_global_config
+from easyprent_accounting.integrations.gnucash import GnuCashReader
+from easyprent_accounting.integrations.paperless import PaperlessAdapter
 from easyprent_accounting.server import create_server
 
 
@@ -84,6 +89,24 @@ class TemporaryDatabase:
             connection.close()
 
 
+def asgi_test_client(
+    database: TemporaryDatabase,
+    *,
+    gnucash_reader: GnuCashReader | None = None,
+    paperless: PaperlessAdapter | None = None,
+) -> TestClient:
+    """Create an isolated HTTP client using the real ASGI composition root."""
+    config = AppConfig(
+        db_path=database.path,
+        project_root=database.path.parent,
+        sender=SenderAddress(),
+    )
+    return TestClient(
+        create_asgi_app(config, gnucash_reader=gnucash_reader, paperless=paperless),
+        raise_server_exceptions=False,
+    )
+
+
 def in_memory_database(*, seeded: bool = True) -> sqlite3.Connection:
     """Create a schema-ready SQLite connection for a test's exclusive use."""
 
@@ -147,6 +170,6 @@ def call_wsgi_application(
 
     return WsgiResponse(
         status=str(status_headers["status"]),
-        headers=dict(status_headers["headers"]),
+        headers=dict(cast(list[tuple[str, str]], status_headers["headers"])),
         body=response_body,
     )

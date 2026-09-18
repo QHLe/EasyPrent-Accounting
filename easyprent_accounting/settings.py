@@ -456,7 +456,6 @@ def update_gnucash_settings(connection: sqlite3.Connection, payload: dict) -> di
             """,
             (host, port, database, username, password, sslmode, timestamp, existing_id["id"]),
         )
-    connection.commit()
     return get_gnucash_settings(connection)
 
 
@@ -529,7 +528,6 @@ def update_application_settings(connection: sqlite3.Connection, payload: dict) -
                 int(existing_row["id"]),
             ),
         )
-    connection.commit()
     return get_application_settings(connection)
 
 
@@ -572,7 +570,6 @@ def update_paperless_settings(connection: sqlite3.Connection, payload: dict) -> 
             """,
             (base_url, normalized_token, timestamp, int(existing_row["id"])),
         )
-    connection.commit()
     return get_paperless_settings(connection)
 
 
@@ -1045,9 +1042,6 @@ def _migrate_legacy_import_gnucash_accounts(
 
 
 def import_application_data(connection: sqlite3.Connection, payload: object) -> dict:
-    if connection.in_transaction:
-        raise ValueError("application import requires a connection without an active transaction")
-
     format_version, tables_payload = _validate_import_payload(payload)
     insert_columns = _target_insert_columns(connection)
 
@@ -1060,10 +1054,7 @@ def import_application_data(connection: sqlite3.Connection, payload: object) -> 
 
     total_rows = 0
     skipped_legacy_gnucash_payments = 0
-    transaction_started = False
     try:
-        connection.execute("BEGIN")
-        transaction_started = True
         for table_name in reversed(APP_DATA_EXPORT_TABLES):
             connection.execute(f"DELETE FROM {table_name}")
 
@@ -1092,14 +1083,7 @@ def import_application_data(connection: sqlite3.Connection, payload: object) -> 
                 )
                 connection.execute(insert_sql, values)
                 total_rows += 1
-        connection.commit()
-    except ValueError:
-        if transaction_started:
-            connection.rollback()
-        raise
     except sqlite3.DatabaseError as error:
-        if transaction_started:
-            connection.rollback()
         raise ValueError("application import could not be applied") from error
 
     return {

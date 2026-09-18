@@ -148,6 +148,18 @@ class AssetRegistry:
     def __init__(self, connection: sqlite3.Connection) -> None:
         self.connection = connection
 
+    def _require_organization(self, organization_id: int) -> None:
+        if self.connection.execute(
+            "SELECT id FROM organizations WHERE id = ?", (organization_id,)
+        ).fetchone() is None:
+            raise ValueError("organization_id not found")
+
+    def _require_property(self, property_id: int | None) -> None:
+        if property_id is not None and self.connection.execute(
+            "SELECT id FROM properties WHERE id = ?", (property_id,)
+        ).fetchone() is None:
+            raise ValueError("property_id not found")
+
     def resolve_target(self, object_type: str, object_id: int) -> AssetTarget | None:
         if object_type == "property":
             row = self.connection.execute(
@@ -277,6 +289,7 @@ class AssetRegistry:
         }
 
     def create_property(self, payload: dict) -> dict:
+        self._require_organization(payload["organization_id"])
         cursor = self.connection.execute(
             """
             INSERT INTO properties (organization_id, name, street, city, postal_code)
@@ -294,6 +307,7 @@ class AssetRegistry:
 
 
     def create_building(self, payload: dict) -> dict:
+        self._require_property(payload.get("property_id"))
         cursor = self.connection.execute(
             """
             INSERT INTO buildings (property_id, name, year_built, street, city, postal_code)
@@ -399,6 +413,8 @@ class AssetRegistry:
         if row["is_archived"]:
             raise ValueError("archived property cannot be edited")
 
+        self._require_organization(payload["organization_id"])
+
         self.connection.execute(
             """
             UPDATE properties
@@ -426,6 +442,8 @@ class AssetRegistry:
             raise ValueError("building not found")
         if row["is_archived"]:
             raise ValueError("archived building cannot be edited")
+
+        self._require_property(payload.get("property_id"))
 
         self.connection.execute(
             """

@@ -11,6 +11,9 @@ from easyprent_accounting.schema_v1 import apply_schema_v1
 from easyprent_accounting.settings import (
     export_application_data,
     import_application_data,
+    update_application_settings,
+    update_gnucash_settings,
+    update_paperless_settings,
 )
 from tests.legacy_fixture import create_legacy_fixture
 from tests.support import in_memory_database
@@ -52,6 +55,64 @@ def _version_one_database() -> sqlite3.Connection:
     )
     connection.commit()
     return connection
+
+
+class SettingsTransactionTests(unittest.TestCase):
+    def test_settings_writes_remain_in_the_callers_transaction(self) -> None:
+        cases = (
+            (
+                update_application_settings,
+                {"show_delete_actions": False},
+                "application_settings",
+            ),
+            (
+                update_gnucash_settings,
+                {
+                    "host": "gnucash.internal",
+                    "port": 5432,
+                    "database": "gnucash",
+                    "username": "reader",
+                    "password": "secret",
+                },
+                "gnucash_settings",
+            ),
+            (
+                update_paperless_settings,
+                {"base_url": "https://paperless.example.org", "api_token": "secret"},
+                "paperless_settings",
+            ),
+        )
+        for update, payload, table in cases:
+            with self.subTest(table=table):
+                connection = in_memory_database()
+                try:
+                    original_name = connection.execute(
+                        "SELECT name FROM organizations WHERE id = 1"
+                    ).fetchone()[0]
+                    connection.execute(
+                        "UPDATE organizations SET name = 'Pending' WHERE id = 1"
+                    )
+                    update(connection, payload)
+                    self.assertTrue(connection.in_transaction)
+                    self.assertEqual(
+                        connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0],
+                        1,
+                    )
+
+                    connection.rollback()
+
+                    self.assertEqual(
+                        connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0],
+                        0,
+                    )
+                    self.assertEqual(
+                        connection.execute(
+                            "SELECT name FROM organizations WHERE id = 1"
+                        ).fetchone()[0],
+                        original_name,
+                    )
+                finally:
+                    connection.close()
 
 
 class ApplicationExportContractTests(unittest.TestCase):
@@ -347,21 +408,58 @@ class ApplicationImportValidationTests(unittest.TestCase):
             original_assets,
         )
 
-    def test_rejects_active_caller_transaction_without_rolling_it_back(self) -> None:
+    def test_import_participates_in_active_caller_transaction(self) -> None:
+        payload = deepcopy(self.payload)
+        payload["tables"]["organizations"][0]["name"] = "Imported"
         self.connection.execute(
             "UPDATE organizations SET name = 'Pending' WHERE id = 1"
         )
-        with self.assertRaisesRegex(ValueError, "active transaction"):
-            import_application_data(self.connection, self.payload)
+        import_application_data(self.connection, payload)
 
         self.assertTrue(self.connection.in_transaction)
         self.assertEqual(
             self.connection.execute(
                 "SELECT name FROM organizations WHERE id = 1"
             ).fetchone()[0],
-            "Pending",
+            "Imported",
         )
         self.connection.rollback()
+        self.assert_database_is_unchanged()
+
+    def test_caller_rolls_back_a_failed_import(self) -> None:
+        payload = deepcopy(self.payload)
+        payload["tables"]["organizations"].append(
+            deepcopy(payload["tables"]["organizations"][0])
+        )
+        payload["row_count"] += 1
+
+        with self.assertRaisesRegex(ValueError, "application import could not be applied"):
+            with self.connection:
+                import_application_data(self.connection, payload)
+
+        self.assert_database_is_unchanged()
+
+    def test_failed_import_preserves_an_existing_caller_transaction(self) -> None:
+        payload = deepcopy(self.payload)
+        payload["tables"]["organizations"].append(
+            deepcopy(payload["tables"]["organizations"][0])
+        )
+        payload["row_count"] += 1
+        update_paperless_settings(
+            self.connection,
+            {"base_url": "https://paperless.example.org", "api_token": "secret"},
+        )
+
+        with self.assertRaisesRegex(ValueError, "application import could not be applied"):
+            import_application_data(self.connection, payload)
+
+        self.assertTrue(self.connection.in_transaction)
+        self.assertEqual(
+            self.connection.execute("SELECT COUNT(*) FROM paperless_settings").fetchone()[0],
+            1,
+        )
+        self.connection.rollback()
+        self.assert_database_is_unchanged()
 
     def test_accepts_original_seventeen_table_format_one_backup(self) -> None:
         original_tables = (
