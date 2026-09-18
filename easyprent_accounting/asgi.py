@@ -16,7 +16,9 @@ from .http_expenses import router as expenses_router
 from .http_linked_documents import router as linked_documents_router
 from .http_metering import router as metering_router
 from .http_models import ErrorDetail, ErrorResponse
+from .http_settlement_documents import router as settlement_documents_router
 from .http_settings import router as settings_router
+from .http_settlements import router as settlements_router
 from .http_tenancy import router as tenancy_router
 from .services import health_status
 
@@ -45,6 +47,8 @@ def create_asgi_app(
     app.include_router(tenancy_router)
     app.include_router(settings_router)
     app.include_router(linked_documents_router)
+    app.include_router(settlements_router)
+    app.include_router(settlement_documents_router)
 
     # ── Health ──────────────────────────────────────────────────────
     @app.get("/api/v1/health")
