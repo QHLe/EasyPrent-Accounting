@@ -109,6 +109,17 @@ def build_object_lifecycle_paths() -> dict:
     return paths
 
 
+def _list_projection_schema(*fields: str) -> dict:
+    return {
+        "type": "object",
+        "required": list(fields),
+        "properties": {
+            field: {"type": "array", "items": {"type": "object"}}
+            for field in fields
+        },
+    }
+
+
 def build_openapi_document() -> dict:
     return {
         "openapi": "3.1.0",
@@ -562,7 +573,7 @@ def build_openapi_document() -> dict:
             },
             "/api/overview": {
                 "get": {
-                    "summary": "Lädt die Übersicht für Dashboard und React-Oberfläche",
+                    "summary": "Lädt die Dashboard-Zusammenfassung",
                     "responses": {
                         "200": {
                             "description": "Übersichtsdaten",
@@ -571,6 +582,58 @@ def build_openapi_document() -> dict:
                                     "schema": {"$ref": "#/components/schemas/OverviewResponse"}
                                 }
                             },
+                        }
+                    },
+                }
+            },
+            "/api/assets": {
+                "get": {
+                    "summary": "Lädt Anlagen, Gebäude, Wohnungen und Zimmer",
+                    "responses": {
+                        "200": {
+                            "description": "Objektlisten",
+                            "content": {"application/json": {
+                                "schema": {"$ref": "#/components/schemas/AssetListResponse"}
+                            }},
+                        }
+                    },
+                }
+            },
+            "/api/tenancy": {
+                "get": {
+                    "summary": "Lädt Mieter und Mietverträge",
+                    "responses": {
+                        "200": {
+                            "description": "Mieter- und Vertragslisten",
+                            "content": {"application/json": {
+                                "schema": {"$ref": "#/components/schemas/TenancyListResponse"}
+                            }},
+                        }
+                    },
+                }
+            },
+            "/api/metering": {
+                "get": {
+                    "summary": "Lädt Zähler und Messwerte",
+                    "responses": {
+                        "200": {
+                            "description": "Zähler- und Messwertlisten",
+                            "content": {"application/json": {
+                                "schema": {"$ref": "#/components/schemas/MeteringListResponse"}
+                            }},
+                        }
+                    },
+                }
+            },
+            "/api/depreciation-assets": {
+                "get": {
+                    "summary": "Lädt Abschreibungsanlagen",
+                    "responses": {
+                        "200": {
+                            "description": "Abschreibungsanlagen",
+                            "content": {"application/json": {
+                                "schema": {"type": "array", "items": {"type": "object"}}
+                            }},
                         }
                     },
                 }
@@ -913,6 +976,17 @@ def build_openapi_document() -> dict:
                 }
             },
             "/api/expenses": {
+                "get": {
+                    "summary": "Lädt Kostenpositionen und Kostenarten",
+                    "responses": {
+                        "200": {
+                            "description": "Kostenlisten",
+                            "content": {"application/json": {
+                                "schema": {"$ref": "#/components/schemas/ExpenseListResponse"}
+                            }},
+                        }
+                    },
+                },
                 "post": {
                     "summary": "Erstellt eine neue Kostenposition",
                     "requestBody": {
@@ -1535,21 +1609,35 @@ def build_openapi_document() -> dict:
             "schemas": {
                 "OverviewResponse": {
                     "type": "object",
+                    "required": ["summary", "roles"],
                     "properties": {
-                        "summary": {"type": "object"},
-                        "properties": {"type": "array", "items": {"type": "object"}},
-                        "buildings": {"type": "array", "items": {"type": "object"}},
-                        "units": {"type": "array", "items": {"type": "object"}},
-                        "rooms": {"type": "array", "items": {"type": "object"}},
-                        "meters": {"type": "array", "items": {"type": "object"}},
-                        "meter_readings": {"type": "array", "items": {"type": "object"}},
-                        "tenants": {"type": "array", "items": {"type": "object"}},
-                        "leases": {"type": "array", "items": {"type": "object"}},
-                        "expenses": {"type": "array", "items": {"type": "object"}},
-                        "expense_categories": {"type": "array", "items": {"type": "object"}},
-                        "depreciation_assets": {"type": "array", "items": {"type": "object"}},
+                        "summary": {
+                            "type": "object",
+                            "required": [
+                                "properties", "buildings", "units", "rooms", "meters",
+                                "tenants", "leases", "expenses", "depreciation_assets",
+                            ],
+                            "properties": {
+                                field: {"type": "integer", "minimum": 0}
+                                for field in (
+                                    "properties", "buildings", "units", "rooms", "meters",
+                                    "tenants", "leases", "expenses", "depreciation_assets",
+                                )
+                            },
+                        },
+                        "roles": {"type": "array", "items": {"type": "object"}},
                     },
                 },
+                "AssetListResponse": _list_projection_schema(
+                    "properties", "buildings", "units", "rooms"
+                ),
+                "TenancyListResponse": _list_projection_schema("tenants", "leases"),
+                "ExpenseListResponse": _list_projection_schema(
+                    "expenses", "expense_categories"
+                ),
+                "MeteringListResponse": _list_projection_schema(
+                    "meters", "meter_readings"
+                ),
                 "PropertyCreateRequest": {
                     "type": "object",
                     "required": ["organization_id", "name", "street", "city", "postal_code"],

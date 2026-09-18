@@ -56,6 +56,8 @@ class BrowserSmokeTest(unittest.TestCase):
 
             # Wait for React app shell to mount
             page.wait_for_selector("button.tab", timeout=5000)
+            page.wait_for_selector(".cards > article.card", timeout=5000)
+            self.assertEqual(page.locator(".cards > article.card").count(), 9)
 
             # 2. Verify no external requests were initiated (strictly offline)
             self.assertGreater(len(all_requests), 0, "Expected local static/API requests to be made")

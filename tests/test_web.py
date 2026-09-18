@@ -45,6 +45,30 @@ class WebApiAndUiTests(unittest.TestCase):
         )
         return response.status, response.headers, response.body
 
+    def test_dashboard_summary_and_domain_lists_have_separate_responses(self) -> None:
+        status, _, body = self._call_app("GET", "/api/overview")
+        dashboard = json.loads(body)
+
+        self.assertTrue(status.startswith("200"))
+        self.assertEqual(set(dashboard), {"summary", "roles"})
+        self.assertEqual(dashboard["summary"]["properties"], 1)
+        self.assertEqual(dashboard["summary"]["leases"], 2)
+
+        for path, expected_keys in (
+            ("/api/assets", {"properties", "buildings", "units", "rooms"}),
+            ("/api/tenancy", {"tenants", "leases"}),
+            ("/api/expenses", {"expenses", "expense_categories"}),
+            ("/api/metering", {"meters", "meter_readings"}),
+        ):
+            with self.subTest(path=path):
+                list_status, _, list_body = self._call_app("GET", path)
+                self.assertTrue(list_status.startswith("200"))
+                self.assertEqual(set(json.loads(list_body)), expected_keys)
+
+        list_status, _, list_body = self._call_app("GET", "/api/depreciation-assets")
+        self.assertTrue(list_status.startswith("200"))
+        self.assertEqual(len(json.loads(list_body)), 2)
+
     def test_root_serves_react_shell(self) -> None:
         status, _, body = self._call_app("GET", "/")
         content = body.decode("utf-8")
@@ -452,6 +476,18 @@ for (const text of ["Heizung", "Gasabschlag", "2025-01-01 bis 2025-03-31", "Kost
         self.assertEqual(headers["Content-Type"], "application/json; charset=utf-8")
         self.assertEqual(payload["openapi"], "3.1.0")
         self.assertIn("/api/overview", payload["paths"])
+        self.assertEqual(
+            set(payload["components"]["schemas"]["OverviewResponse"]["properties"]),
+            {"summary", "roles"},
+        )
+        for path in (
+            "/api/assets",
+            "/api/tenancy",
+            "/api/expenses",
+            "/api/metering",
+            "/api/depreciation-assets",
+        ):
+            self.assertIn("get", payload["paths"][path])
         self.assertIn("/api/settlements", payload["paths"])
         self.assertIn("/api/settlements/document.ods", payload["paths"])
         self.assertIn("/api/depreciation-schedule", payload["paths"])
@@ -515,9 +551,9 @@ for (const text of ["Heizung", "Gasabschlag", "2025-01-01 bis 2025-03-31", "Kost
         self.assertIn("beneficiary_name", payload["components"]["schemas"]["ExpenseCreateRequest"]["properties"])
         self.assertIn("MeterCreateRequest", payload["components"]["schemas"])
         self.assertIn("MeterReadingCreateRequest", payload["components"]["schemas"])
-        self.assertIn("meter_readings", payload["components"]["schemas"]["OverviewResponse"]["properties"])
-        self.assertIn("tenants", payload["components"]["schemas"]["OverviewResponse"]["properties"])
-        self.assertIn("leases", payload["components"]["schemas"]["OverviewResponse"]["properties"])
+        self.assertIn("meter_readings", payload["components"]["schemas"]["MeteringListResponse"]["properties"])
+        self.assertIn("tenants", payload["components"]["schemas"]["TenancyListResponse"]["properties"])
+        self.assertIn("leases", payload["components"]["schemas"]["TenancyListResponse"]["properties"])
         self.assertIn("TenantCreateRequest", payload["components"]["schemas"])
         self.assertIn("LeaseCreateRequest", payload["components"]["schemas"])
         self.assertIn("room_id", payload["components"]["schemas"]["LeaseCreateRequest"]["properties"])
@@ -530,7 +566,7 @@ for (const text of ["Heizung", "Gasabschlag", "2025-01-01 bis 2025-03-31", "Kost
             payload["components"]["schemas"]["LeaseCreateRequest"]["properties"],
         )
         self.assertIn("room_id", payload["components"]["schemas"]["LeaseResponse"]["properties"])
-        self.assertIn("expense_categories", payload["components"]["schemas"]["OverviewResponse"]["properties"])
+        self.assertIn("expense_categories", payload["components"]["schemas"]["ExpenseListResponse"]["properties"])
         self.assertIn("total_amount", payload["components"]["schemas"]["ExpenseResponse"]["properties"])
         self.assertIn("effective_consumption_value", payload["components"]["schemas"]["ExpenseResponse"]["properties"])
         self.assertIn("meter_unit", payload["components"]["schemas"]["ExpenseResponse"]["properties"])
@@ -679,7 +715,7 @@ for (const text of ["Heizung", "Gasabschlag", "2025-01-01 bis 2025-03-31", "Kost
         self.assertNotIn("gnucash_nk_account_guid", tenant_payload)
         self.assertNotIn("gnucash_nk_account_name", tenant_payload)
 
-        overview_status, _, overview_body = self._call_app("GET", "/api/overview")
+        overview_status, _, overview_body = self._call_app("GET", "/api/assets")
         overview_payload = json.loads(overview_body.decode("utf-8"))
         self.assertTrue(overview_status.startswith("200"))
         self.assertTrue(len(overview_payload["units"]) > 0)
@@ -708,7 +744,7 @@ for (const text of ["Heizung", "Gasabschlag", "2025-01-01 bis 2025-03-31", "Kost
         self.assertEqual(lease_payload["unit_id"], first_unit_id)
         self.assertEqual(lease_payload["tenant_id"], tenant_payload["id"])
 
-        overview_after_status, _, overview_after_body = self._call_app("GET", "/api/overview")
+        overview_after_status, _, overview_after_body = self._call_app("GET", "/api/tenancy")
         overview_after_payload = json.loads(overview_after_body.decode("utf-8"))
         self.assertTrue(overview_after_status.startswith("200"))
         self.assertTrue(
@@ -793,9 +829,9 @@ for (const text of ["Heizung", "Gasabschlag", "2025-01-01 bis 2025-03-31", "Kost
         self.assertTrue(created_status.startswith("201"))
         self.assertNotIn("method", created)
 
-        overview_status, _, overview_body = self._call_app("GET", "/api/overview")
+        overview_status, _, overview_body = self._call_app("GET", "/api/depreciation-assets")
         self.assertTrue(overview_status.startswith("200"))
-        assets = json.loads(overview_body)["depreciation_assets"]
+        assets = json.loads(overview_body)
         self.assertNotIn("method", next(row for row in assets if row["id"] == created["id"]))
 
         schedule_status, _, schedule_body = self._call_app(
@@ -809,16 +845,16 @@ for (const text of ["Heizung", "Gasabschlag", "2025-01-01 bis 2025-03-31", "Kost
         self.assertEqual("600.00", schedule_row["yearly_depreciation"])
         self.assertNotIn("method", schedule_row)
 
-    def test_unsupported_stored_method_does_not_break_overview(self) -> None:
+    def test_unsupported_stored_method_does_not_break_depreciation_list(self) -> None:
         with sqlite3.connect(self.db_path) as connection:
             connection.execute(
                 "UPDATE depreciation_assets SET method = 'declining' WHERE id = "
                 "(SELECT MIN(id) FROM depreciation_assets)"
             )
 
-        overview_status, _, overview_body = self._call_app("GET", "/api/overview")
+        overview_status, _, overview_body = self._call_app("GET", "/api/depreciation-assets")
         self.assertTrue(overview_status.startswith("200"))
-        self.assertNotIn("method", json.loads(overview_body)["depreciation_assets"][0])
+        self.assertNotIn("method", json.loads(overview_body)[0])
 
         schedule_status, _, schedule_body = self._call_app(
             "GET", "/api/depreciation-schedule", query_string="year=2025"
@@ -874,7 +910,7 @@ for (const text of ["Heizung", "Gasabschlag", "2025-01-01 bis 2025-03-31", "Kost
         self.assertEqual(tenant_update_payload["full_name"], "Editierter Mieter")
         self.assertEqual(tenant_update_payload["phone"], "222")
 
-        overview_status, _, overview_body = self._call_app("GET", "/api/overview")
+        overview_status, _, overview_body = self._call_app("GET", "/api/assets")
         overview_payload = json.loads(overview_body.decode("utf-8"))
         self.assertTrue(overview_status.startswith("200"))
         first_unit_id = overview_payload["units"][0]["id"]
@@ -934,7 +970,7 @@ for (const text of ["Heizung", "Gasabschlag", "2025-01-01 bis 2025-03-31", "Kost
         tenant_payload = json.loads(tenant_body.decode("utf-8"))
         self.assertTrue(tenant_status.startswith("201"))
 
-        overview_status, _, overview_body = self._call_app("GET", "/api/overview")
+        overview_status, _, overview_body = self._call_app("GET", "/api/assets")
         overview_payload = json.loads(overview_body.decode("utf-8"))
         self.assertTrue(overview_status.startswith("200"))
         first_unit_id = overview_payload["units"][0]["id"]
@@ -995,7 +1031,7 @@ for (const text of ["Heizung", "Gasabschlag", "2025-01-01 bis 2025-03-31", "Kost
         self.assertEqual(lease_update_payload["room_id"], room_payload["id"])
         self.assertEqual(lease_update_payload["unit_id"], first_unit_id)
 
-        overview_after_status, _, overview_after_body = self._call_app("GET", "/api/overview")
+        overview_after_status, _, overview_after_body = self._call_app("GET", "/api/tenancy")
         overview_after_payload = json.loads(overview_after_body.decode("utf-8"))
         self.assertTrue(overview_after_status.startswith("200"))
         matching_lease = next(
@@ -1030,7 +1066,7 @@ for (const text of ["Heizung", "Gasabschlag", "2025-01-01 bis 2025-03-31", "Kost
         self.assertEqual(delete_payload["id"], tenant_payload["id"])
         self.assertEqual(delete_payload["deleted"], True)
 
-        overview_status, _, overview_body = self._call_app("GET", "/api/overview")
+        overview_status, _, overview_body = self._call_app("GET", "/api/tenancy")
         overview_payload = json.loads(overview_body.decode("utf-8"))
         self.assertTrue(overview_status.startswith("200"))
         self.assertFalse(
@@ -1052,7 +1088,7 @@ for (const text of ["Heizung", "Gasabschlag", "2025-01-01 bis 2025-03-31", "Kost
         tenant_payload = json.loads(tenant_body.decode("utf-8"))
         self.assertTrue(tenant_status.startswith("201"))
 
-        overview_status, _, overview_body = self._call_app("GET", "/api/overview")
+        overview_status, _, overview_body = self._call_app("GET", "/api/assets")
         overview_payload = json.loads(overview_body.decode("utf-8"))
         self.assertTrue(overview_status.startswith("200"))
         first_unit_id = overview_payload["units"][0]["id"]
@@ -1290,7 +1326,7 @@ for (const text of ["Heizung", "Gasabschlag", "2025-01-01 bis 2025-03-31", "Kost
         )
         import_payload = json.loads(import_body.decode("utf-8"))
 
-        overview_status, _, overview_body = self._call_app("GET", "/api/overview")
+        overview_status, _, overview_body = self._call_app("GET", "/api/tenancy")
         overview_payload = json.loads(overview_body.decode("utf-8"))
         application_settings_status, _, application_settings_body = self._call_app(
             "GET",
@@ -1470,7 +1506,7 @@ for (const text of ["Heizung", "Gasabschlag", "2025-01-01 bis 2025-03-31", "Kost
         tenant_payload = json.loads(tenant_body.decode("utf-8"))
         self.assertTrue(tenant_status.startswith("201"))
 
-        overview_status, _, overview_body = self._call_app("GET", "/api/overview")
+        overview_status, _, overview_body = self._call_app("GET", "/api/assets")
         overview_payload = json.loads(overview_body.decode("utf-8"))
         self.assertTrue(overview_status.startswith("200"))
         first_unit_id = overview_payload["units"][0]["id"]
@@ -1504,7 +1540,7 @@ for (const text of ["Heizung", "Gasabschlag", "2025-01-01 bis 2025-03-31", "Kost
         self.assertEqual(delete_payload["id"], lease_payload["id"])
         self.assertEqual(delete_payload["deleted"], True)
 
-        overview_after_status, _, overview_after_body = self._call_app("GET", "/api/overview")
+        overview_after_status, _, overview_after_body = self._call_app("GET", "/api/tenancy")
         overview_after_payload = json.loads(overview_after_body.decode("utf-8"))
         self.assertTrue(overview_after_status.startswith("200"))
         self.assertFalse(
@@ -1703,7 +1739,7 @@ for (const text of ["Heizung", "Gasabschlag", "2025-01-01 bis 2025-03-31", "Kost
         tenant_payload = json.loads(tenant_body.decode("utf-8"))
         self.assertTrue(tenant_status.startswith("201"))
 
-        overview_status, _, overview_body = self._call_app("GET", "/api/overview")
+        overview_status, _, overview_body = self._call_app("GET", "/api/assets")
         overview_payload = json.loads(overview_body.decode("utf-8"))
         self.assertTrue(overview_status.startswith("200"))
         first_unit_id = overview_payload["units"][0]["id"]
@@ -2286,8 +2322,8 @@ for (const text of ["Heizung", "Gasabschlag", "2025-01-01 bis 2025-03-31", "Kost
         self.assertEqual(payload["object_type"], "building")
         self.assertEqual(payload["charge_type"], "monthly")
 
-    def test_api_overview_expense_does_not_expose_property_name(self) -> None:
-        status, _, body = self._call_app("GET", "/api/overview")
+    def test_api_expense_list_does_not_expose_property_name(self) -> None:
+        status, _, body = self._call_app("GET", "/api/expenses")
 
         payload = json.loads(body.decode("utf-8"))
         self.assertTrue(status.startswith("200"))
@@ -2440,7 +2476,7 @@ for (const text of ["Heizung", "Gasabschlag", "2025-01-01 bis 2025-03-31", "Kost
         self.assertTrue(second_status.startswith("400"))
         self.assertIn("previous", second_payload["error"])
 
-    def test_api_overview_contains_full_meter_reading_history(self) -> None:
+    def test_api_metering_list_contains_full_reading_history(self) -> None:
         meter_status, _, meter_body = self._call_app(
             "POST",
             "/api/meters",
@@ -2477,7 +2513,7 @@ for (const text of ["Heizung", "Gasabschlag", "2025-01-01 bis 2025-03-31", "Kost
                 }
             ).encode("utf-8"),
         )
-        status, _, body = self._call_app("GET", "/api/overview")
+        status, _, body = self._call_app("GET", "/api/metering")
 
         payload = json.loads(body.decode("utf-8"))
         meter_readings = payload["meter_readings"]
@@ -2532,7 +2568,7 @@ for (const text of ["Heizung", "Gasabschlag", "2025-01-01 bis 2025-03-31", "Kost
             "DELETE",
             f"/api/meter-readings/{second_payload['id']}",
         )
-        overview_status, _, overview_body = self._call_app("GET", "/api/overview")
+        overview_status, _, overview_body = self._call_app("GET", "/api/metering")
 
         delete_payload = json.loads(delete_body.decode("utf-8"))
         overview_payload = json.loads(overview_body.decode("utf-8"))
@@ -3274,7 +3310,7 @@ for (const text of ["Heizung", "Gasabschlag", "2025-01-01 bis 2025-03-31", "Kost
         self.assertEqual(room_update_payload["area_sqm"], "19.25")
         self.assertEqual(room_update_payload["area_share_percent"], "32.5")
 
-        overview_status, _, overview_body = self._call_app("GET", "/api/overview")
+        overview_status, _, overview_body = self._call_app("GET", "/api/assets")
         overview_payload = json.loads(overview_body.decode("utf-8"))
         persisted_room = next(
             room for room in overview_payload["rooms"] if room["id"] == room_payload["id"]

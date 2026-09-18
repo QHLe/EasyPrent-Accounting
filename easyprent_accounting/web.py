@@ -385,24 +385,22 @@ def application(
                 return json_response(start_response, HTTPStatus.BAD_REQUEST, {"error": str(error)})
 
         if method == "GET" and path == "/api/overview":
-            overview = Dashboard(connection).summary()
-            asset_data = assets.list_assets()
-            tenancy_data = tenancy.list_tenancy()
-            expense_data = expenses.list_expenses()
-            meter_data = metering.list_meters()
-            depreciation_assets = Depreciation(connection).list_assets()
-            overview["properties"] = asset_data["properties"]
-            overview["buildings"] = asset_data["buildings"]
-            overview["units"] = asset_data["units"]
-            overview["rooms"] = asset_data["rooms"]
-            overview["tenants"] = tenancy_data["tenants"]
-            overview["leases"] = tenancy_data["leases"]
-            overview["expenses"] = expense_data["expenses"]
-            overview["expense_categories"] = expense_data["expense_categories"]
-            overview["meters"] = meter_data["meters"]
-            overview["meter_readings"] = meter_data["meter_readings"]
-            overview["depreciation_assets"] = depreciation_assets
-            return json_response(start_response, HTTPStatus.OK, overview)
+            return json_response(start_response, HTTPStatus.OK, Dashboard(connection).summary())
+
+        if method == "GET" and path == "/api/assets":
+            return json_response(start_response, HTTPStatus.OK, assets.list_assets())
+
+        if method == "GET" and path == "/api/tenancy":
+            return json_response(start_response, HTTPStatus.OK, tenancy.list_tenancy())
+
+        if method == "GET" and path == "/api/expenses":
+            return json_response(start_response, HTTPStatus.OK, expenses.list_expenses())
+
+        if method == "GET" and path == "/api/metering":
+            return json_response(start_response, HTTPStatus.OK, metering.list_meters())
+
+        if method == "GET" and path == "/api/depreciation-assets":
+            return json_response(start_response, HTTPStatus.OK, Depreciation(connection).list_assets())
 
         if method == "GET" and path == "/api/paperless-settings":
             return json_response(start_response, HTTPStatus.OK, get_paperless_settings(connection))

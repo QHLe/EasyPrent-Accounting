@@ -1234,9 +1234,25 @@
       return fetchJson("/api/health")
         .then(function (healthPayload) {
           setServerStatus(healthPayload);
-          return fetchJson("/api/overview");
+          return Promise.all([
+            fetchJson("/api/overview"),
+            fetchJson("/api/assets"),
+            fetchJson("/api/tenancy"),
+            fetchJson("/api/expenses"),
+            fetchJson("/api/metering"),
+            fetchJson("/api/depreciation-assets"),
+          ]);
         })
-        .then(function (overviewPayload) {
+        .then(function (domainResults) {
+          const overviewPayload = Object.assign(
+            {},
+            domainResults[0],
+            domainResults[1],
+            domainResults[2],
+            domainResults[3],
+            domainResults[4],
+            { depreciation_assets: domainResults[5] }
+          );
           const requestedProperty = (overviewPayload.properties || []).find(function (property) {
             return !property.is_archived && String(property.id) === String(nextPropertyId || "");
           });

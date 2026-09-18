@@ -19,15 +19,17 @@ class DashboardSummaryTests(unittest.TestCase):
     def test_summary_returns_entity_counts_from_seeded_data(self) -> None:
         result = self.dashboard.summary()
 
-        self.assertEqual(result["properties"], 1)
-        self.assertEqual(result["buildings"], 1)
-        self.assertEqual(result["units"], 3)
-        self.assertEqual(result["rooms"], 0)
-        self.assertEqual(result["meters"], 0)
-        self.assertEqual(result["tenants"], 2)
-        self.assertEqual(result["leases"], 2)
-        self.assertEqual(result["expenses"], 3)
-        self.assertEqual(result["depreciation_assets"], 2)
+        self.assertEqual(result["summary"], {
+            "properties": 1,
+            "buildings": 1,
+            "units": 3,
+            "rooms": 0,
+            "meters": 0,
+            "tenants": 2,
+            "leases": 2,
+            "expenses": 3,
+            "depreciation_assets": 2,
+        })
 
     def test_summary_includes_user_roles(self) -> None:
         result = self.dashboard.summary()
@@ -43,24 +45,19 @@ class DashboardSummaryTests(unittest.TestCase):
         """The dashboard summary returns counts, not the domain entity arrays."""
         result = self.dashboard.summary()
 
-        for key in ("properties", "buildings", "units", "rooms",
-                     "meters", "tenants", "leases", "expenses",
-                     "depreciation_assets"):
-            self.assertIsInstance(
-                result[key], int,
-                f"'{key}' should be an integer count, not a list",
-            )
+        self.assertEqual(set(result), {"summary", "roles"})
+        self.assertTrue(all(isinstance(count, int) for count in result["summary"].values()))
 
     def test_summary_on_empty_database(self) -> None:
         connection = in_memory_database(seeded=False)
         try:
             result = Dashboard(connection).summary()
 
-            self.assertEqual(result["properties"], 0)
-            self.assertEqual(result["buildings"], 0)
-            self.assertEqual(result["units"], 0)
-            self.assertEqual(result["tenants"], 0)
-            self.assertEqual(result["expenses"], 0)
+            self.assertEqual(result["summary"]["properties"], 0)
+            self.assertEqual(result["summary"]["buildings"], 0)
+            self.assertEqual(result["summary"]["units"], 0)
+            self.assertEqual(result["summary"]["tenants"], 0)
+            self.assertEqual(result["summary"]["expenses"], 0)
             self.assertEqual(result["roles"], [])
         finally:
             connection.close()
