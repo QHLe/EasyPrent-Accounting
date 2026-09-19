@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import date
-from typing import Annotated
+from typing import Annotated, Any
 from urllib.parse import quote
 
 from fastapi import APIRouter, Path, Query, Request, Response
@@ -18,6 +18,18 @@ SettlementRunId = Annotated[str, Path(min_length=1)]
 
 
 router = APIRouter(tags=["Settlements"])
+PDF_RESPONSE: dict[int | str, dict[str, Any]] = {
+    200: {"content": {"application/pdf": {"schema": {"type": "string", "format": "binary"}}}}
+}
+ODS_RESPONSE: dict[int | str, dict[str, Any]] = {
+    200: {
+        "content": {
+            "application/vnd.oasis.opendocument.spreadsheet": {
+                "schema": {"type": "string", "format": "binary"}
+            }
+        }
+    }
+}
 
 
 def _attachment(contents: bytes, filename: str, media_type: str) -> Response:
@@ -35,7 +47,7 @@ def _require_one_target(property_id: int | None, unit_id: int | None) -> None:
         raise ValueError("settlement requires exactly one property or standalone unit")
 
 
-@router.get("/api/v1/settlements/document.pdf", response_class=Response)
+@router.get("/api/v1/settlements/document.pdf", response_class=Response, responses=PDF_RESPONSE)
 def download_period_pdf(
     lease_id: PositiveQueryId,
     period_start: date,
@@ -52,7 +64,7 @@ def download_period_pdf(
     return _attachment(contents, filename, "application/pdf")
 
 
-@router.get("/api/v1/settlements/document.ods", response_class=Response)
+@router.get("/api/v1/settlements/document.ods", response_class=Response, responses=ODS_RESPONSE)
 def download_period_ods(
     lease_id: PositiveQueryId,
     period_start: date,
@@ -72,6 +84,7 @@ def download_period_ods(
 @router.get(
     "/api/v1/settlement-runs/{settlement_id}/leases/{lease_id}/document.ods",
     response_class=Response,
+    responses=ODS_RESPONSE,
 )
 def download_run_ods(
     settlement_id: SettlementRunId,

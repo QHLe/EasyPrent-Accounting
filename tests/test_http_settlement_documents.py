@@ -119,6 +119,18 @@ class SettlementDocumentHttpTests(unittest.TestCase):
                 self.assertEqual(response.json()["error"]["code"], "invalid_value")
                 self.assertIn("exactly one property or standalone unit", response.json()["error"]["reason"])
 
+    def test_openapi_describes_binary_downloads(self) -> None:
+        paths = self.client.get("/openapi.json").json()["paths"]
+        for path, media_type in (
+            ("/api/v1/settlements/document.pdf", "application/pdf"),
+            ("/api/v1/settlements/document.ods", "application/vnd.oasis.opendocument.spreadsheet"),
+            ("/api/v1/settlement-runs/{settlement_id}/leases/{lease_id}/document.ods",
+             "application/vnd.oasis.opendocument.spreadsheet"),
+        ):
+            with self.subTest(path=path):
+                schema = paths[path]["get"]["responses"]["200"]["content"][media_type]["schema"]
+                self.assertEqual(schema, {"type": "string", "format": "binary"})
+
 
 if __name__ == "__main__":
     unittest.main()
