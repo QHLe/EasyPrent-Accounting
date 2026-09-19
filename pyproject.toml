@@ -36,5 +36,7 @@ include = ["easyprent_accounting*"]
     "static/*.css",
     "static/*.js",
     "static/vendor/*.js",
+    "static_dist/index.html",
+    "static_dist/assets/*",
     "templates/*.ods",
 ]

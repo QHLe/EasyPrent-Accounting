@@ -92,23 +92,14 @@ class QualityScriptTests(unittest.TestCase):
             run_mock.call_args_list,
             [
                 mock.call(["/test/bin/npm", "ci", "--ignore-scripts"]),
-                mock.call(
-                    [
-                        quality.sys.executable,
-                        "-m",
-                        "unittest",
-                        "discover",
-                        "-s",
-                        "tests",
-                    ]
-                ),
-                mock.call(
-                    [
-                        quality.sys.executable,
-                        "-c",
-                        "import " + ", ".join(quality.PACKAGE_IMPORTS),
-                    ]
-                ),
+                mock.call(["/test/bin/npm", "run", "typecheck"]),
+                mock.call(["/test/bin/npm", "run", "test"]),
+                mock.call(["/test/bin/npm", "run", "build"]),
+                mock.call([quality.sys.executable, "scripts/export_openapi.py"]),
+                mock.call(["/test/bin/npm", "run", "generate-api"]),
+                mock.call(["git", "diff", "--exit-code", "openapi.json", "src/api/schema.d.ts"]),
+                mock.call([quality.sys.executable, "-m", "unittest", "discover", "-s", "tests"]),
+                mock.call([quality.sys.executable, "-c", "import " + ", ".join(quality.PACKAGE_IMPORTS)]),
             ],
         )
 

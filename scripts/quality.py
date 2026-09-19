@@ -50,6 +50,13 @@ def main() -> int:
         return 1
 
     run([npm, "ci", "--ignore-scripts"])
+    run([npm, "run", "typecheck"])
+    run([npm, "run", "test"])
+    run([npm, "run", "build"])
+
+    run([sys.executable, "scripts/export_openapi.py"])
+    run([npm, "run", "generate-api"])
+    run(["git", "diff", "--exit-code", "openapi.json", "src/api/schema.d.ts"])
 
     run([sys.executable, "-m", "unittest", "discover", "-s", "tests"])
     for source_file in sorted(STATIC_DIRECTORY.glob("*.js")):
