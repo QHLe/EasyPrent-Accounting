@@ -1,12 +1,7 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 
-const App = () => (
-  <div>
-    <h1>EasyPrent Accounting</h1>
-    <p>React/Vite setup successful.</p>
-  </div>
-);
+import { App } from './App';
 
 const rootElement = document.getElementById('root');
 if (rootElement) {
@@ -17,4 +12,3 @@ if (rootElement) {
     </React.StrictMode>
   );
 }
-
