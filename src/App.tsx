@@ -1,4 +1,7 @@
 import { AppShell, type ShellSection } from './app/AppShell';
+import { SettingsView } from './features/settings';
+import { AssetRegistryView } from './features/asset-registry';
+import { TenancyView } from './features/tenancy';
 
 function PendingSection({ title }: Readonly<{ title: string }>) {
   return (
@@ -18,7 +21,7 @@ const sections: readonly ShellSection[] = [
   {
     id: 'asset-registry',
     label: 'Objektverwaltung',
-    content: <PendingSection title="Objektverwaltung" />,
+    content: <AssetRegistryView />,
   },
   {
     id: 'expenses',
@@ -28,7 +31,7 @@ const sections: readonly ShellSection[] = [
   {
     id: 'tenancy',
     label: 'Mieterverwaltung',
-    content: <PendingSection title="Mieterverwaltung" />,
+    content: <TenancyView />,
   },
   {
     id: 'settlements',
@@ -38,7 +41,7 @@ const sections: readonly ShellSection[] = [
   {
     id: 'settings',
     label: 'Einstellungen',
-    content: <PendingSection title="Einstellungen" />,
+    content: <SettingsView />,
   },
 ];
 
