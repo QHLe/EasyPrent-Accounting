@@ -90,7 +90,7 @@ export function LinkedDocumentsPanel({ ownerType, ownerId }: Props) {
             <li key={doc.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem 0', borderBottom: '1px solid #eee' }}>
               <div>
                 <a 
-                  href={downloadDocumentUrl(doc.id)} 
+                  href={doc.paperless_reference_url || downloadDocumentUrl(doc.id)} 
                   target="_blank" 
                   rel="noopener noreferrer"
                   style={{ fontWeight: 'bold' }}

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import type { components } from '../../api/schema';
+import { AddressFields, type Address } from '../../components/AddressFields';
 
 type PropertyWrite = components['schemas']['PropertyWrite'];
 type BuildingWrite = components['schemas']['BuildingWrite'];
@@ -19,15 +20,16 @@ interface Props {
   units?: any[];
 }
 
-export function AssetForm({ type, initialData, onSave, onCancel, properties = [], buildings = [], units = [] }: Props) {
+export function AssetForm({ type, initialData, onSave, onCancel, properties = [], buildings = [], units = [], organizationId = 1 }: Props & { organizationId?: number }) {
   const [isSaving, setIsSaving] = useState(false);
   
   // Property state
-  const [orgId] = useState(initialData?.organization_id || 1); // Mock org
   const [name, setName] = useState(initialData?.name || '');
-  const [street, setStreet] = useState(initialData?.street || '');
-  const [city, setCity] = useState(initialData?.city || '');
-  const [postal, setPostal] = useState(initialData?.postal_code || '');
+  const [address, setAddress] = useState<Address>({
+    street: initialData?.street || '',
+    city: initialData?.city || '',
+    postal_code: initialData?.postal_code || ''
+  });
 
   // Building state
   const [propId, setPropId] = useState<number | ''>(initialData?.property_id || '');
@@ -50,13 +52,13 @@ export function AssetForm({ type, initialData, onSave, onCancel, properties = []
     setIsSaving(true);
     try {
       if (type === 'property') {
-        const payload: PropertyWrite = { organization_id: orgId, name, street, city, postal_code: postal };
+        const payload: PropertyWrite = { organization_id: initialData?.organization_id || organizationId, name, street: address.street, city: address.city, postal_code: address.postal_code };
         await onSave(type, payload);
       } else if (type === 'building') {
-        const payload: BuildingWrite = { property_id: propId === '' ? null : propId, name, street, city, postal_code: postal, year_built: yearBuilt === '' ? null : yearBuilt };
+        const payload: BuildingWrite = { property_id: propId === '' ? null : propId, name, street: address.street, city: address.city, postal_code: address.postal_code, year_built: yearBuilt === '' ? null : yearBuilt };
         await onSave(type, payload);
       } else if (type === 'unit') {
-        const payload: UnitWrite = { building_id: buildId === '' ? null : buildId, label, area_sqm: area, mea_percent: mea, room_count: roomCount, street: street || null, city: city || null, postal_code: postal || null };
+        const payload: UnitWrite = { building_id: buildId === '' ? null : buildId, label, area_sqm: area, mea_percent: mea, room_count: roomCount, street: address.street || null, city: address.city || null, postal_code: address.postal_code || null };
         await onSave(type, payload);
       } else if (type === 'room') {
         const payload: RoomWrite = { unit_id: unitId as number, label, area_sqm: roomArea || null, area_share_percent: roomShare || null };
@@ -82,20 +84,11 @@ export function AssetForm({ type, initialData, onSave, onCancel, properties = []
 
         {/* Addresses */}
         {(type === 'property' || type === 'building' || type === 'unit') && (
-          <div className="form-group-row" style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-            <div className="form-group" style={{ flex: 1 }}>
-              <label>Straße</label>
-              <input required={type !== 'unit'} type="text" value={street} onChange={e => setStreet(e.target.value)} className="input" />
-            </div>
-            <div className="form-group" style={{ flex: 1 }}>
-              <label>PLZ</label>
-              <input required={type !== 'unit'} type="text" value={postal} onChange={e => setPostal(e.target.value)} className="input" />
-            </div>
-            <div className="form-group" style={{ flex: 1 }}>
-              <label>Stadt</label>
-              <input required={type !== 'unit'} type="text" value={city} onChange={e => setCity(e.target.value)} className="input" />
-            </div>
-          </div>
+          <AddressFields 
+            address={address} 
+            onChange={setAddress} 
+            required={type !== 'unit'} 
+          />
         )}
 
         {/* Property ID for Building */}

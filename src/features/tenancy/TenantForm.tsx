@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import type { components } from '../../api/schema';
 import { LinkedDocumentsPanel } from '../linked-documents';
+import { AddressFields, type Address } from '../../components/AddressFields';
 
 type TenantWrite = components['schemas']['TenantWrite'];
 
@@ -16,9 +17,11 @@ export function TenantForm({ initialData, onSave, onCancel }: Props) {
   const [fullName, setFullName] = useState(initialData?.full_name || '');
   const [email, setEmail] = useState(initialData?.email || '');
   const [phone, setPhone] = useState(initialData?.phone || '');
-  const [street, setStreet] = useState(initialData?.alternate_street || '');
-  const [postal, setPostal] = useState(initialData?.alternate_postal_code || '');
-  const [city, setCity] = useState(initialData?.alternate_city || '');
+  const [altAddress, setAltAddress] = useState<Address>({
+    street: initialData?.alternate_street || '',
+    postal_code: initialData?.alternate_postal_code || '',
+    city: initialData?.alternate_city || ''
+  });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,9 +31,9 @@ export function TenantForm({ initialData, onSave, onCancel }: Props) {
         full_name: fullName,
         email: email || null,
         phone: phone || null,
-        alternate_street: street || null,
-        alternate_postal_code: postal || null,
-        alternate_city: city || null
+        alternate_street: altAddress.street || null,
+        alternate_postal_code: altAddress.postal_code || null,
+        alternate_city: altAddress.city || null
       });
     } finally {
       setIsSaving(false);
@@ -58,20 +61,7 @@ export function TenantForm({ initialData, onSave, onCancel }: Props) {
 
         <fieldset style={{ marginTop: '1rem', border: '1px solid #ddd', padding: '1rem' }}>
           <legend>Abweichende Anschrift (Optional)</legend>
-          <div className="form-group-row" style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-            <div className="form-group" style={{ flex: 1 }}>
-              <label>Straße</label>
-              <input type="text" value={street} onChange={e => setStreet(e.target.value)} className="input" />
-            </div>
-            <div className="form-group" style={{ flex: 1 }}>
-              <label>PLZ</label>
-              <input type="text" value={postal} onChange={e => setPostal(e.target.value)} className="input" />
-            </div>
-            <div className="form-group" style={{ flex: 1 }}>
-              <label>Stadt</label>
-              <input type="text" value={city} onChange={e => setCity(e.target.value)} className="input" />
-            </div>
-          </div>
+          <AddressFields address={altAddress} onChange={setAltAddress} />
         </fieldset>
 
         <div className="actions" style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>

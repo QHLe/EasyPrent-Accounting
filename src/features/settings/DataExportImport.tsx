@@ -54,8 +54,7 @@ export function DataExportImport() {
           type: 'success', 
           text: `Import erfolgreich: ${res.data.row_count} Datensätze wiederhergestellt.` 
         });
-        // Reload page to reflect new state
-        setTimeout(() => window.location.reload(), 2000);
+        
       }
     } catch (err: any) {
       showMessage({ type: 'error', text: `Import fehlgeschlagen: ${err.message || 'Ungültiges Dateiformat'}` });

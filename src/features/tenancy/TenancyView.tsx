@@ -3,6 +3,7 @@ import { useTenancy } from './useTenancy';
 import { TenantForm } from './TenantForm';
 import { LeaseForm } from './LeaseForm';
 import { useGlobalMessages } from '../../app/AppShell';
+import { InlineListItem } from '../../components/InlineListItem';
 
 export function TenancyView() {
   const { tenancy, isLoading, error, createTenant, updateTenant, deleteTenant, createLease, updateLease, deleteLease } = useTenancy();
@@ -124,27 +125,31 @@ export function TenancyView() {
 
           <div className="list">
             {filteredTenants.map(tenant => (
-              <div key={tenant.id} style={{ marginBottom: '0.5rem', border: '1px solid #eee', padding: '0.5rem', borderRadius: '4px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div>
-                    <strong>{tenant.full_name}</strong>
-                    <span style={{ marginLeft: '1rem', color: '#666' }}>{tenant.email || 'Keine E-Mail'}</span>
-                  </div>
-                  <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    <button className="button button-small" onClick={() => setEditingTenantId(tenant.id)}>Bearbeiten</button>
-                    <button className="button button-small button-outline" onClick={() => handleDeleteTenant(tenant.id)}>Löschen</button>
-                  </div>
-                </div>
-                {editingTenantId === tenant.id && (
-                  <div style={{ marginTop: '1rem' }}>
-                    <TenantForm 
-                      initialData={tenant}
-                      onSave={(data) => handleSaveTenant(data, tenant.id)}
-                      onCancel={() => setEditingTenantId(null)}
-                    />
-                  </div>
+              <InlineListItem
+                key={tenant.id}
+                isEditing={editingTenantId === tenant.id}
+                renderDisplay={() => (
+                  <>
+                    <div>
+                      <strong>{tenant.full_name}</strong>
+                      <span style={{ marginLeft: '1rem', color: '#666' }}>{tenant.email || 'Keine E-Mail'}</span>
+                    </div>
+                    {editingTenantId !== tenant.id && (
+                      <div style={{ display: 'flex', gap: '0.5rem' }}>
+                        <button className="button button-small" onClick={() => setEditingTenantId(tenant.id)}>Bearbeiten</button>
+                        <button className="button button-small button-outline" onClick={() => handleDeleteTenant(tenant.id)}>Löschen</button>
+                      </div>
+                    )}
+                  </>
                 )}
-              </div>
+                renderForm={() => (
+                  <TenantForm 
+                    initialData={tenant}
+                    onSave={(data) => handleSaveTenant(data, tenant.id)}
+                    onCancel={() => setEditingTenantId(null)}
+                      />
+                )}
+              />
             ))}
             {filteredTenants.length === 0 && <p className="hint">Keine Mieter gefunden.</p>}
           </div>
@@ -165,31 +170,35 @@ export function TenancyView() {
 
           <div className="list">
             {filteredLeases.map(lease => (
-              <div key={lease.id} style={{ marginBottom: '0.5rem', border: '1px solid #eee', padding: '0.5rem', borderRadius: '4px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div>
-                    <strong>{lease.tenant_name}</strong>
-                    <span style={{ marginLeft: '1rem', color: '#666' }}>
-                      {lease.unit_label || 'Keine Wohnung'} | Kalt: {lease.rent_cold} €
-                    </span>
-                    <span className="tag" style={{ marginLeft: '1rem' }}>{lease.status === 'active' ? 'Aktiv' : 'Beendet'}</span>
-                  </div>
-                  <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    <button className="button button-small" onClick={() => setEditingLeaseId(lease.id)}>Bearbeiten</button>
-                    <button className="button button-small button-outline" onClick={() => handleDeleteLease(lease.id)}>Löschen</button>
-                  </div>
-                </div>
-                {editingLeaseId === lease.id && (
-                  <div style={{ marginTop: '1rem' }}>
-                    <LeaseForm 
-                      initialData={lease}
-                      tenants={tenancy?.tenants || []}
-                      onSave={(data) => handleSaveLease(data, lease.id)}
-                      onCancel={() => setEditingLeaseId(null)}
-                    />
-                  </div>
+              <InlineListItem
+                key={lease.id}
+                isEditing={editingLeaseId === lease.id}
+                renderDisplay={() => (
+                  <>
+                    <div>
+                      <strong>{lease.tenant_name}</strong>
+                      <span style={{ marginLeft: '1rem', color: '#666' }}>
+                        {lease.unit_label || 'Keine Wohnung'} | Kalt: {lease.rent_cold} €
+                      </span>
+                      <span className="tag" style={{ marginLeft: '1rem' }}>{lease.status === 'active' ? 'Aktiv' : 'Beendet'}</span>
+                    </div>
+                    {editingLeaseId !== lease.id && (
+                      <div style={{ display: 'flex', gap: '0.5rem' }}>
+                        <button className="button button-small" onClick={() => setEditingLeaseId(lease.id)}>Bearbeiten</button>
+                        <button className="button button-small button-outline" onClick={() => handleDeleteLease(lease.id)}>Löschen</button>
+                      </div>
+                    )}
+                  </>
                 )}
-              </div>
+                renderForm={() => (
+                  <LeaseForm 
+                    initialData={lease}
+                    tenants={tenancy?.tenants || []}
+                    onSave={(data) => handleSaveLease(data, lease.id)}
+                    onCancel={() => setEditingLeaseId(null)}
+                      />
+                )}
+              />
             ))}
             {filteredLeases.length === 0 && <p className="hint">Keine Mietverträge gefunden.</p>}
           </div>

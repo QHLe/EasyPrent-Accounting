@@ -30,116 +30,41 @@ export function useAssetRegistry() {
     fetchAssets();
   }, [fetchAssets]);
 
-  const createProperty = async (data: PropertyWrite) => {
-    await apiClient.POST('/api/v1/properties', { body: data });
+  const mutate = async (method: 'POST' | 'PUT' | 'DELETE', url: any, params?: any, body?: any) => {
+    await (apiClient as any)[method](url, { params, body });
     await fetchAssets();
   };
 
-  const updateProperty = async (id: number, data: PropertyWrite) => {
-    await apiClient.PUT('/api/v1/properties/{property_id}', {
-      params: { path: { property_id: id } },
-      body: data
-    });
-    await fetchAssets();
-  };
+  const createProperty = (data: PropertyWrite) => mutate('POST', '/api/v1/properties', undefined, data);
+  const updateProperty = (id: number, data: PropertyWrite) => mutate('PUT', '/api/v1/properties/{property_id}', { path: { property_id: id } }, data);
+  const archiveProperty = (id: number) => mutate('POST', '/api/v1/properties/{property_id}/archive', { path: { property_id: id } });
+  const deleteProperty = (id: number) => mutate('DELETE', '/api/v1/properties/{property_id}', { path: { property_id: id } });
 
-  const archiveProperty = async (id: number) => {
-    await apiClient.POST('/api/v1/properties/{property_id}/archive', { params: { path: { property_id: id } } });
-    await fetchAssets();
-  };
-  
-  const deleteProperty = async (id: number) => {
-    await apiClient.DELETE('/api/v1/properties/{property_id}', { params: { path: { property_id: id } } });
-    await fetchAssets();
-  };
+  const createBuilding = (data: BuildingWrite) => mutate('POST', '/api/v1/buildings', undefined, data);
+  const updateBuilding = (id: number, data: BuildingWrite) => mutate('PUT', '/api/v1/buildings/{building_id}', { path: { building_id: id } }, data);
+  const archiveBuilding = (id: number) => mutate('POST', '/api/v1/buildings/{building_id}/archive', { path: { building_id: id } });
+  const deleteBuilding = (id: number) => mutate('DELETE', '/api/v1/buildings/{building_id}', { path: { building_id: id } });
 
-  const createBuilding = async (data: BuildingWrite) => {
-    await apiClient.POST('/api/v1/buildings', { body: data });
-    await fetchAssets();
-  };
+  const createUnit = (data: UnitWrite) => mutate('POST', '/api/v1/units', undefined, data);
+  const updateUnit = (id: number, data: UnitWrite) => mutate('PUT', '/api/v1/units/{unit_id}', { path: { unit_id: id } }, data);
+  const archiveUnit = (id: number) => mutate('POST', '/api/v1/units/{unit_id}/archive', { path: { unit_id: id } });
+  const deleteUnit = (id: number) => mutate('DELETE', '/api/v1/units/{unit_id}', { path: { unit_id: id } });
 
-  const updateBuilding = async (id: number, data: BuildingWrite) => {
-    await apiClient.PUT('/api/v1/buildings/{building_id}', {
-      params: { path: { building_id: id } },
-      body: data
-    });
-    await fetchAssets();
-  };
-
-  const archiveBuilding = async (id: number) => {
-    await apiClient.POST('/api/v1/buildings/{building_id}/archive', { params: { path: { building_id: id } } });
-    await fetchAssets();
-  };
-
-  const deleteBuilding = async (id: number) => {
-    await apiClient.DELETE('/api/v1/buildings/{building_id}', { params: { path: { building_id: id } } });
-    await fetchAssets();
-  };
-
-  const createUnit = async (data: UnitWrite) => {
-    await apiClient.POST('/api/v1/units', { body: data });
-    await fetchAssets();
-  };
-
-  const updateUnit = async (id: number, data: UnitWrite) => {
-    await apiClient.PUT('/api/v1/units/{unit_id}', {
-      params: { path: { unit_id: id } },
-      body: data
-    });
-    await fetchAssets();
-  };
-
-  const archiveUnit = async (id: number) => {
-    await apiClient.POST('/api/v1/units/{unit_id}/archive', { params: { path: { unit_id: id } } });
-    await fetchAssets();
-  };
-
-  const deleteUnit = async (id: number) => {
-    await apiClient.DELETE('/api/v1/units/{unit_id}', { params: { path: { unit_id: id } } });
-    await fetchAssets();
-  };
-
-  const createRoom = async (data: RoomWrite) => {
-    await apiClient.POST('/api/v1/rooms', { body: data });
-    await fetchAssets();
-  };
-
-  const updateRoom = async (id: number, data: RoomWrite) => {
-    await apiClient.PUT('/api/v1/rooms/{room_id}', {
-      params: { path: { room_id: id } },
-      body: data
-    });
-    await fetchAssets();
-  };
-
-  const archiveRoom = async (id: number) => {
-    await apiClient.POST('/api/v1/rooms/{room_id}/archive', { params: { path: { room_id: id } } });
-    await fetchAssets();
-  };
-
-  const deleteRoom = async (id: number) => {
-    await apiClient.DELETE('/api/v1/rooms/{room_id}', { params: { path: { room_id: id } } });
-    await fetchAssets();
-  };
+  const createRoom = (data: RoomWrite) => mutate('POST', '/api/v1/rooms', undefined, data);
+  const updateRoom = (id: number, data: RoomWrite) => mutate('PUT', '/api/v1/rooms/{room_id}', { path: { room_id: id } }, data);
+  const archiveRoom = (id: number) => mutate('POST', '/api/v1/rooms/{room_id}/archive', { path: { room_id: id } });
+  const deleteRoom = (id: number) => mutate('DELETE', '/api/v1/rooms/{room_id}', { path: { room_id: id } });
 
   const restoreAsset = async (type: 'property' | 'building' | 'unit' | 'room', id: number) => {
-    switch (type) {
-      case 'property':
-        await apiClient.POST('/api/v1/properties/{property_id}/restore', { params: { path: { property_id: id } } });
-        break;
-      case 'building':
-        await apiClient.POST('/api/v1/buildings/{building_id}/restore', { params: { path: { building_id: id } } });
-        break;
-      case 'unit':
-        await apiClient.POST('/api/v1/units/{unit_id}/restore', { params: { path: { unit_id: id } } });
-        break;
-      case 'room':
-        await apiClient.POST('/api/v1/rooms/{room_id}/restore', { params: { path: { room_id: id } } });
-        break;
-    }
+    const endpoints = {
+      property: `/api/v1/properties/${id}/restore`,
+      building: `/api/v1/buildings/${id}/restore`,
+      unit: `/api/v1/units/${id}/restore`,
+      room: `/api/v1/rooms/${id}/restore`
+    } as const;
+    await apiClient.POST(endpoints[type] as any, { params: { path: { [`${type}_id`]: id } as any } } as any);
     await fetchAssets();
   };
-
 
   return {
     assets,

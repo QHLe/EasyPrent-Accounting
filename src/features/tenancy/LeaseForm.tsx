@@ -18,7 +18,16 @@ export function LeaseForm({ initialData, tenants, onSave, onCancel }: Props) {
   
   const [tenantId, setTenantId] = useState<number | ''>(initialData?.tenant_id || '');
   const [unitId, setUnitId] = useState<number | ''>(initialData?.unit_id || '');
-  const [roomId, setRoomId] = useState<number | ''>(initialData?.room_id || '');
+    const [roomId, setRoomId] = useState<number | ''>(initialData?.room_id || '');
+
+  React.useEffect(() => {
+    if (roomId !== '') {
+      const room = assets?.rooms.find(r => r.id === roomId);
+      if (room && room.unit_id !== unitId) {
+        setUnitId(room.unit_id);
+      }
+    }
+  }, [roomId, assets]);
   const [rentCold, setRentCold] = useState(initialData?.rent_cold || '');
   const [advance, setAdvance] = useState(initialData?.additional_charges_advance || '');
   const [occupants, setOccupants] = useState<number>(initialData?.occupant_count || 1);

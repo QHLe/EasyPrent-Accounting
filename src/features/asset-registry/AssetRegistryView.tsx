@@ -3,6 +3,7 @@ import { useAssetRegistry } from './useAssetRegistry';
 import { AssetForm, AssetType } from './AssetForm';
 import { useGlobalMessages } from '../../app/AppShell';
 import { useSettings } from '../settings/useSettings';
+import { InlineListItem } from '../../components/InlineListItem';
 
 export function AssetRegistryView() {
   const { assets, isLoading, error, createProperty, createBuilding, createUnit, createRoom, updateProperty, updateBuilding, updateUnit, updateRoom, archiveProperty, archiveBuilding, archiveUnit, archiveRoom, deleteProperty, deleteBuilding, deleteUnit, deleteRoom, restoreAsset } = useAssetRegistry();
@@ -13,6 +14,7 @@ export function AssetRegistryView() {
 
   const [creatingType, setCreatingType] = useState<AssetType | null>(null);
   const [editingItem, setEditingItem] = useState<{ type: AssetType; data: any } | null>(null);
+  const [filterText, setFilterText] = useState('');
 
   if (isLoading) return <div>Lade Objekte...</div>;
   if (error) return <div className="message error">Fehler beim Laden: {error.message}</div>;
@@ -20,17 +22,13 @@ export function AssetRegistryView() {
   const handleSave = async (type: AssetType, data: any) => {
     try {
       if (editingItem) {
-        if (type === 'property') await updateProperty(editingItem.data.id, data);
-        if (type === 'building') await updateBuilding(editingItem.data.id, data);
-        if (type === 'unit') await updateUnit(editingItem.data.id, data);
-        if (type === 'room') await updateRoom(editingItem.data.id, data);
+        const updateFns = { property: updateProperty, building: updateBuilding, unit: updateUnit, room: updateRoom };
+        await updateFns[type](editingItem.data.id, data);
         showMessage({ type: 'success', text: 'Änderungen gespeichert.' });
         setEditingItem(null);
       } else {
-        if (type === 'property') await createProperty(data);
-        if (type === 'building') await createBuilding(data);
-        if (type === 'unit') await createUnit(data);
-        if (type === 'room') await createRoom(data);
+        const createFns = { property: createProperty, building: createBuilding, unit: createUnit, room: createRoom };
+        await createFns[type](data);
         showMessage({ type: 'success', text: 'Objekt erstellt.' });
         setCreatingType(null);
       }
@@ -41,10 +39,8 @@ export function AssetRegistryView() {
 
   const handleArchive = async (type: AssetType, id: number) => {
     try {
-      if (type === 'property') await archiveProperty(id);
-      if (type === 'building') await archiveBuilding(id);
-      if (type === 'unit') await archiveUnit(id);
-      if (type === 'room') await archiveRoom(id);
+      const archiveFns = { property: archiveProperty, building: archiveBuilding, unit: archiveUnit, room: archiveRoom };
+      await archiveFns[type](id);
       showMessage({ type: 'success', text: 'Objekt archiviert.' });
     } catch (err: any) {
       showMessage({ type: 'error', text: `Fehler: ${err.message}` });
@@ -54,10 +50,8 @@ export function AssetRegistryView() {
   const handleDelete = async (type: AssetType, id: number) => {
     if (!window.confirm('Wirklich löschen?')) return;
     try {
-      if (type === 'property') await deleteProperty(id);
-      if (type === 'building') await deleteBuilding(id);
-      if (type === 'unit') await deleteUnit(id);
-      if (type === 'room') await deleteRoom(id);
+      const deleteFns = { property: deleteProperty, building: deleteBuilding, unit: deleteUnit, room: deleteRoom };
+      await deleteFns[type](id);
       showMessage({ type: 'success', text: 'Objekt gelöscht.' });
     } catch (err: any) {
       showMessage({ type: 'error', text: `Fehler: ${err.message}` });
@@ -102,29 +96,37 @@ export function AssetRegistryView() {
   const renderItemRow = (type: AssetType, item: any, title: string, details: string, paddingLeft: number = 0) => {
     const isEditing = editingItem?.type === type && editingItem?.data.id === item.id;
     return (
-      <div key={`${type}-${item.id}`} style={{ paddingLeft: `${paddingLeft}rem`, marginBottom: '0.5rem' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem', backgroundColor: item.is_archived ? '#f9f9f9' : '#fff', border: '1px solid #eee', borderRadius: '4px' }}>
-          <div>
-            <strong>{title}</strong>
-            <span style={{ marginLeft: '1rem', color: '#666', fontSize: '0.9em' }}>{details}</span>
-            {item.is_archived && <span className="tag" style={{ marginLeft: '0.5rem' }}>Archiviert</span>}
-          </div>
-          {!isEditing && renderActions(type, item)}
-        </div>
-        {isEditing && (
-          <div style={{ marginTop: '0.5rem' }}>
-            <AssetForm 
-              type={type} 
-              initialData={item} 
-              onSave={handleSave} 
-              onCancel={() => setEditingItem(null)}
-              properties={assets?.properties}
-              buildings={assets?.buildings}
-              units={assets?.units}
-            />
-          </div>
+      <InlineListItem
+        key={`${type}-${item.id}`}
+
+        isEditing={isEditing}
+        isArchived={item.is_archived}
+        paddingLeft={paddingLeft}
+        
+        
+        renderDisplay={() => (
+          <>
+            <div>
+              <strong>{title}</strong>
+              <span style={{ marginLeft: '1rem', color: '#666', fontSize: '0.9em' }}>{details}</span>
+              {item.is_archived && <span className="tag" style={{ marginLeft: '0.5rem' }}>Archiviert</span>}
+            </div>
+            {!isEditing && renderActions(type, item)}
+          </>
         )}
-      </div>
+        renderForm={() => (
+          <AssetForm 
+            type={type} 
+            initialData={item} 
+            onSave={handleSave} onCancel={() => setEditingItem(null)}
+             
+              properties={assets?.properties}
+            buildings={assets?.buildings}
+            units={assets?.units}
+            organizationId={1}
+          />
+        )}
+      />
     );
   };
 
@@ -132,11 +134,32 @@ export function AssetRegistryView() {
   // Tree: Properties -> Buildings -> Units -> Rooms
   // Also need to show orphaned buildings, units, rooms at the top level
   
+  
+  const matches = (text: string) => text?.toLowerCase().includes(filterText.toLowerCase());
+  
+  const filteredProperties = assets?.properties.filter(p => matches(p.name) || matches(p.street) || matches(p.city)) || [];
+  const filteredBuildings = assets?.buildings.filter(b => matches(b.name) || matches(b.street) || matches(b.city)) || [];
+  const filteredUnits = assets?.units.filter(u => matches(u.label)) || [];
+  const filteredRooms = assets?.rooms.filter(r => matches(r.label)) || [];
+
+  const shouldShowProperty = (p: any) => filteredProperties.includes(p) || assets?.buildings.filter(b => b.property_id === p.id).some(shouldShowBuilding);
+  const shouldShowBuilding = (b: any) => filteredBuildings.includes(b) || assets?.units.filter(u => u.building_id === b.id).some(shouldShowUnit) || (b.property_id && filteredProperties.find(prop => prop.id === b.property_id));
+  const shouldShowUnit = (u: any) => filteredUnits.includes(u) || assets?.rooms.filter(r => r.unit_id === u.id).some(shouldShowRoom) || (u.building_id && filteredBuildings.find(b => b.id === u.building_id));
+  const shouldShowRoom = (r: any) => filteredRooms.includes(r) || (r.unit_id && filteredUnits.find(u => u.id === r.unit_id));
+
   return (
     <div className="asset-registry-view">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
         <h2>Objektverwaltung</h2>
-        <div style={{ display: 'flex', gap: '0.5rem' }}>
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+          <input 
+            type="text" 
+            placeholder="Suchen..." 
+            value={filterText} 
+            onChange={e => setFilterText(e.target.value)} 
+            className="input"
+          />
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
           <select 
             className="input" 
             value={creatingType || ''} 
@@ -148,13 +171,15 @@ export function AssetRegistryView() {
             <option value="unit">Wohnung erzeugen</option>
             <option value="room">Zimmer erzeugen</option>
           </select>
+          </div>
         </div>
       </div>
 
       {creatingType && (
         <div style={{ marginBottom: '2rem' }}>
           <AssetForm 
-            type={creatingType} 
+            type={creatingType}
+            organizationId={1} 
             onSave={handleSave} 
             onCancel={() => setCreatingType(null)} 
             properties={assets?.properties}
@@ -166,22 +191,22 @@ export function AssetRegistryView() {
 
       <div className="asset-list">
         {/* Render Properties and their children */}
-        {assets?.properties.map(p => (
+        {assets?.properties.filter(shouldShowProperty).map(p => (
           <div key={`p-${p.id}`}>
             {renderItemRow('property', p, p.name, `${p.street}, ${p.city}`)}
             
             {/* Buildings inside property */}
-            {assets.buildings.filter(b => b.property_id === p.id).map(b => (
+            {assets.buildings.filter(b => b.property_id === p.id && shouldShowBuilding(b)).map(b => (
               <div key={`b-${b.id}`}>
                 {renderItemRow('building', b, `Gebäude: ${b.name}`, `${b.street}, ${b.city}`, 2)}
                 
                 {/* Units inside building */}
-                {assets.units.filter(u => u.building_id === b.id).map(u => (
+                {assets.units.filter(u => u.building_id === b.id && shouldShowUnit(u)).map(u => (
                   <div key={`u-${u.id}`}>
                     {renderItemRow('unit', u, `Wohnung: ${u.label}`, `${u.area_sqm} qm, ${u.room_count} Zimmer`, 4)}
                     
                     {/* Rooms inside unit */}
-                    {assets.rooms.filter(r => r.unit_id === u.id).map(r => (
+                    {assets.rooms.filter(r => r.unit_id === u.id && shouldShowRoom(r)).map(r => (
                       <React.Fragment key={`r-${r.id}`}>
                         {renderItemRow('room', r, `Zimmer: ${r.label}`, r.area_sqm ? `${r.area_sqm} qm` : '', 6)}
                       </React.Fragment>
@@ -194,15 +219,15 @@ export function AssetRegistryView() {
         ))}
 
         {/* Render orphaned Buildings */}
-        {assets?.buildings.filter(b => !b.property_id).map(b => (
+        {assets?.buildings.filter(b => !b.property_id && shouldShowBuilding(b)).map(b => (
           <div key={`ob-${b.id}`}>
             {renderItemRow('building', b, `Gebäude: ${b.name}`, `${b.street}, ${b.city}`)}
             
-            {assets.units.filter(u => u.building_id === b.id).map(u => (
+            {assets.units.filter(u => u.building_id === b.id && shouldShowUnit(u)).map(u => (
               <div key={`ou-${u.id}`}>
                 {renderItemRow('unit', u, `Wohnung: ${u.label}`, `${u.area_sqm} qm, ${u.room_count} Zimmer`, 2)}
                 
-                {assets.rooms.filter(r => r.unit_id === u.id).map(r => (
+                {assets.rooms.filter(r => r.unit_id === u.id && shouldShowRoom(r)).map(r => (
                   <React.Fragment key={`or-${r.id}`}>
                     {renderItemRow('room', r, `Zimmer: ${r.label}`, r.area_sqm ? `${r.area_sqm} qm` : '', 4)}
                   </React.Fragment>
@@ -213,11 +238,11 @@ export function AssetRegistryView() {
         ))}
 
         {/* Render orphaned Units */}
-        {assets?.units.filter(u => !u.building_id).map(u => (
+        {assets?.units.filter(u => !u.building_id && shouldShowUnit(u)).map(u => (
           <div key={`oou-${u.id}`}>
             {renderItemRow('unit', u, `Wohnung: ${u.label}`, `${u.area_sqm} qm, ${u.room_count} Zimmer`)}
             
-            {assets.rooms.filter(r => r.unit_id === u.id).map(r => (
+            {assets.rooms.filter(r => r.unit_id === u.id && shouldShowRoom(r)).map(r => (
               <React.Fragment key={`oor-${r.id}`}>
                 {renderItemRow('room', r, `Zimmer: ${r.label}`, r.area_sqm ? `${r.area_sqm} qm` : '', 2)}
               </React.Fragment>
@@ -226,7 +251,7 @@ export function AssetRegistryView() {
         ))}
 
         {/* Render orphaned Rooms (though they require a unit, just in case) */}
-        {assets?.rooms.filter(r => !assets.units.find(u => u.id === r.unit_id)).map(r => (
+        {assets?.rooms.filter(r => !assets.units.find(u => u.id === r.unit_id) && shouldShowRoom(r)).map(r => (
           <React.Fragment key={`ooor-${r.id}`}>
             {renderItemRow('room', r, `Zimmer: ${r.label} (Wohnung nicht gefunden)`, r.area_sqm ? `${r.area_sqm} qm` : '')}
           </React.Fragment>

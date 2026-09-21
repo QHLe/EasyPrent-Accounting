@@ -28,35 +28,18 @@ export function useTenancy() {
     fetchTenancy();
   }, [fetchTenancy]);
 
-  const createTenant = async (data: TenantWrite) => {
-    await apiClient.POST('/api/v1/tenants', { body: data });
+  const mutate = async (method: 'POST' | 'PUT' | 'DELETE', url: any, params?: any, body?: any) => {
+    await (apiClient as any)[method](url, { params, body });
     await fetchTenancy();
   };
 
-  const updateTenant = async (id: number, data: TenantWrite) => {
-    await apiClient.PUT('/api/v1/tenants/{tenant_id}', { params: { path: { tenant_id: id } }, body: data });
-    await fetchTenancy();
-  };
+  const createTenant = (data: TenantWrite) => mutate('POST', '/api/v1/tenants', undefined, data);
+  const updateTenant = (id: number, data: TenantWrite) => mutate('PUT', '/api/v1/tenants/{tenant_id}', { path: { tenant_id: id } }, data);
+  const deleteTenant = (id: number) => mutate('DELETE', '/api/v1/tenants/{tenant_id}', { path: { tenant_id: id } });
 
-  const deleteTenant = async (id: number) => {
-    await apiClient.DELETE('/api/v1/tenants/{tenant_id}', { params: { path: { tenant_id: id } } });
-    await fetchTenancy();
-  };
-
-  const createLease = async (data: LeaseWrite) => {
-    await apiClient.POST('/api/v1/leases', { body: data });
-    await fetchTenancy();
-  };
-
-  const updateLease = async (id: number, data: LeaseWrite) => {
-    await apiClient.PUT('/api/v1/leases/{lease_id}', { params: { path: { lease_id: id } }, body: data });
-    await fetchTenancy();
-  };
-
-  const deleteLease = async (id: number) => {
-    await apiClient.DELETE('/api/v1/leases/{lease_id}', { params: { path: { lease_id: id } } });
-    await fetchTenancy();
-  };
+  const createLease = (data: LeaseWrite) => mutate('POST', '/api/v1/leases', undefined, data);
+  const updateLease = (id: number, data: LeaseWrite) => mutate('PUT', '/api/v1/leases/{lease_id}', { path: { lease_id: id } }, data);
+  const deleteLease = (id: number) => mutate('DELETE', '/api/v1/leases/{lease_id}', { path: { lease_id: id } });
 
   return {
     tenancy,
