@@ -32,11 +32,11 @@ export function AssetForm({ type, initialData, onSave, onCancel, properties = []
   });
 
   // Building state
-  const [propId, setPropId] = useState<number | ''>(initialData?.property_id || '');
+  const [propertyId, setPropertyId] = useState<number | ''>(initialData?.property_id || '');
   const [yearBuilt] = useState<number | ''>(initialData?.year_built || '');
   
   // Unit state
-  const [buildId, setBuildId] = useState<number | ''>(initialData?.building_id || '');
+  const [buildingId, setBuildingId] = useState<number | ''>(initialData?.building_id || '');
   const [label, setLabel] = useState(initialData?.label || '');
   const [area, setArea] = useState(initialData?.area_sqm || '');
   const [mea, setMea] = useState(initialData?.mea_percent || '0');
@@ -55,10 +55,10 @@ export function AssetForm({ type, initialData, onSave, onCancel, properties = []
         const payload: PropertyWrite = { organization_id: initialData?.organization_id || organizationId, name, street: address.street, city: address.city, postal_code: address.postal_code };
         await onSave(type, payload);
       } else if (type === 'building') {
-        const payload: BuildingWrite = { property_id: propId === '' ? null : propId, name, street: address.street, city: address.city, postal_code: address.postal_code, year_built: yearBuilt === '' ? null : yearBuilt };
+        const payload: BuildingWrite = { property_id: propertyId === '' ? null : propertyId, name, street: address.street, city: address.city, postal_code: address.postal_code, year_built: yearBuilt === '' ? null : yearBuilt };
         await onSave(type, payload);
       } else if (type === 'unit') {
-        const payload: UnitWrite = { building_id: buildId === '' ? null : buildId, label, area_sqm: area, mea_percent: mea, room_count: roomCount, street: address.street || null, city: address.city || null, postal_code: address.postal_code || null };
+        const payload: UnitWrite = { building_id: buildingId === '' ? null : buildingId, label, area_sqm: area, mea_percent: mea, room_count: roomCount, street: address.street || null, city: address.city || null, postal_code: address.postal_code || null };
         await onSave(type, payload);
       } else if (type === 'room') {
         const payload: RoomWrite = { unit_id: unitId as number, label, area_sqm: roomArea || null, area_share_percent: roomShare || null };
@@ -95,7 +95,7 @@ export function AssetForm({ type, initialData, onSave, onCancel, properties = []
         {type === 'building' && (
           <div className="form-group">
             <label>Zugehörige Anlage (Optional)</label>
-            <select value={propId} onChange={e => setPropId(e.target.value ? Number(e.target.value) : '')} className="input">
+            <select value={propertyId} onChange={e => setPropertyId(e.target.value ? Number(e.target.value) : '')} className="input">
               <option value="">-- Keine Anlage --</option>
               {properties.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
@@ -106,7 +106,7 @@ export function AssetForm({ type, initialData, onSave, onCancel, properties = []
         {type === 'unit' && (
           <div className="form-group">
             <label>Zugehöriges Gebäude (Optional)</label>
-            <select value={buildId} onChange={e => setBuildId(e.target.value ? Number(e.target.value) : '')} className="input">
+            <select value={buildingId} onChange={e => setBuildingId(e.target.value ? Number(e.target.value) : '')} className="input">
               <option value="">-- Kein Gebäude --</option>
               {buildings.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
             </select>

@@ -6,15 +6,13 @@ type ApplicationSettingsResponse = components['schemas']['ApplicationSettingsRes
 type ApplicationSettingsWrite = components['schemas']['ApplicationSettingsWrite'];
 type PaperlessSettingsResponse = components['schemas']['PaperlessSettingsResponse'];
 type PaperlessSettingsWrite = components['schemas']['PaperlessSettingsWrite'];
-type GnuCashSettingsResponse = components['schemas']['GnuCashSettingsResponse'];
 type GnuCashSettingsWrite = components['schemas']['GnuCashSettingsWrite'];
 type PaperlessStatusResponse = components['schemas']['PaperlessStatusResponse'];
 
 export function useSettings() {
   const [appSettings, setAppSettings] = useState<ApplicationSettingsResponse | null>(null);
   const [paperlessSettings, setPaperlessSettings] = useState<PaperlessSettingsResponse | null>(null);
-  const [gnucashSettings, setGnucashSettings] = useState<GnuCashSettingsResponse | null>(null);
-  const [paperlessStatus, setPaperlessStatus] = useState<PaperlessStatusResponse | null>(null);
+    const [paperlessStatus, setPaperlessStatus] = useState<PaperlessStatusResponse | null>(null);
 
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
@@ -23,7 +21,7 @@ export function useSettings() {
     setIsLoading(true);
     setError(null);
     try {
-      const [appRes, plRes, gcRes, plStatusRes] = await Promise.all([
+      const [appRes, plRes, , plStatusRes] = await Promise.all([
         apiClient.GET('/api/v1/settings/application'),
         apiClient.GET('/api/v1/settings/paperless'),
         apiClient.GET('/api/v1/settings/gnucash'),
@@ -32,8 +30,7 @@ export function useSettings() {
 
       if (appRes.data) setAppSettings(appRes.data);
       if (plRes.data) setPaperlessSettings(plRes.data);
-      if (gcRes.data) setGnucashSettings(gcRes.data);
-      if (plStatusRes.data) setPaperlessStatus(plStatusRes.data);
+            if (plStatusRes.data) setPaperlessStatus(plStatusRes.data);
     } catch (err: any) {
       setError(err);
     } finally {
@@ -70,14 +67,13 @@ export function useSettings() {
     const res = await apiClient.PUT('/api/v1/settings/gnucash', {
       body: data
     });
-    if (res.data) setGnucashSettings(res.data);
-    return res;
+        return res;
   };
 
   return {
     appSettings,
     paperlessSettings,
-    gnucashSettings,
+    
     paperlessStatus,
     isLoading,
     error,

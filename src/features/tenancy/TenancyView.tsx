@@ -128,6 +128,7 @@ export function TenancyView() {
               <InlineListItem
                 key={tenant.id}
                 isEditing={editingTenantId === tenant.id}
+                onEdit={() => setEditingTenantId(tenant.id)}
                 renderDisplay={() => (
                   <>
                     <div>
@@ -136,7 +137,7 @@ export function TenancyView() {
                     </div>
                     {editingTenantId !== tenant.id && (
                       <div style={{ display: 'flex', gap: '0.5rem' }}>
-                        <button className="button button-small" onClick={() => setEditingTenantId(tenant.id)}>Bearbeiten</button>
+
                         <button className="button button-small button-outline" onClick={() => handleDeleteTenant(tenant.id)}>Löschen</button>
                       </div>
                     )}
@@ -173,6 +174,7 @@ export function TenancyView() {
               <InlineListItem
                 key={lease.id}
                 isEditing={editingLeaseId === lease.id}
+                onEdit={() => setEditingLeaseId(lease.id)}
                 renderDisplay={() => (
                   <>
                     <div>
@@ -184,7 +186,7 @@ export function TenancyView() {
                     </div>
                     {editingLeaseId !== lease.id && (
                       <div style={{ display: 'flex', gap: '0.5rem' }}>
-                        <button className="button button-small" onClick={() => setEditingLeaseId(lease.id)}>Bearbeiten</button>
+
                         <button className="button button-small button-outline" onClick={() => handleDeleteLease(lease.id)}>Löschen</button>
                       </div>
                     )}

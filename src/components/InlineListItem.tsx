@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 
 interface Props {
   isEditing: boolean;
+  onEdit: () => void;
   renderDisplay: () => ReactNode;
   renderForm: () => ReactNode;
   paddingLeft?: number;
@@ -10,6 +11,7 @@ interface Props {
 
 export function InlineListItem({ 
   isEditing, 
+  onEdit, 
   renderDisplay, 
   renderForm,
   paddingLeft = 0,
@@ -18,6 +20,7 @@ export function InlineListItem({
   return (
     <div style={{ paddingLeft: `${paddingLeft}rem`, marginBottom: '0.5rem' }}>
       <div 
+        onClick={!isEditing ? onEdit : undefined}
         style={{ 
           display: 'flex', 
           justifyContent: 'space-between', 
@@ -25,7 +28,8 @@ export function InlineListItem({
           padding: '0.5rem', 
           backgroundColor: isArchived ? '#f9f9f9' : '#fff', 
           border: '1px solid #eee', 
-          borderRadius: '4px' 
+          borderRadius: '4px',
+          cursor: !isEditing ? 'pointer' : 'default'
         }}
       >
         {renderDisplay()}
@@ -38,3 +42,4 @@ export function InlineListItem({
     </div>
   );
 }
+

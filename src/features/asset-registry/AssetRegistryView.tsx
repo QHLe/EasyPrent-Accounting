@@ -70,9 +70,7 @@ export function AssetRegistryView() {
   const renderActions = (type: AssetType, item: any) => {
     return (
       <div style={{ display: 'flex', gap: '0.5rem' }}>
-        <button className="button button-small" onClick={() => setEditingItem({ type, data: item })}>
-          Bearbeiten
-        </button>
+        
         {item.is_archived ? (
           <>
             <button className="button button-small button-outline" onClick={() => handleRestore(type, item.id)}>
@@ -102,6 +100,7 @@ export function AssetRegistryView() {
         isEditing={isEditing}
         isArchived={item.is_archived}
         paddingLeft={paddingLeft}
+        onEdit={() => setEditingItem({ type, data: item })}
         
         
         renderDisplay={() => (
@@ -146,7 +145,31 @@ export function AssetRegistryView() {
   const shouldShowBuilding = (b: any) => filteredBuildings.includes(b) || assets?.units.filter(u => u.building_id === b.id).some(shouldShowUnit) || (b.property_id && filteredProperties.find(prop => prop.id === b.property_id));
   const shouldShowUnit = (u: any) => filteredUnits.includes(u) || assets?.rooms.filter(r => r.unit_id === u.id).some(shouldShowRoom) || (u.building_id && filteredBuildings.find(b => b.id === u.building_id));
   const shouldShowRoom = (r: any) => filteredRooms.includes(r) || (r.unit_id && filteredUnits.find(u => u.id === r.unit_id));
+  const getUnitDetails = (u: any) => {
+    const building = assets?.buildings.find(b => b.id === u.building_id);
+    const property = building?.property_id ? assets?.properties.find(p => p.id === building.property_id) : null;
+    const actualRooms = assets?.rooms.filter(r => r.unit_id === u.id).length || 0;
+    
+    let parts = [];
+    if (property) parts.push(`Anlage: ${property.name}`);
+    if (building) parts.push(`Gebäude: ${building.name}`);
+    if (u.street) parts.push(`${u.street}, ${u.city}`);
+    else if (building?.street) parts.push(`${building.street}, ${building.city}`);
+    
+    parts.push(`${u.area_sqm || 0} qm`);
+    parts.push(`Zimmer: ${u.room_count || 0} (Erfasst: ${actualRooms})`);
+    
+    return parts.join(' | ');
+  };
 
+
+  const getRoomDetails = (r: any) => {
+    const unit = assets?.units.find(u => u.id === r.unit_id);
+    let parts = [];
+    if (unit) parts.push(`Wohnung: ${unit.label}`);
+    if (r.area_sqm) parts.push(`${r.area_sqm} qm`);
+    return parts.join(' | ');
+  };
   return (
     <div className="asset-registry-view">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
@@ -176,7 +199,16 @@ export function AssetRegistryView() {
       </div>
 
       {creatingType && (
-        <div style={{ marginBottom: '2rem' }}>
+        <div style={{ marginBottom: '2rem', padding: '1rem', border: '1px solid #ccc', borderRadius: '4px' }}>
+          <div style={{ marginBottom: '1rem' }}>
+            <label style={{ marginRight: '1rem' }}><strong>Objekttyp:</strong></label>
+            <select className="input" value={creatingType} onChange={e => setCreatingType(e.target.value as AssetType)}>
+              <option value="property">Anlage</option>
+              <option value="building">Gebäude</option>
+              <option value="unit">Wohnung</option>
+              <option value="room">Zimmer</option>
+            </select>
+          </div>
           <AssetForm 
             type={creatingType}
             organizationId={1} 
@@ -203,12 +235,12 @@ export function AssetRegistryView() {
                 {/* Units inside building */}
                 {assets.units.filter(u => u.building_id === b.id && shouldShowUnit(u)).map(u => (
                   <div key={`u-${u.id}`}>
-                    {renderItemRow('unit', u, `Wohnung: ${u.label}`, `${u.area_sqm} qm, ${u.room_count} Zimmer`, 4)}
+                    {renderItemRow('unit', u, `Wohnung: ${u.label}`, getUnitDetails(u), 4)}
                     
                     {/* Rooms inside unit */}
                     {assets.rooms.filter(r => r.unit_id === u.id && shouldShowRoom(r)).map(r => (
                       <React.Fragment key={`r-${r.id}`}>
-                        {renderItemRow('room', r, `Zimmer: ${r.label}`, r.area_sqm ? `${r.area_sqm} qm` : '', 6)}
+                        {renderItemRow('room', r, `Zimmer: ${r.label}`, getRoomDetails(r), 6)}
                       </React.Fragment>
                     ))}
                   </div>
@@ -225,11 +257,11 @@ export function AssetRegistryView() {
             
             {assets.units.filter(u => u.building_id === b.id && shouldShowUnit(u)).map(u => (
               <div key={`ou-${u.id}`}>
-                {renderItemRow('unit', u, `Wohnung: ${u.label}`, `${u.area_sqm} qm, ${u.room_count} Zimmer`, 2)}
+                {renderItemRow('unit', u, `Wohnung: ${u.label}`, getUnitDetails(u), 2)}
                 
                 {assets.rooms.filter(r => r.unit_id === u.id && shouldShowRoom(r)).map(r => (
                   <React.Fragment key={`or-${r.id}`}>
-                    {renderItemRow('room', r, `Zimmer: ${r.label}`, r.area_sqm ? `${r.area_sqm} qm` : '', 4)}
+                    {renderItemRow('room', r, `Zimmer: ${r.label}`, getRoomDetails(r), 4)}
                   </React.Fragment>
                 ))}
               </div>
@@ -240,11 +272,11 @@ export function AssetRegistryView() {
         {/* Render orphaned Units */}
         {assets?.units.filter(u => !u.building_id && shouldShowUnit(u)).map(u => (
           <div key={`oou-${u.id}`}>
-            {renderItemRow('unit', u, `Wohnung: ${u.label}`, `${u.area_sqm} qm, ${u.room_count} Zimmer`)}
+            {renderItemRow('unit', u, `Wohnung: ${u.label}`, getUnitDetails(u))}
             
             {assets.rooms.filter(r => r.unit_id === u.id && shouldShowRoom(r)).map(r => (
               <React.Fragment key={`oor-${r.id}`}>
-                {renderItemRow('room', r, `Zimmer: ${r.label}`, r.area_sqm ? `${r.area_sqm} qm` : '', 2)}
+                {renderItemRow('room', r, `Zimmer: ${r.label}`, getRoomDetails(r), 2)}
               </React.Fragment>
             ))}
           </div>
@@ -253,7 +285,7 @@ export function AssetRegistryView() {
         {/* Render orphaned Rooms (though they require a unit, just in case) */}
         {assets?.rooms.filter(r => !assets.units.find(u => u.id === r.unit_id) && shouldShowRoom(r)).map(r => (
           <React.Fragment key={`ooor-${r.id}`}>
-            {renderItemRow('room', r, `Zimmer: ${r.label} (Wohnung nicht gefunden)`, r.area_sqm ? `${r.area_sqm} qm` : '')}
+            {renderItemRow('room', r, `Zimmer: ${r.label} (Wohnung nicht gefunden)`, getRoomDetails(r))}
           </React.Fragment>
         ))}
       </div>

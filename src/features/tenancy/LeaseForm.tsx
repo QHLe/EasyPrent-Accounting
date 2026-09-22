@@ -34,8 +34,6 @@ export function LeaseForm({ initialData, tenants, onSave, onCancel }: Props) {
   const [startDate, setStartDate] = useState(initialData?.start_date || '');
   const [endDate, setEndDate] = useState(initialData?.end_date || '');
   const [status, setStatus] = useState(initialData?.status || 'active');
-  const [gnucashAccount] = useState(initialData?.gnucash_nk_account_guid || '');
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSaving(true);
@@ -50,8 +48,8 @@ export function LeaseForm({ initialData, tenants, onSave, onCancel }: Props) {
         start_date: startDate,
         end_date: endDate || null,
         status,
-        gnucash_nk_account_guid: gnucashAccount || null,
-        gnucash_nk_account_name: null // read-only on write usually
+        gnucash_nk_account_guid: initialData?.gnucash_nk_account_guid || null,
+      gnucash_nk_account_name: null // read-only on write usually
       });
     } finally {
       setIsSaving(false);
@@ -71,7 +69,7 @@ export function LeaseForm({ initialData, tenants, onSave, onCancel }: Props) {
             </select>
           </div>
           <div className="form-group" style={{ flex: 1 }}>
-            <label>Wohnung (Optional)</label>
+            <label>Wohnung</label>
             <select value={unitId} onChange={e => setUnitId(e.target.value ? Number(e.target.value) : '')} className="input">
               <option value="">-- Keine --</option>
               {assets?.units.map(u => <option key={u.id} value={u.id}>{u.label}</option>)}
