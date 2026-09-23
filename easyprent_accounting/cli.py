@@ -21,6 +21,7 @@ from pathlib import Path
 
 from .migration import MigrationFailure, _persist_report, migrate_database, restore_database
 from .server import DEFAULT_PORT
+from .runtime_schema import prepare_database
 
 
 def runtime_dir() -> Path:
@@ -95,6 +96,11 @@ def start_server(env: dict[str, str]) -> int:
         return 0
 
     cfg = get_global_config()
+    try:
+        prepare_database(cfg.db_path)
+    except (OSError, RuntimeError) as error:
+        print(f"Serverstart fehlgeschlagen: {error}", file=sys.stderr)
+        return 1
     child_env = env.copy()
     child_env["EASYPRENT_PROJECT_ROOT"] = str(cfg.project_root)
     child_env["EASYPRENT_DB_PATH"] = str(cfg.db_path)
@@ -152,6 +158,11 @@ def stop_server() -> int:
 
 
 def restart_server(env: dict[str, str]) -> int:
+    try:
+        prepare_database(get_global_config().db_path)
+    except (OSError, RuntimeError) as error:
+        print(f"Serverneustart fehlgeschlagen: {error}", file=sys.stderr)
+        return 1
     stop_code = stop_server()
     if stop_code != 0:
         return stop_code
@@ -280,6 +291,12 @@ def finish_update(env: dict[str, str]) -> int:
         except (OSError, RuntimeError, ValueError) as exc:
             print(f"Systemd-Preflight fehlgeschlagen: {exc}", file=sys.stderr)
             return 1
+
+    try:
+        prepare_database(get_global_config().db_path)
+    except (OSError, RuntimeError) as error:
+        print(f"Schema-Preflight fehlgeschlagen: {error}", file=sys.stderr)
+        return 1
 
     venv_python = root / ".venv" / "bin" / "python"
     if venv_python.exists():

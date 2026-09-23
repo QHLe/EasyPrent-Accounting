@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from calendar import monthrange
 import sqlite3
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -383,13 +384,12 @@ def create_expense(connection: sqlite3.Connection, payload: dict) -> dict:
     cursor = connection.execute(
         """
         INSERT INTO expense_items (
-            property_id, object_type, object_id, expense_category, beneficiary_name, label, amount,
-            allocation_method, charge_type, recurrence, interval_name, meter_id, consumption_unit,
+            object_type, object_id, expense_category, beneficiary_name, label, amount,
+            allocation_method, charge_type, meter_id, consumption_unit,
             consumption_value, conversion_factor, booking_date, period_start, period_end
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
-            normalized_payload["property_id"],
             normalized_payload["object_type"],
             normalized_payload["object_id"],
             normalized_payload["expense_category"],
@@ -398,8 +398,6 @@ def create_expense(connection: sqlite3.Connection, payload: dict) -> dict:
             normalized_payload["amount"],
             normalized_payload["allocation_method"],
             normalized_payload["charge_type"],
-            normalized_payload["recurrence"],
-            normalized_payload["interval_name"],
             normalized_payload["meter_id"],
             normalized_payload["consumption_unit"],
             normalized_payload["consumption_value"],
@@ -429,8 +427,7 @@ def update_expense(connection: sqlite3.Connection, expense_id: int, payload: dic
     connection.execute(
         """
         UPDATE expense_items
-        SET property_id = ?,
-            object_type = ?,
+        SET object_type = ?,
             object_id = ?,
             expense_category = ?,
             beneficiary_name = ?,
@@ -438,8 +435,6 @@ def update_expense(connection: sqlite3.Connection, expense_id: int, payload: dic
             amount = ?,
             allocation_method = ?,
             charge_type = ?,
-            recurrence = ?,
-            interval_name = ?,
             meter_id = ?,
             consumption_unit = ?,
             consumption_value = ?,
@@ -450,7 +445,6 @@ def update_expense(connection: sqlite3.Connection, expense_id: int, payload: dic
         WHERE id = ?
         """,
         (
-            normalized_payload["property_id"],
             normalized_payload["object_type"],
             normalized_payload["object_id"],
             normalized_payload["expense_category"],
@@ -459,8 +453,6 @@ def update_expense(connection: sqlite3.Connection, expense_id: int, payload: dic
             normalized_payload["amount"],
             normalized_payload["allocation_method"],
             normalized_payload["charge_type"],
-            normalized_payload["recurrence"],
-            normalized_payload["interval_name"],
             normalized_payload["meter_id"],
             normalized_payload["consumption_unit"],
             normalized_payload["consumption_value"],
@@ -500,6 +492,87 @@ class Expenses:
             self.connection, expense, period_start, period_end
         )
 
+    def development_for_year(self, year: int) -> dict:
+        """Price the monthly cost trend at the accounting seam.
+
+        Missing meter readings make the affected category and total unknown;
+        a partial sum must not be presented as the complete cost.
+        """
+
+        year_start = f"{year:04d}-01-01"
+        year_end = f"{year:04d}-12-31"
+        rows = self.connection.execute(
+            """
+            SELECT id, expense_category, label, amount, charge_type, meter_id,
+                   consumption_unit, consumption_value, conversion_factor,
+                   period_start, period_end
+            FROM expense_items
+            WHERE is_archived = 0
+              AND period_start <= ? AND period_end >= ?
+            ORDER BY id
+            """,
+            (year_end, year_start),
+        ).fetchall()
+        expenses = [dict(row) for row in rows]
+        names = sorted({
+            str(expense["expense_category"] or expense["label"] or "Nicht kategorisiert")
+            for expense in expenses
+        })
+
+        def totals(values: dict[str, list[Decimal | None]]) -> tuple[list[dict], str | None, bool]:
+            categories = []
+            grand_total = Decimal("0")
+            has_unknown = False
+            for name in names:
+                amounts = values[name]
+                unknown = any(amount is None for amount in amounts)
+                amount = None if unknown else sum(amounts, Decimal("0"))
+                categories.append({
+                    "expense_category": name,
+                    "amount": None if amount is None else f"{amount:.2f}",
+                    "has_uncalculated_expense": unknown,
+                })
+                if amount is None:
+                    has_unknown = True
+                else:
+                    grand_total += amount
+            return categories, None if has_unknown else f"{grand_total:.2f}", has_unknown
+
+        annual_values: dict[str, list[Decimal | None]] = {name: [] for name in names}
+        for expense in expenses:
+            name = str(expense["expense_category"] or expense["label"] or "Nicht kategorisiert")
+            _, amount = self.amount_for_period(expense, year_start, year_end)
+            annual_values[name].append(None if amount is None else Decimal(amount))
+
+        months = []
+        for month in range(1, 13):
+            period_start = f"{year:04d}-{month:02d}-01"
+            period_end = f"{year:04d}-{month:02d}-{monthrange(year, month)[1]:02d}"
+            month_values: dict[str, list[Decimal | None]] = {name: [] for name in names}
+            for expense in expenses:
+                if expense["period_start"] > period_end or expense["period_end"] < period_start:
+                    continue
+                name = str(expense["expense_category"] or expense["label"] or "Nicht kategorisiert")
+                _, amount = self.amount_for_period(expense, period_start, period_end)
+                priced = None if amount is None else Decimal(amount)
+                month_values[name].append(priced)
+            categories, total, unknown = totals(month_values)
+            months.append({
+                "month": month,
+                "total_amount": total,
+                "has_uncalculated_expense": unknown,
+                "categories": categories,
+            })
+
+        categories, total, unknown = totals(annual_values)
+        return {
+            "year": year,
+            "total_amount": total,
+            "has_uncalculated_expense": unknown,
+            "categories": categories,
+            "months": months,
+        }
+
     def list_expenses(self) -> dict[str, list[dict]]:
         rows = self.connection.execute(
             """
@@ -525,6 +598,13 @@ class Expenses:
         ).fetchall()
         expenses = [dict(row) for row in rows]
         for expense in expenses:
+            charge_type = expense["charge_type"]
+            expense["recurrence"] = (
+                "recurring" if charge_type in {"monthly", "quarterly", "yearly"} else "one_time"
+            )
+            expense["interval_name"] = (
+                charge_type if charge_type in {"monthly", "quarterly", "yearly"} else None
+            )
             expense["is_open_ended"] = expense["period_end"] == OPEN_ENDED_PERIOD_END
             if expense["is_open_ended"]:
                 expense["effective_consumption_value"] = None

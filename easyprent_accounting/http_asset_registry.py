@@ -56,7 +56,7 @@ class UnitWrite(HttpModel):
     building_id: Annotated[int, Field(strict=True, gt=0)] | None = None
     label: str
     area_sqm: str
-    mea_percent: str
+    mea_percent: str | None = None
     room_count: Annotated[int, Field(strict=True, ge=0)]
     street: str | None = None
     city: str | None = None
@@ -97,7 +97,13 @@ class RoomResponse(RoomWrite):
     archived_at: str | None = None
 
 
+class OrganizationResponse(HttpModel):
+    id: int
+    name: str
+
+
 class AssetListResponse(HttpModel):
+    organizations: list[OrganizationResponse]
     properties: list[PropertyResponse]
     buildings: list[BuildingResponse]
     units: list[UnitResponse]
@@ -135,6 +141,7 @@ router = APIRouter(tags=["Asset Registry"])
 def list_assets(connection: ReadConnection) -> AssetListResponse:
     result = AssetRegistry(connection).list_assets()
     return AssetListResponse(
+        organizations=[_response(OrganizationResponse, row) for row in result["organizations"]],
         properties=[_response(PropertyResponse, row) for row in result["properties"]],
         buildings=[_response(BuildingResponse, row) for row in result["buildings"]],
         units=[_response(UnitResponse, row) for row in result["units"]],

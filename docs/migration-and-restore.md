@@ -1,11 +1,20 @@
 # Migration dry run, cutover, and restore
 
 Use the CLI only for the [frozen Legacy schema](legacy-schema-inventory.md).
-The current WSGI application entry still uses the Legacy schema and rejects a
-version-1 database; deploy the later application cutover before activating v1
-for a running installation. Commands below accept `--database` or use the
-configured `EASYPRENT_DB_PATH`. They require the CLI/server and systemd service
-to be stopped for cutover and restore.
+The ASGI application requires schema version 1. It rejects a Legacy database
+with an explicit migration instruction and never changes that schema during
+startup. Commands below accept `--database` or use the configured
+`EASYPRENT_DB_PATH`. Stop the CLI/server and systemd service before cutover
+or restore.
+
+From the intended non-privileged installation owner, run `./install.sh
+--dry-run` before deployment. The script builds and checks the wheel, validates
+the actual install path and systemd unit, and inspects the database. For a
+Legacy database it runs the complete migration dry run below and prints the
+retained JSON report and verified backup paths. It installs no package or
+service and does not activate the target database. A normal `./install.sh`
+refuses a Legacy database until the explicit cutover is complete. A fresh
+database or a valid v1 database passes the schema preflight directly.
 
 Run a complete rehearsal first:
 
@@ -67,3 +76,9 @@ persists its report before atomically replacing the active path.
 `pre_restore_backup` in the restore report
 records that retained v1 state. The end-to-end test performs dry run, cutover,
 and restore from the same fully synthetic Legacy fixture.
+
+After the successful cutover, run `./install.sh --dry-run` again. The preflight
+must report `"database_state": "v1"`; then run `./install.sh`. Check
+`systemctl status easyprent-accounting.service`, `/api/v1/health`, the
+frontend at `/`, and `/openapi.json`. The installed runtime uses Uvicorn and
+the packaged Vite files; it does not require Node.js.

@@ -1,13 +1,17 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
+import { apiClient } from '../../api/client';
 import type { components } from '../../api/schema';
 import { LinkedDocumentsPanel } from '../linked-documents';
 import { useAssetRegistry } from '../asset-registry';
 
 type LeaseWrite = components['schemas']['LeaseWrite'];
+type LeaseResponse = components['schemas']['LeaseResponse'];
+type TenantResponse = components['schemas']['TenantResponse'];
+type GnuCashAccount = components['schemas']['GnuCashAccountResponse'];
 
 interface Props {
-  initialData?: any;
-  tenants: any[];
+  initialData?: LeaseResponse;
+  tenants: TenantResponse[];
   onSave: (data: LeaseWrite) => Promise<void>;
   onCancel: () => void;
 }
@@ -34,6 +38,38 @@ export function LeaseForm({ initialData, tenants, onSave, onCancel }: Props) {
   const [startDate, setStartDate] = useState(initialData?.start_date || '');
   const [endDate, setEndDate] = useState(initialData?.end_date || '');
   const [status, setStatus] = useState(initialData?.status || 'active');
+  const [accountGuid, setAccountGuid] = useState(initialData?.gnucash_nk_account_guid || '');
+  const [accounts, setAccounts] = useState<GnuCashAccount[]>([]);
+  const [accountsLoading, setAccountsLoading] = useState(true);
+  const [accountError, setAccountError] = useState<string | null>(null);
+
+  const loadAccounts = useCallback(async () => {
+    setAccountsLoading(true);
+    setAccountError(null);
+    try {
+      const settings = await apiClient.GET('/api/v1/settings/gnucash');
+      if (!settings.data) throw new Error('Verbindungseinstellungen konnten nicht geladen werden.');
+      if (!settings.data.configured) {
+        setAccounts([]);
+        setAccountError('GnuCash-Verbindung ist nicht eingerichtet. Bitte unter Einstellungen hinterlegen.');
+        return;
+      }
+      const response = await apiClient.GET('/api/v1/settings/gnucash/accounts');
+      if (!response.data) throw new Error('Konten konnten nicht geladen werden.');
+      setAccounts(response.data);
+    } catch (cause) {
+      setAccountError(
+        'GnuCash-Konten konnten nicht geladen werden: ' +
+        (cause instanceof Error ? cause.message : String(cause)),
+      );
+    } finally {
+      setAccountsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadAccounts();
+  }, [loadAccounts]);
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSaving(true);
@@ -48,8 +84,13 @@ export function LeaseForm({ initialData, tenants, onSave, onCancel }: Props) {
         start_date: startDate,
         end_date: endDate || null,
         status,
-        gnucash_nk_account_guid: initialData?.gnucash_nk_account_guid || null,
-      gnucash_nk_account_name: null // read-only on write usually
+        gnucash_nk_account_guid: accountGuid || null,
+        gnucash_nk_account_name: accountGuid
+          ? accounts.find(account => account.guid === accountGuid)?.full_name
+            || (accountGuid === initialData?.gnucash_nk_account_guid
+              ? initialData?.gnucash_nk_account_name : null)
+            || null
+          : null,
       });
     } finally {
       setIsSaving(false);
@@ -115,6 +156,41 @@ export function LeaseForm({ initialData, tenants, onSave, onCancel }: Props) {
               <option value="terminated">Beendet</option>
             </select>
           </div>
+        </div>
+
+        <div className="form-group" style={{ marginTop: '1rem' }}>
+          <label htmlFor="leaseGnuCashAccount">GnuCash-NK-Vorauszahlungskonto (optional)</label>
+          <select
+            id="leaseGnuCashAccount"
+            className="input"
+            value={accountGuid}
+            onChange={event => setAccountGuid(event.target.value)}
+            aria-describedby={accountError ? 'leaseGnuCashError' : undefined}
+          >
+            <option value="">Kein Konto zugeordnet</option>
+            {accountGuid && !accounts.some(account => account.guid === accountGuid) && (
+              <option value={accountGuid}>
+                {initialData?.gnucash_nk_account_name || accountGuid} (derzeit nicht verfügbar)
+              </option>
+            )}
+            {accounts.map(account => (
+              <option key={account.guid} value={account.guid}>
+                {account.full_name || account.name}
+              </option>
+            ))}
+          </select>
+          {accountsLoading && <p className="hint">GnuCash-Konten werden geladen...</p>}
+          {accountError && (
+            <div id="leaseGnuCashError" className="message error" role="alert">
+              {accountError}{' '}
+              <button type="button" className="button button-small button-outline" onClick={() => void loadAccounts()}>
+                Erneut versuchen
+              </button>
+            </div>
+          )}
+          {!accountsLoading && !accountError && accounts.length === 0 && (
+            <p className="hint">Keine GnuCash-Konten gefunden.</p>
+          )}
         </div>
 
         <div className="actions" style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>

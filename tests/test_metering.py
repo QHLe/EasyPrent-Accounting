@@ -2,9 +2,14 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
+from pathlib import Path
+import sqlite3
+import tempfile
 import unittest
 
 from easyprent_accounting.metering import Metering, meter_consumption_for_period
+from easyprent_accounting.migration import migrate_database
+from tests.legacy_fixture import create_legacy_fixture
 from tests.support import in_memory_database
 
 
@@ -126,6 +131,32 @@ class MeterInterpolationTests(unittest.TestCase):
             "2025-01-31",
         )
         self.assertEqual(consumption, Decimal("20"))
+
+
+class MigratedMeteringTests(unittest.TestCase):
+    def test_meter_listing_and_writes_use_v1_target_relationships(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "legacy.db"
+            create_legacy_fixture(path)
+            migrate_database(path, cutover=True)
+            with sqlite3.connect(path) as connection:
+                connection.row_factory = sqlite3.Row
+                metering = Metering(connection)
+                existing = metering.list_meters()
+                self.assertTrue(existing["meters"])
+                self.assertTrue(
+                    all(meter["property_name"] for meter in existing["meters"] if meter["object_type"] == "property")
+                )
+                property_id = connection.execute("SELECT id FROM properties ORDER BY id LIMIT 1").fetchone()[0]
+                created = metering.create_meter(
+                    {"object_type": "property", "object_id": property_id, "label": "Neu", "unit": "m3"}
+                )
+                metering.update_meter(
+                    created["id"],
+                    {"object_type": "property", "object_id": property_id, "label": "Geändert", "unit": "m3"},
+                )
+                listed = next(m for m in metering.list_meters()["meters"] if m["id"] == created["id"])
+                self.assertEqual((listed["property_id"], listed["label"]), (property_id, "Geändert"))
 
 
 if __name__ == "__main__":

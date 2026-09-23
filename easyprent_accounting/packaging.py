@@ -12,6 +12,17 @@ import tempfile
 import zipfile
 
 
+FRONTEND_FILES = ("package.json", "package-lock.json", "vite.config.ts", "index.html", "tsconfig.json")
+
+
+def _frontend_assets(names: list[str]) -> set[str]:
+    return {
+        name for name in names
+        if name.startswith("easyprent_accounting/static_dist/assets/")
+        and not name.endswith("/")
+    }
+
+
 def assert_wheel_is_clean(wheel_path: Path) -> None:
     """Assert that a built wheel contains no forbidden legacy paths like src/."""
     with zipfile.ZipFile(wheel_path) as archive:
@@ -23,11 +34,21 @@ def assert_wheel_is_clean(wheel_path: Path) -> None:
         required = {
             "easyprent_accounting/__init__.py",
             "easyprent_accounting/config.py",
+            "easyprent_accounting/static_dist/index.html",
             "easyprent_accounting/templates/utility_settlement.ods",
         }
         missing = required.difference(names)
         if missing:
             raise ValueError(f"Built wheel is missing canonical easyprent_accounting package: {names}")
+        assets = _frontend_assets(names)
+        if not assets:
+            raise ValueError("Built wheel contains no Vite assets")
+        index = archive.read("easyprent_accounting/static_dist/index.html").decode("utf-8")
+        if not any(
+            "/" + asset.removeprefix("easyprent_accounting/static_dist/") in index
+            for asset in assets
+        ):
+            raise ValueError("Built wheel index does not reference a packaged Vite asset")
 
 
 def validate_install_target_writable() -> None:
@@ -133,8 +154,28 @@ def build_clean_wheel(
         shutil.copytree(
             package_source,
             build_root / "easyprent_accounting",
-            ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo", "*.egg-info"),
+            ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo", "*.egg-info", "static_dist"),
         )
+
+        for filename in FRONTEND_FILES:
+            source_file = project_root / filename
+            if not source_file.is_file():
+                raise FileNotFoundError(f"Required frontend build file is missing: {source_file}")
+            shutil.copy2(source_file, build_root / filename)
+        frontend_source = project_root / "src"
+        if not frontend_source.is_dir():
+            raise FileNotFoundError(f"Frontend source is missing: {frontend_source}")
+        shutil.copytree(frontend_source, build_root / "src")
+        npm = shutil.which("npm")
+        if npm is None:
+            raise RuntimeError("npm is required to build a distributable wheel")
+        for command in ([npm, "ci", "--ignore-scripts"], [npm, "run", "build"]):
+            completed = subprocess.run(command, capture_output=True, text=True, cwd=build_root)
+            if completed.returncode != 0:
+                raise RuntimeError(
+                    f"Frontend build failed ({' '.join(command)}):\n"
+                    f"{completed.stderr}\n{completed.stdout}"
+                )
 
         cmd = [
             python_executable,
@@ -164,31 +205,31 @@ def _installed_package_matches_wheel(
     python_executable: str,
 ) -> None:
     with zipfile.ZipFile(wheel_path) as archive:
-        config_hash = hashlib.sha256(
-            archive.read("easyprent_accounting/config.py")
-        ).hexdigest()
-        template_hash = hashlib.sha256(
-            archive.read("easyprent_accounting/templates/utility_settlement.ods")
-        ).hexdigest()
+        checked_names = [
+            "easyprent_accounting/config.py",
+            "easyprent_accounting/templates/utility_settlement.ods",
+            "easyprent_accounting/static_dist/index.html",
+            *sorted(_frontend_assets(archive.namelist())),
+        ]
+        expected_hashes = {
+            name.removeprefix("easyprent_accounting/"): hashlib.sha256(archive.read(name)).hexdigest()
+            for name in checked_names
+        }
 
     script = """
 import hashlib
 from importlib import metadata, resources
-from pathlib import Path
-import easyprent_accounting.config as config
 
 assert metadata.distribution("easyprent-accounting")
-assert hashlib.sha256(Path(config.__file__).read_bytes()).hexdigest() == expected_config
-template = resources.files("easyprent_accounting").joinpath(
-    "templates", "utility_settlement.ods"
-)
-assert hashlib.sha256(template.read_bytes()).hexdigest() == expected_template
+package = resources.files("easyprent_accounting")
+for name, expected_hash in expected_hashes.items():
+    actual_hash = hashlib.sha256(package.joinpath(name).read_bytes()).hexdigest()
+    assert actual_hash == expected_hash, name
 """
     # -I discards the caller's CWD and PYTHONPATH, so a stale installed wheel
     # cannot be hidden by the freshly pulled checkout source.
     script = (
-        f"expected_config = {config_hash!r}\n"
-        f"expected_template = {template_hash!r}\n"
+        f"expected_hashes = {expected_hashes!r}\n"
         + script
     )
     with tempfile.TemporaryDirectory(prefix="easyprent-verify-") as foreign_dir:
@@ -289,13 +330,19 @@ def install_checkout(
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Canonical EasyPrent wheel installation")
-    parser.add_argument("command", choices=("preflight-install", "install", "retire-legacy"))
+    parser.add_argument("command", choices=("preflight-install", "build", "install", "retire-legacy"))
     parser.add_argument("project_root", nargs="?", type=Path)
     args = parser.parse_args(argv)
     if args.command == "preflight-install":
         if args.project_root is not None:
             parser.error("preflight-install takes no project root")
         validate_install_target_writable()
+    elif args.command == "build":
+        if args.project_root is None:
+            parser.error("build requires PROJECT_ROOT")
+        with tempfile.TemporaryDirectory(prefix="easyprent-build-check-") as wheel_dir:
+            wheel_path = build_clean_wheel(args.project_root, Path(wheel_dir))
+            print(f"Distributable wheel verified: {wheel_path.name}")
     elif args.command == "install":
         if args.project_root is None:
             parser.error("install requires PROJECT_ROOT")

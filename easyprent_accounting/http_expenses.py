@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Path
+from fastapi import APIRouter, Path, Query
 from pydantic import Field
 
 from .expenses import Expenses
@@ -76,6 +76,27 @@ class ExpenseListResponse(HttpModel):
     expense_categories: list[ExpenseCategoryResponse]
 
 
+class ExpenseDevelopmentCategory(HttpModel):
+    expense_category: str
+    amount: str | None
+    has_uncalculated_expense: bool
+
+
+class ExpenseDevelopmentMonth(HttpModel):
+    month: int
+    total_amount: str | None
+    has_uncalculated_expense: bool
+    categories: list[ExpenseDevelopmentCategory]
+
+
+class ExpenseDevelopmentResponse(HttpModel):
+    year: int
+    total_amount: str | None
+    has_uncalculated_expense: bool
+    categories: list[ExpenseDevelopmentCategory]
+    months: list[ExpenseDevelopmentMonth]
+
+
 class ExpenseLifecycleResponse(HttpModel):
     resource: Literal["expenses"]
     id: int
@@ -112,6 +133,18 @@ def list_expenses(connection: ReadConnection) -> ExpenseListResponse:
         expenses=[_expense_response(row) for row in result["expenses"]],
         expense_categories=[ExpenseCategoryResponse.model_validate(row) for row in result["expense_categories"]],
     )
+
+
+@router.get(
+    "/development",
+    response_model=ExpenseDevelopmentResponse,
+    operation_id="expenses_get_expense_development",
+)
+def expense_development(
+    year: Annotated[int, Query(ge=1900, le=9998)],
+    connection: ReadConnection,
+) -> ExpenseDevelopmentResponse:
+    return ExpenseDevelopmentResponse.model_validate(Expenses(connection).development_for_year(year))
 
 
 @router.post("", status_code=201, response_model=ExpenseResponse)

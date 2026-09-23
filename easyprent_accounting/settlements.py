@@ -393,25 +393,45 @@ class Settlements:
         expense_rows = self.connection.execute(
             """
             SELECT id, object_type, object_id, expense_category, label, amount,
-                   allocation_method, charge_type, recurrence, interval_name,
+                   allocation_method, charge_type,
+                   CASE WHEN charge_type IN ('monthly', 'quarterly', 'yearly')
+                        THEN 'recurring' ELSE 'one_time' END AS recurrence,
+                   CASE WHEN charge_type IN ('monthly', 'quarterly', 'yearly')
+                        THEN charge_type ELSE NULL END AS interval_name,
                    meter_id, consumption_unit, consumption_value, conversion_factor,
                    period_start, period_end,
                    CASE WHEN object_type = 'room'
                         THEN (SELECT unit_id FROM rooms WHERE rooms.id = expense_items.object_id)
                         ELSE NULL END AS target_room_unit_id
             FROM expense_items
-            WHERE (property_id = ? OR (? IS NOT NULL AND (
-                  (object_type = 'unit' AND object_id = ?)
-                  OR (object_type = 'room' AND EXISTS (
-                      SELECT 1 FROM rooms target_room
-                      WHERE target_room.id = expense_items.object_id AND target_room.unit_id = ?))
-                  OR (object_type = 'building' AND object_id =
-                      (SELECT building_id FROM units WHERE id = ?)))))
+            WHERE ((? IS NOT NULL AND
+                    CASE object_type
+                        WHEN 'property' THEN object_id
+                        WHEN 'building' THEN (
+                            SELECT property_id FROM buildings
+                            WHERE id = expense_items.object_id)
+                        WHEN 'unit' THEN (
+                            SELECT b.property_id FROM units u
+                            LEFT JOIN buildings b ON b.id = u.building_id
+                            WHERE u.id = expense_items.object_id)
+                        WHEN 'room' THEN (
+                            SELECT b.property_id FROM rooms r
+                            JOIN units u ON u.id = r.unit_id
+                            LEFT JOIN buildings b ON b.id = u.building_id
+                            WHERE r.id = expense_items.object_id)
+                    END = ?)
+                  OR (? IS NOT NULL AND (
+                      (object_type = 'unit' AND object_id = ?)
+                      OR (object_type = 'room' AND EXISTS (
+                          SELECT 1 FROM rooms target_room
+                          WHERE target_room.id = expense_items.object_id AND target_room.unit_id = ?))
+                      OR (object_type = 'building' AND object_id =
+                          (SELECT building_id FROM units WHERE id = ?)))))
               AND COALESCE(is_archived, 0) = 0
               AND period_end >= ? AND period_start <= ?
             ORDER BY id
             """,
-            (property_id, unit_id, unit_id, unit_id, unit_id, period_start, period_end),
+            (property_id, property_id, unit_id, unit_id, unit_id, unit_id, period_start, period_end),
         ).fetchall()
         if any(row["allocation_method"] == "area" for row in expense_rows):
             for row in lease_rows:

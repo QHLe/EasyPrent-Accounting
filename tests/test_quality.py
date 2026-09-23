@@ -14,29 +14,22 @@ class QualityScriptTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp_dir = self.enterContext(tempfile.TemporaryDirectory())
         self.project_root = Path(self.temp_dir)
-        self.static_directory = self.project_root / "static"
-        self.static_directory.mkdir()
-
         self.project_root_patch = mock.patch.object(
             quality,
             "PROJECT_ROOT",
             self.project_root,
         )
-        self.static_directory_patch = mock.patch.object(
-            quality,
-            "STATIC_DIRECTORY",
-            self.static_directory,
-        )
         self.project_root_patch.start()
-        self.static_directory_patch.start()
         self.addCleanup(self.project_root_patch.stop)
-        self.addCleanup(self.static_directory_patch.stop)
 
     def _write_node_manifests(self, *, package_json: bool = True, package_lock: bool = True) -> None:
         if package_json:
             (self.project_root / "package.json").write_text("{}\n", encoding="utf-8")
         if package_lock:
             (self.project_root / "package-lock.json").write_text("{}\n", encoding="utf-8")
+        (self.project_root / "src" / "api").mkdir(parents=True, exist_ok=True)
+        (self.project_root / "openapi.json").write_text("{}\n", encoding="utf-8")
+        (self.project_root / "src" / "api" / "schema.d.ts").write_text("// generated\n", encoding="utf-8")
 
     def _which(self, executable: str) -> str | None:
         return {
@@ -97,11 +90,27 @@ class QualityScriptTests(unittest.TestCase):
                 mock.call(["/test/bin/npm", "run", "build"]),
                 mock.call([quality.sys.executable, "scripts/export_openapi.py"]),
                 mock.call(["/test/bin/npm", "run", "generate-api"]),
-                mock.call(["git", "diff", "--exit-code", "openapi.json", "src/api/schema.d.ts"]),
                 mock.call([quality.sys.executable, "-m", "unittest", "discover", "-s", "tests"]),
                 mock.call([quality.sys.executable, "-c", "import " + ", ".join(quality.PACKAGE_IMPORTS)]),
             ],
         )
+
+    def test_changed_generated_contract_stops_before_python_tests(self) -> None:
+        self._write_node_manifests()
+
+        def run_with_stale_output(command: list[str]) -> None:
+            if command[-1] == "generate-api":
+                (self.project_root / "src" / "api" / "schema.d.ts").write_text(
+                    "// stale\n", encoding="utf-8"
+                )
+
+        with mock.patch.object(
+            quality.shutil, "which", side_effect=self._which
+        ), mock.patch.object(quality, "run", side_effect=run_with_stale_output) as run_mock:
+            with mock.patch.object(quality.sys, "stderr", io.StringIO()):
+                self.assertEqual(quality.main(), 1)
+
+        self.assertEqual(run_mock.call_count, 6)
 
     def test_npm_failure_stops_quality_checks(self) -> None:
         self._write_node_manifests()

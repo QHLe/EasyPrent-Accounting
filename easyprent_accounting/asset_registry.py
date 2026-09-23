@@ -215,7 +215,11 @@ class AssetRegistry:
                 LEFT JOIN buildings b ON b.property_id = p.id
                 LEFT JOIN units u ON u.building_id = b.id
                 LEFT JOIN rooms r ON r.unit_id = u.id
-                LEFT JOIN expense_items e ON e.property_id = p.id
+                LEFT JOIN expense_items e ON
+                    (e.object_type = 'property' AND e.object_id = p.id)
+                    OR (e.object_type = 'building' AND e.object_id = b.id)
+                    OR (e.object_type = 'unit' AND e.object_id = u.id)
+                    OR (e.object_type = 'room' AND e.object_id = r.id)
                 GROUP BY p.id, o.name
                 ORDER BY p.id
                 """
@@ -281,7 +285,13 @@ class AssetRegistry:
             room["area_share_percent"] = _normalize_area_share_percent(
                 room.get("area_share_percent")
             )
+        organizations = _asset_rows(
+            self.connection.execute(
+                "SELECT id, name FROM organizations ORDER BY name, id"
+            ).fetchall()
+        )
         return {
+            "organizations": organizations,
             "properties": properties,
             "buildings": buildings,
             "units": units,

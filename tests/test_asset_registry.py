@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import sqlite3
+import tempfile
 import unittest
+from pathlib import Path
 
 from easyprent_accounting.asset_registry import AssetRegistry
 from easyprent_accounting.domain import DomainError
+from easyprent_accounting.migration import migrate_database
 from decimal import Decimal
 from tests.support import in_memory_database
+from tests.legacy_fixture import create_legacy_fixture
 
 
 class AssetRegistryTests(unittest.TestCase):
@@ -567,6 +572,33 @@ class PropertyRelationshipTests(unittest.TestCase):
             self.registry.delete_building(1)
 
         self.assertIn("dependencies", str(error.exception))
+
+
+class MigratedAssetRegistryTests(unittest.TestCase):
+    def test_property_expense_counts_survive_v1_migration(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "legacy.db"
+            create_legacy_fixture(path)
+            with sqlite3.connect(path) as legacy:
+                expected = {
+                    row[0]: row[1]
+                    for row in legacy.execute(
+                        "SELECT property_id, COUNT(*) FROM expense_items "
+                        "WHERE property_id IS NOT NULL GROUP BY property_id"
+                    )
+                }
+
+            migrate_database(path, cutover=True)
+            with sqlite3.connect(path) as migrated:
+                migrated.row_factory = sqlite3.Row
+                properties = AssetRegistry(migrated).list_assets()["properties"]
+
+            self.assertTrue(properties)
+            for property_ in properties:
+                self.assertEqual(
+                    property_["expense_count"], expected.get(property_["id"], 0),
+                    property_["name"],
+                )
 
 
 if __name__ == "__main__":

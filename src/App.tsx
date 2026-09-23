@@ -1,48 +1,22 @@
 import { AppShell, type ShellSection } from './app/AppShell';
-import { SettingsView } from './features/settings';
 import { AssetRegistryView } from './features/asset-registry';
+import { DashboardView } from './features/dashboard';
+import { DepreciationView } from './features/depreciation';
+import { ExpensesView } from './features/expenses';
+import { MeteringView } from './features/metering';
+import { SettingsView } from './features/settings';
+import { SettlementsView } from './features/settlements';
 import { TenancyView } from './features/tenancy';
 
-function PendingSection({ title }: Readonly<{ title: string }>) {
-  return (
-    <section className="panel panel-wide">
-      <h2>{title}</h2>
-      <p className="hint">Dieser Bereich wird im neuen Frontend schrittweise bereitgestellt.</p>
-    </section>
-  );
-}
-
 const sections: readonly ShellSection[] = [
-  {
-    id: 'overview',
-    label: 'Übersicht',
-    content: <PendingSection title="Übersicht" />,
-  },
-  {
-    id: 'asset-registry',
-    label: 'Objektverwaltung',
-    content: <AssetRegistryView />,
-  },
-  {
-    id: 'expenses',
-    label: 'Kostenverwaltung',
-    content: <PendingSection title="Kostenverwaltung" />,
-  },
-  {
-    id: 'tenancy',
-    label: 'Mieterverwaltung',
-    content: <TenancyView />,
-  },
-  {
-    id: 'settlements',
-    label: 'Abrechnungen',
-    content: <PendingSection title="Abrechnungen" />,
-  },
-  {
-    id: 'settings',
-    label: 'Einstellungen',
-    content: <SettingsView />,
-  },
+  { id: 'overview', label: 'Übersicht', content: <DashboardView /> },
+  { id: 'asset-registry', label: 'Objektverwaltung', content: <AssetRegistryView /> },
+  { id: 'expenses', label: 'Kostenverwaltung', content: <ExpensesView /> },
+  { id: 'metering', label: 'Zählerverwaltung', content: <MeteringView /> },
+  { id: 'tenancy', label: 'Mieterverwaltung', content: <TenancyView /> },
+  { id: 'settlements', label: 'Abrechnungen', content: <SettlementsView /> },
+  { id: 'depreciation', label: 'Abschreibungen', content: <DepreciationView /> },
+  { id: 'settings', label: 'Einstellungen', content: <SettingsView /> },
 ];
 
 export function App() {

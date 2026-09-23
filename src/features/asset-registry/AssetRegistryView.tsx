@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useAssetRegistry } from './useAssetRegistry';
 import { AssetForm, AssetType } from './AssetForm';
 import { useGlobalMessages } from '../../app/AppShell';
-import { useSettings } from '../settings/useSettings';
+import { useSettings } from '../settings';
 import { InlineListItem } from '../../components/InlineListItem';
 
 export function AssetRegistryView() {
@@ -119,10 +119,10 @@ export function AssetRegistryView() {
             initialData={item} 
             onSave={handleSave} onCancel={() => setEditingItem(null)}
              
+              organizations={assets?.organizations}
               properties={assets?.properties}
             buildings={assets?.buildings}
             units={assets?.units}
-            organizationId={1}
           />
         )}
       />
@@ -211,7 +211,7 @@ export function AssetRegistryView() {
           </div>
           <AssetForm 
             type={creatingType}
-            organizationId={1} 
+            organizations={assets?.organizations}
             onSave={handleSave} 
             onCancel={() => setCreatingType(null)} 
             properties={assets?.properties}

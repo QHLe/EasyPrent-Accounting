@@ -102,7 +102,7 @@ class Metering:
     def lookup_meter(self, meter_id: int) -> sqlite3.Row | None:
         return self.connection.execute(
             """
-            SELECT id, property_id, object_type, object_id, label, unit, is_archived
+            SELECT id, object_type, object_id, label, unit, is_archived
             FROM meters
             WHERE id = ?
             """,
@@ -157,7 +157,14 @@ class Metering:
             self.connection.execute(
                 """
                 SELECT
-                    m.*,
+                    m.id, m.object_type, m.object_id, m.label, m.meter_type,
+                    m.unit, m.serial_number, m.is_archived, m.archived_at,
+                    CASE
+                        WHEN m.object_type = 'property' THEN p_target.id
+                        WHEN m.object_type = 'building' THEN b_target.property_id
+                        WHEN m.object_type = 'unit' THEN b_for_unit.property_id
+                        WHEN m.object_type = 'room' THEN b_for_room.property_id
+                    END AS property_id,
                     p.name AS property_name,
                     CASE
                         WHEN m.object_type = 'property' THEN p_target.name
@@ -185,7 +192,6 @@ class Metering:
                         WHERE mr.meter_id = m.id
                     ) AS reading_count
                 FROM meters m
-                LEFT JOIN properties p ON p.id = m.property_id
                 LEFT JOIN properties p_target
                     ON m.object_type = 'property' AND p_target.id = m.object_id
                 LEFT JOIN buildings b_target
@@ -194,6 +200,15 @@ class Metering:
                     ON m.object_type = 'unit' AND u_target.id = m.object_id
                 LEFT JOIN rooms r_target
                     ON m.object_type = 'room' AND r_target.id = m.object_id
+                LEFT JOIN buildings b_for_unit ON b_for_unit.id = u_target.building_id
+                LEFT JOIN units u_for_room ON u_for_room.id = r_target.unit_id
+                LEFT JOIN buildings b_for_room ON b_for_room.id = u_for_room.building_id
+                LEFT JOIN properties p ON p.id = CASE
+                    WHEN m.object_type = 'property' THEN p_target.id
+                    WHEN m.object_type = 'building' THEN b_target.property_id
+                    WHEN m.object_type = 'unit' THEN b_for_unit.property_id
+                    WHEN m.object_type = 'room' THEN b_for_room.property_id
+                END
                 ORDER BY m.id
                 """
             ).fetchall()
@@ -216,7 +231,6 @@ class Metering:
                     END AS object_name
                 FROM meter_readings mr
                 JOIN meters m ON m.id = mr.meter_id
-                LEFT JOIN properties p ON p.id = m.property_id
                 LEFT JOIN properties p_target
                     ON m.object_type = 'property' AND p_target.id = m.object_id
                 LEFT JOIN buildings b_target
@@ -225,6 +239,15 @@ class Metering:
                     ON m.object_type = 'unit' AND u_target.id = m.object_id
                 LEFT JOIN rooms r_target
                     ON m.object_type = 'room' AND r_target.id = m.object_id
+                LEFT JOIN buildings b_for_unit ON b_for_unit.id = u_target.building_id
+                LEFT JOIN units u_for_room ON u_for_room.id = r_target.unit_id
+                LEFT JOIN buildings b_for_room ON b_for_room.id = u_for_room.building_id
+                LEFT JOIN properties p ON p.id = CASE
+                    WHEN m.object_type = 'property' THEN p_target.id
+                    WHEN m.object_type = 'building' THEN b_target.property_id
+                    WHEN m.object_type = 'unit' THEN b_for_unit.property_id
+                    WHEN m.object_type = 'room' THEN b_for_room.property_id
+                END
                 ORDER BY mr.meter_id, mr.reading_date, mr.id
                 """
             ).fetchall()
@@ -237,11 +260,10 @@ class Metering:
         unit = _require_payload_value(payload, "unit")
         cursor = self.connection.execute(
             """
-            INSERT INTO meters (property_id, object_type, object_id, label, meter_type, unit, serial_number)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO meters (object_type, object_id, label, meter_type, unit, serial_number)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
             (
-                property_id,
                 object_type,
                 object_id,
                 label,
@@ -263,7 +285,7 @@ class Metering:
     def update_meter(self, meter_id: int, payload: dict) -> dict:
         row = self.connection.execute(
             """
-            SELECT id, property_id, object_type, object_id, label, meter_type, unit,
+            SELECT id, object_type, object_id, label, meter_type, unit,
                    serial_number, is_archived
             FROM meters
             WHERE id = ?
@@ -295,12 +317,11 @@ class Metering:
         self.connection.execute(
             """
             UPDATE meters
-            SET property_id = ?, object_type = ?, object_id = ?, label = ?,
+            SET object_type = ?, object_id = ?, label = ?,
                 meter_type = ?, unit = ?, serial_number = ?
             WHERE id = ?
             """,
             (
-                property_id,
                 object_type,
                 object_id,
                 label,

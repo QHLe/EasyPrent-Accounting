@@ -6,6 +6,7 @@ type PropertyWrite = components['schemas']['PropertyWrite'];
 type BuildingWrite = components['schemas']['BuildingWrite'];
 type UnitWrite = components['schemas']['UnitWrite'];
 type RoomWrite = components['schemas']['RoomWrite'];
+type Organization = components['schemas']['AssetListResponse']['organizations'][number];
 
 export type AssetType = 'property' | 'building' | 'unit' | 'room';
 
@@ -18,12 +19,16 @@ interface Props {
   properties?: any[];
   buildings?: any[];
   units?: any[];
+  organizations?: Organization[];
 }
 
-export function AssetForm({ type, initialData, onSave, onCancel, properties = [], buildings = [], units = [], organizationId = 1 }: Props & { organizationId?: number }) {
+export function AssetForm({ type, initialData, onSave, onCancel, properties = [], buildings = [], units = [], organizations = [] }: Props) {
   const [isSaving, setIsSaving] = useState(false);
   
   // Property state
+  const [organizationId, setOrganizationId] = useState<number | ''>(
+    initialData?.organization_id ?? organizations[0]?.id ?? ''
+  );
   const [name, setName] = useState(initialData?.name || '');
   const [address, setAddress] = useState<Address>({
     street: initialData?.street || '',
@@ -52,7 +57,8 @@ export function AssetForm({ type, initialData, onSave, onCancel, properties = []
     setIsSaving(true);
     try {
       if (type === 'property') {
-        const payload: PropertyWrite = { organization_id: initialData?.organization_id || organizationId, name, street: address.street, city: address.city, postal_code: address.postal_code };
+        if (organizationId === '') throw new Error('Eine Organisation muss vorhanden sein.');
+        const payload: PropertyWrite = { organization_id: organizationId, name, street: address.street, city: address.city, postal_code: address.postal_code };
         await onSave(type, payload);
       } else if (type === 'building') {
         const payload: BuildingWrite = { property_id: propertyId === '' ? null : propertyId, name, street: address.street, city: address.city, postal_code: address.postal_code, year_built: yearBuilt === '' ? null : yearBuilt };
@@ -74,6 +80,24 @@ export function AssetForm({ type, initialData, onSave, onCancel, properties = []
       <h4>{initialData ? 'Bearbeiten' : 'Erstellen'}</h4>
       <form onSubmit={handleSubmit}>
         
+        {type === 'property' && (
+          <div className="form-group">
+            <label htmlFor="property-organization">Organisation</label>
+            <select
+              id="property-organization"
+              required
+              className="input"
+              value={organizationId}
+              onChange={event => setOrganizationId(event.target.value ? Number(event.target.value) : '')}
+            >
+              {organizations.length === 0 && <option value="">Keine Organisation vorhanden</option>}
+              {organizations.map(organization => (
+                <option key={organization.id} value={organization.id}>{organization.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
         {/* Fields for Property & Building */}
         {(type === 'property' || type === 'building') && (
           <div className="form-group">

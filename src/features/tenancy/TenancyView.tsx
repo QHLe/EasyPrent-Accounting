@@ -3,11 +3,13 @@ import { useTenancy } from './useTenancy';
 import { TenantForm } from './TenantForm';
 import { LeaseForm } from './LeaseForm';
 import { useGlobalMessages } from '../../app/AppShell';
+import { useDeleteActions } from '../../hooks/useDeleteActions';
 import { InlineListItem } from '../../components/InlineListItem';
 
 export function TenancyView() {
   const { tenancy, isLoading, error, createTenant, updateTenant, deleteTenant, createLease, updateLease, deleteLease } = useTenancy();
   const { showMessage } = useGlobalMessages();
+  const showDeleteActions = useDeleteActions();
 
   const [activeTab, setActiveTab] = useState<'tenants' | 'leases'>('tenants');
   const [filterText, setFilterText] = useState('');
@@ -135,7 +137,7 @@ export function TenancyView() {
                       <strong>{tenant.full_name}</strong>
                       <span style={{ marginLeft: '1rem', color: '#666' }}>{tenant.email || 'Keine E-Mail'}</span>
                     </div>
-                    {editingTenantId !== tenant.id && (
+                    {showDeleteActions && editingTenantId !== tenant.id && (
                       <div style={{ display: 'flex', gap: '0.5rem' }}>
 
                         <button className="button button-small button-outline" onClick={() => handleDeleteTenant(tenant.id)}>Löschen</button>
@@ -184,7 +186,7 @@ export function TenancyView() {
                       </span>
                       <span className="tag" style={{ marginLeft: '1rem' }}>{lease.status === 'active' ? 'Aktiv' : 'Beendet'}</span>
                     </div>
-                    {editingLeaseId !== lease.id && (
+                    {showDeleteActions && editingLeaseId !== lease.id && (
                       <div style={{ display: 'flex', gap: '0.5rem' }}>
 
                         <button className="button button-small button-outline" onClick={() => handleDeleteLease(lease.id)}>Löschen</button>

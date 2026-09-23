@@ -5,8 +5,8 @@ import { useGlobalMessages } from '../../app/AppShell';
 
 export function SettingsView() {
   const { 
-    appSettings, paperlessSettings, paperlessStatus, 
-    updateAppSettings, updatePaperlessSettings, isLoading, error 
+    appSettings, paperlessSettings, paperlessStatus, gnucashSettings,
+    updateAppSettings, updatePaperlessSettings, updateGnucashSettings, isLoading, error
   } = useSettings();
   const { showMessage } = useGlobalMessages();
 
@@ -15,6 +15,13 @@ export function SettingsView() {
   const [plToken, setPlToken] = useState('');
   const [isSavingApp, setIsSavingApp] = useState(false);
   const [isSavingPl, setIsSavingPl] = useState(false);
+  const [gcHost, setGcHost] = useState('');
+  const [gcPort, setGcPort] = useState('5432');
+  const [gcDatabase, setGcDatabase] = useState('');
+  const [gcUsername, setGcUsername] = useState('');
+  const [gcPassword, setGcPassword] = useState('');
+  const [gcSslmode, setGcSslmode] = useState('require');
+  const [isSavingGc, setIsSavingGc] = useState(false);
 
   useEffect(() => {
     if (appSettings) {
@@ -25,6 +32,39 @@ export function SettingsView() {
       setPlToken(paperlessSettings.token_masked || '');
     }
   }, [appSettings, paperlessSettings]);
+
+  useEffect(() => {
+    if (!gnucashSettings) return;
+    setGcHost(gnucashSettings.host);
+    setGcPort(String(gnucashSettings.port));
+    setGcDatabase(gnucashSettings.database);
+    setGcUsername(gnucashSettings.username);
+    setGcPassword('');
+    setGcSslmode(gnucashSettings.sslmode);
+  }, [gnucashSettings]);
+
+  const handleSaveGc = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setIsSavingGc(true);
+    try {
+      await updateGnucashSettings({
+        host: gcHost,
+        port: Number(gcPort),
+        database: gcDatabase,
+        username: gcUsername,
+        password: gcPassword || null,
+        sslmode: gcSslmode,
+      });
+      showMessage({ type: 'success', text: 'GnuCash-Verbindung gespeichert.' });
+    } catch (cause) {
+      showMessage({
+        type: 'error',
+        text: 'GnuCash-Verbindung konnte nicht gespeichert werden: ' + (cause instanceof Error ? cause.message : String(cause)),
+      });
+    } finally {
+      setIsSavingGc(false);
+    }
+  };
 
   const handleSaveApp = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -125,6 +165,68 @@ export function SettingsView() {
           <div className="actions" style={{ marginTop: '1rem' }}>
             <button type="submit" className="button" disabled={isSavingPl}>
               {isSavingPl ? 'Speichere...' : 'Speichern'}
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <div className="panel" style={{ marginBottom: '2rem' }}>
+        <h3>GnuCash-Verbindung</h3>
+        <p className="hint">
+          Diese Verbindung wird für die Auswahl des NK-Vorauszahlungskontos im Mietvertrag verwendet.
+        </p>
+        <form onSubmit={handleSaveGc}>
+          <div className="form-group-row" style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+            <div className="form-group" style={{ flex: 1 }}>
+              <label htmlFor="gcHost">Host</label>
+              <input id="gcHost" required value={gcHost} onChange={event => setGcHost(event.target.value)} className="input" />
+            </div>
+            <div className="form-group" style={{ flex: 1 }}>
+              <label htmlFor="gcPort">Port</label>
+              <input id="gcPort" required type="number" min="1" max="65535" value={gcPort} onChange={event => setGcPort(event.target.value)} className="input" />
+            </div>
+          </div>
+          <div className="form-group-row" style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+            <div className="form-group" style={{ flex: 1 }}>
+              <label htmlFor="gcDatabase">Datenbank</label>
+              <input id="gcDatabase" required value={gcDatabase} onChange={event => setGcDatabase(event.target.value)} className="input" />
+            </div>
+            <div className="form-group" style={{ flex: 1 }}>
+              <label htmlFor="gcUsername">Benutzername</label>
+              <input id="gcUsername" required value={gcUsername} onChange={event => setGcUsername(event.target.value)} className="input" />
+            </div>
+          </div>
+          <div className="form-group-row" style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+            <div className="form-group" style={{ flex: 1 }}>
+              <label htmlFor="gcPassword">Passwort</label>
+              <input
+                id="gcPassword"
+                type="password"
+                required={!gnucashSettings?.password_present}
+                value={gcPassword}
+                onChange={event => setGcPassword(event.target.value)}
+                autoComplete="new-password"
+                className="input"
+              />
+              {gnucashSettings?.password_present && (
+                <p className="hint">Passwort ist hinterlegt. Leer lassen, um es beizubehalten.</p>
+              )}
+            </div>
+            <div className="form-group" style={{ flex: 1 }}>
+              <label htmlFor="gcSslmode">SSL-Modus</label>
+              <select id="gcSslmode" value={gcSslmode} onChange={event => setGcSslmode(event.target.value)} className="input">
+                <option value="disable">disable</option>
+                <option value="allow">allow</option>
+                <option value="prefer">prefer</option>
+                <option value="require">require</option>
+                <option value="verify-ca">verify-ca</option>
+                <option value="verify-full">verify-full</option>
+              </select>
+            </div>
+          </div>
+          <div className="actions" style={{ marginTop: '1rem' }}>
+            <button type="submit" className="button" disabled={isSavingGc}>
+              {isSavingGc ? 'Speichere...' : 'GnuCash-Verbindung speichern'}
             </button>
           </div>
         </form>

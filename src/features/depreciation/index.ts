@@ -1,0 +1,1 @@
+export { DepreciationView } from './DepreciationView';

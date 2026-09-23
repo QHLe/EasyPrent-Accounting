@@ -1,16 +1,23 @@
 from __future__ import annotations
 
+import json
 import os
 import pwd
 import shutil
+import sqlite3
 import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
+from io import StringIO
 from pathlib import Path
 from unittest import mock
 
 from easyprent_accounting import deployment
+from easyprent_accounting.migration import migrate_database
+from easyprent_accounting.runtime_schema import prepare_database
+from tests.legacy_fixture import create_legacy_fixture
 from easyprent_accounting.deployment import (
     CANONICAL_SERVICE_NAME,
     LEGACY_SERVICE_NAME,
@@ -112,7 +119,7 @@ class DeploymentTests(unittest.TestCase):
         self.assertIn(
             f'ExecStart=/usr/bin/env -- "{self.root}/'
             + r"Easy & Prent 20%% \"Miete\" 'Dollar$$\\path"
-            + '/.venv/bin/python" -m easyprent_accounting.server\n',
+            + '/.venv/bin/python" -m uvicorn easyprent_accounting.asgi:app --host 127.0.0.1 --port 8020\n',
             unit,
         )
         self.assertNotIn("Alias=", unit)
@@ -212,7 +219,7 @@ class DeploymentTests(unittest.TestCase):
         if os.geteuid() == 0:
             self.skipTest("root is authorized to probe another runtime account")
 
-        with self.assertRaisesRegex(ValueError, "root privileges"):
+        with self.assertRaisesRegex(ValueError, "unprivileged"):
             validate_systemd_unit(
                 self.project_root,
                 "root",
@@ -565,6 +572,101 @@ class DeploymentTests(unittest.TestCase):
                 if completed.returncode != 0 and tuple(completed.stderr.splitlines()) == sandbox_socket_errors:
                     self.skipTest("systemd-analyze cannot open credential sockets in this sandbox")
                 self.assertEqual(completed.returncode, 0, completed.stderr)
+
+
+    def test_root_cannot_be_configured_as_runtime_user(self) -> None:
+        with self.assertRaisesRegex(ValueError, "unprivileged"):
+            render_systemd_unit(self.project_root, "root")
+
+    def test_database_preflight_validates_legacy_then_v1_without_activating_dry_run(self) -> None:
+        database = self.project_root / "easyprent_accounting.db"
+        report = self.project_root / "preflight.json"
+        create_legacy_fixture(database)
+        source_bytes = database.read_bytes()
+
+        result = deployment.preflight_database(database, report_path=report)
+
+        self.assertEqual(result["database_state"], "legacy")
+        self.assertEqual(database.read_bytes(), source_bytes)
+        self.assertTrue(Path(result["backup"]).is_file())
+        self.assertTrue(json.loads(report.read_text(encoding="utf-8"))["success"])
+
+        migrate_database(database, cutover=True)
+        v1_result = deployment.preflight_database(database)
+        self.assertEqual(v1_result["database_state"], "v1")
+        self.assertEqual(list(self.project_root.glob("*.v1-staging-*.db")), [])
+        with sqlite3.connect(database) as connection:
+            connection.execute("ALTER TABLE properties ADD COLUMN unexpected TEXT")
+        with self.assertRaisesRegex(ValueError, "unexpected schema v1 layout"):
+            deployment.preflight_database(database)
+
+    def test_database_preflight_accepts_missing_and_empty_database(self) -> None:
+        database = self.project_root / "easyprent_accounting.db"
+        self.assertEqual(deployment.preflight_database(database)["database_state"], "new")
+        database.touch()
+        self.assertEqual(deployment.preflight_database(database)["database_state"], "new")
+        self.assertEqual(database.read_bytes(), b"")
+
+    def test_database_preflight_rejects_unknown_schema_without_backup(self) -> None:
+        database = self.project_root / "easyprent_accounting.db"
+        database.write_bytes(b"not sqlite")
+        before = database.read_bytes()
+
+        with self.assertRaises(ValueError):
+            deployment.preflight_database(database)
+
+        self.assertEqual(database.read_bytes(), before)
+        self.assertEqual(list(self.project_root.glob("*.legacy-backup-*.db")), [])
+
+    def test_install_preflight_rejects_v1_with_incompatible_migration_history(self) -> None:
+        database = self.project_root / "easyprent_accounting.db"
+        prepare_database(database)
+        with sqlite3.connect(database) as connection:
+            connection.execute(
+                "UPDATE schema_migrations SET name = 'different initial schema' WHERE version = 1"
+            )
+        before = database.read_bytes()
+        with self.assertRaisesRegex(RuntimeError, "not schema version 1"):
+            prepare_database(database)
+
+        output = StringIO()
+        error = StringIO()
+        with mock.patch.object(deployment, "validate_systemd_unit"), \
+             mock.patch.object(deployment, "deploy_systemd_unit") as deploy, \
+             redirect_stdout(output), redirect_stderr(error):
+            with self.assertRaises(SystemExit) as caught:
+                deployment.main([
+                    "preflight", "--project-root", str(self.project_root),
+                    "--runtime-user", self.runtime_user, "--require-ready",
+                ])
+
+        self.assertEqual(caught.exception.code, 1)
+        self.assertEqual(output.getvalue(), "")
+        self.assertIn("recorded migration differs", error.getvalue())
+        self.assertEqual(database.read_bytes(), before)
+        deploy.assert_not_called()
+
+    def test_install_preflight_requires_explicit_legacy_cutover(self) -> None:
+        output = StringIO()
+        error = StringIO()
+        result = {
+            "database_state": "legacy",
+            "database": str(self.project_root / "easyprent_accounting.db"),
+            "migration_report": str(self.project_root / "preflight.json"),
+        }
+        with mock.patch.object(deployment, "validate_systemd_unit"), \
+             mock.patch.object(deployment, "preflight_database", return_value=result), \
+             redirect_stdout(output), redirect_stderr(error):
+            with self.assertRaises(SystemExit) as caught:
+                deployment.main([
+                    "preflight", "--project-root", str(self.project_root),
+                    "--runtime-user", self.runtime_user, "--require-ready",
+                ])
+
+        self.assertEqual(caught.exception.code, 1)
+        self.assertEqual(json.loads(output.getvalue())["database_state"], "legacy")
+        self.assertIn("migrate --database", error.getvalue())
+        self.assertIn("--cutover", error.getvalue())
 
 
 if __name__ == "__main__":

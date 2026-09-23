@@ -22,6 +22,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/expenses/development": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Expense Development */
+        get: operations["expenses_get_expense_development"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/expenses/{expense_id}": {
         parameters: {
             query?: never;
@@ -1148,6 +1165,8 @@ export interface components {
         };
         /** AssetListResponse */
         AssetListResponse: {
+            /** Organizations */
+            organizations: components["schemas"]["OrganizationResponse"][];
             /** Properties */
             properties: components["schemas"]["PropertyResponse"][];
             /** Buildings */
@@ -1370,6 +1389,23 @@ export interface components {
             /** Paperless Document Id */
             paperless_document_id?: string | null;
         };
+        /**
+         * ErrorDetail
+         * @description A stable machine code and a readable explanation.
+         */
+        ErrorDetail: {
+            /** Code */
+            code: string;
+            /** Reason */
+            reason: string;
+        };
+        /**
+         * ErrorResponse
+         * @description The common HTTP error envelope.
+         */
+        ErrorResponse: {
+            error: components["schemas"]["ErrorDetail"];
+        };
         /** ExpenseCategoryResponse */
         ExpenseCategoryResponse: {
             /** Expense Category */
@@ -1390,6 +1426,39 @@ export interface components {
             id: number;
             /** Deleted */
             deleted: boolean;
+        };
+        /** ExpenseDevelopmentCategory */
+        ExpenseDevelopmentCategory: {
+            /** Expense Category */
+            expense_category: string;
+            /** Amount */
+            amount: string | null;
+            /** Has Uncalculated Expense */
+            has_uncalculated_expense: boolean;
+        };
+        /** ExpenseDevelopmentMonth */
+        ExpenseDevelopmentMonth: {
+            /** Month */
+            month: number;
+            /** Total Amount */
+            total_amount: string | null;
+            /** Has Uncalculated Expense */
+            has_uncalculated_expense: boolean;
+            /** Categories */
+            categories: components["schemas"]["ExpenseDevelopmentCategory"][];
+        };
+        /** ExpenseDevelopmentResponse */
+        ExpenseDevelopmentResponse: {
+            /** Year */
+            year: number;
+            /** Total Amount */
+            total_amount: string | null;
+            /** Has Uncalculated Expense */
+            has_uncalculated_expense: boolean;
+            /** Categories */
+            categories: components["schemas"]["ExpenseDevelopmentCategory"][];
+            /** Months */
+            months: components["schemas"]["ExpenseDevelopmentMonth"][];
         };
         /** ExpenseLifecycleResponse */
         ExpenseLifecycleResponse: {
@@ -1728,6 +1797,13 @@ export interface components {
             lease_id: number;
             /** Tenant Name */
             tenant_name: string;
+        };
+        /** OrganizationResponse */
+        OrganizationResponse: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
         };
         /** PaperlessSettingsResponse */
         PaperlessSettingsResponse: {
@@ -2177,7 +2253,7 @@ export interface components {
             /** Area Sqm */
             area_sqm: string;
             /** Mea Percent */
-            mea_percent: string;
+            mea_percent?: string | null;
             /** Room Count */
             room_count: number;
             /** Street */
@@ -2216,7 +2292,7 @@ export interface components {
             /** Area Sqm */
             area_sqm: string;
             /** Mea Percent */
-            mea_percent: string;
+            mea_percent?: string | null;
             /** Room Count */
             room_count: number;
             /** Street */
@@ -2225,23 +2301,6 @@ export interface components {
             city?: string | null;
             /** Postal Code */
             postal_code?: string | null;
-        };
-        /**
-         * ErrorDetail
-         * @description A stable machine code and a readable explanation.
-         */
-        ErrorDetail: {
-            /** Code */
-            code: string;
-            /** Reason */
-            reason: string;
-        };
-        /**
-         * ErrorResponse
-         * @description The common HTTP error envelope.
-         */
-        ErrorResponse: {
-            error: components["schemas"]["ErrorDetail"];
         };
     };
     responses: never;
@@ -2270,6 +2329,15 @@ export interface operations {
                     "application/json": components["schemas"]["ExpenseListResponse"];
                 };
             };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
         };
     };
     expenses_create_expense: {
@@ -2294,7 +2362,38 @@ export interface operations {
                     "application/json": components["schemas"]["ExpenseResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    expenses_get_expense_development: {
+        parameters: {
+            query: {
+                year: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExpenseDevelopmentResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2329,7 +2428,7 @@ export interface operations {
                     "application/json": components["schemas"]["ExpenseResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2360,7 +2459,7 @@ export interface operations {
                     "application/json": components["schemas"]["ExpenseDeleteResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2391,7 +2490,7 @@ export interface operations {
                     "application/json": components["schemas"]["ExpenseLifecycleResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2422,7 +2521,7 @@ export interface operations {
                     "application/json": components["schemas"]["ExpenseLifecycleResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2451,6 +2550,15 @@ export interface operations {
                     "application/json": components["schemas"]["AssetListResponse"];
                 };
             };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
         };
     };
     asset_registry_create_property: {
@@ -2475,7 +2583,7 @@ export interface operations {
                     "application/json": components["schemas"]["PropertyResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2510,7 +2618,7 @@ export interface operations {
                     "application/json": components["schemas"]["PropertyResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2541,7 +2649,7 @@ export interface operations {
                     "application/json": components["schemas"]["AssetDeleteResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2574,7 +2682,7 @@ export interface operations {
                     "application/json": components["schemas"]["BuildingResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2609,7 +2717,7 @@ export interface operations {
                     "application/json": components["schemas"]["BuildingResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2640,7 +2748,7 @@ export interface operations {
                     "application/json": components["schemas"]["AssetDeleteResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2673,7 +2781,7 @@ export interface operations {
                     "application/json": components["schemas"]["UnitResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2708,7 +2816,7 @@ export interface operations {
                     "application/json": components["schemas"]["UnitResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2739,7 +2847,7 @@ export interface operations {
                     "application/json": components["schemas"]["AssetDeleteResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2772,7 +2880,7 @@ export interface operations {
                     "application/json": components["schemas"]["RoomResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2807,7 +2915,7 @@ export interface operations {
                     "application/json": components["schemas"]["RoomResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2838,7 +2946,7 @@ export interface operations {
                     "application/json": components["schemas"]["AssetDeleteResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2869,7 +2977,7 @@ export interface operations {
                     "application/json": components["schemas"]["AssetLifecycleResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2900,7 +3008,7 @@ export interface operations {
                     "application/json": components["schemas"]["AssetLifecycleResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2931,7 +3039,7 @@ export interface operations {
                     "application/json": components["schemas"]["AssetLifecycleResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2962,7 +3070,7 @@ export interface operations {
                     "application/json": components["schemas"]["AssetLifecycleResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2993,7 +3101,7 @@ export interface operations {
                     "application/json": components["schemas"]["AssetLifecycleResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -3024,7 +3132,7 @@ export interface operations {
                     "application/json": components["schemas"]["AssetLifecycleResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -3055,7 +3163,7 @@ export interface operations {
                     "application/json": components["schemas"]["AssetLifecycleResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -3086,7 +3194,7 @@ export interface operations {
                     "application/json": components["schemas"]["AssetLifecycleResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -3115,6 +3223,15 @@ export interface operations {
                     "application/json": components["schemas"]["MeteringResponse"];
                 };
             };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
         };
     };
     metering_create_meter: {
@@ -3139,7 +3256,7 @@ export interface operations {
                     "application/json": components["schemas"]["MeterResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -3174,7 +3291,7 @@ export interface operations {
                     "application/json": components["schemas"]["MeterResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -3205,7 +3322,7 @@ export interface operations {
                     "application/json": components["schemas"]["MeterDeleteResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -3238,7 +3355,7 @@ export interface operations {
                     "application/json": components["schemas"]["ReadingResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -3269,7 +3386,7 @@ export interface operations {
                     "application/json": components["schemas"]["MeterDeleteResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -3303,7 +3420,7 @@ export interface operations {
                     "application/json": components["schemas"]["ConsumptionResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -3334,7 +3451,7 @@ export interface operations {
                     "application/json": components["schemas"]["MeterLifecycleResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -3365,7 +3482,7 @@ export interface operations {
                     "application/json": components["schemas"]["MeterLifecycleResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -3394,6 +3511,15 @@ export interface operations {
                     "application/json": components["schemas"]["TenancyResponse"];
                 };
             };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
         };
     };
     tenancy_create_tenant: {
@@ -3418,7 +3544,7 @@ export interface operations {
                     "application/json": components["schemas"]["TenantResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -3453,7 +3579,7 @@ export interface operations {
                     "application/json": components["schemas"]["TenantResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -3484,7 +3610,7 @@ export interface operations {
                     "application/json": components["schemas"]["TenancyDeleteResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -3517,7 +3643,7 @@ export interface operations {
                     "application/json": components["schemas"]["LeaseResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -3552,7 +3678,7 @@ export interface operations {
                     "application/json": components["schemas"]["LeaseResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -3583,7 +3709,7 @@ export interface operations {
                     "application/json": components["schemas"]["TenancyDeleteResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -3612,6 +3738,15 @@ export interface operations {
                     "application/json": components["schemas"]["ApplicationSettingsResponse"];
                 };
             };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
         };
     };
     settings_and_backup_write_application_settings: {
@@ -3636,7 +3771,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApplicationSettingsResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -3665,6 +3800,15 @@ export interface operations {
                     "application/json": components["schemas"]["PaperlessSettingsResponse"];
                 };
             };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
         };
     };
     settings_and_backup_write_paperless_settings: {
@@ -3689,7 +3833,7 @@ export interface operations {
                     "application/json": components["schemas"]["PaperlessSettingsResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -3718,6 +3862,15 @@ export interface operations {
                     "application/json": components["schemas"]["GnuCashSettingsResponse"];
                 };
             };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
         };
     };
     settings_and_backup_write_gnucash_settings: {
@@ -3742,7 +3895,7 @@ export interface operations {
                     "application/json": components["schemas"]["GnuCashSettingsResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -3771,6 +3924,15 @@ export interface operations {
                     "application/json": components["schemas"]["GnuCashAccountResponse"][];
                 };
             };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
         };
     };
     settings_and_backup_export_application: {
@@ -3789,6 +3951,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApplicationExportResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -3815,7 +3986,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApplicationImportResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -3844,6 +4015,15 @@ export interface operations {
                     "application/json": components["schemas"]["PaperlessStatusResponse"];
                 };
             };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
         };
     };
     linked_documents_list_documents: {
@@ -3867,7 +4047,7 @@ export interface operations {
                     "application/json": components["schemas"]["DocumentListResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -3903,7 +4083,7 @@ export interface operations {
                     "application/json": components["schemas"]["DocumentListResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -3936,7 +4116,7 @@ export interface operations {
                     "application/json": components["schemas"]["DocumentDeleteResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -3967,7 +4147,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -4001,7 +4181,7 @@ export interface operations {
                     "application/json": components["schemas"]["SettlementResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -4034,7 +4214,7 @@ export interface operations {
                     "application/json": components["schemas"]["SettlementRunLookupResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -4067,7 +4247,7 @@ export interface operations {
                     "application/json": components["schemas"]["SettlementRunResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -4098,7 +4278,7 @@ export interface operations {
                     "application/json": components["schemas"]["SettlementRunOverviewResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -4131,7 +4311,7 @@ export interface operations {
                     "application/json": components["schemas"]["SettlementRefreshResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -4162,7 +4342,7 @@ export interface operations {
                     "application/json": components["schemas"]["SettlementRunRefreshResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -4193,7 +4373,7 @@ export interface operations {
                     "application/json": components["schemas"]["SettlementRunOverviewResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -4225,7 +4405,7 @@ export interface operations {
                     "application/json": components["schemas"]["SettlementRunOverviewResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -4257,7 +4437,7 @@ export interface operations {
                     "application/json": components["schemas"]["SettlementRunOverviewResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -4292,7 +4472,7 @@ export interface operations {
                     "application/pdf": string;
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -4327,7 +4507,7 @@ export interface operations {
                     "application/vnd.oasis.opendocument.spreadsheet": string;
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -4359,7 +4539,7 @@ export interface operations {
                     "application/vnd.oasis.opendocument.spreadsheet": string;
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -4388,6 +4568,15 @@ export interface operations {
                     "application/json": components["schemas"]["AssetResponse"][];
                 };
             };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
         };
     };
     create_depreciation_asset: {
@@ -4412,7 +4601,7 @@ export interface operations {
                     "application/json": components["schemas"]["AssetResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -4443,7 +4632,7 @@ export interface operations {
                     "application/json": components["schemas"]["ScheduleResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -4472,6 +4661,15 @@ export interface operations {
                     "application/json": components["schemas"]["DashboardSummaryResponse"];
                 };
             };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
         };
     };
     health_health: {
@@ -4492,6 +4690,15 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };

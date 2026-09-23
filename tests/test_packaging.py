@@ -1,6 +1,13 @@
 from __future__ import annotations
 
 import io
+import json
+import os
+import re
+import socket
+import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 import shutil
 import subprocess
@@ -10,6 +17,9 @@ import unittest
 import zipfile
 from unittest import mock
 
+from easyprent_accounting import packaging
+from easyprent_accounting.migration import migrate_database
+from tests.legacy_fixture import create_legacy_fixture
 from easyprent_accounting.packaging import (
     assert_wheel_is_clean,
     build_clean_wheel,
@@ -28,8 +38,9 @@ class PackagingTests(unittest.TestCase):
         temp_dir = Path(self.enterContext(tempfile.TemporaryDirectory()))
         project_root = temp_dir / "project"
         project_root.mkdir()
-        for filename in ("pyproject.toml", "README.md"):
+        for filename in ("pyproject.toml", "README.md", *packaging.FRONTEND_FILES):
             shutil.copy2(REPOSITORY_ROOT / filename, project_root / filename)
+        shutil.copytree(REPOSITORY_ROOT / "src", project_root / "src")
         shutil.copytree(
             REPOSITORY_ROOT / "easyprent_accounting",
             project_root / "easyprent_accounting",
@@ -58,7 +69,7 @@ where = ["."]
 include = ["easyprent_accounting*"]
 
 [tool.setuptools.package-data]
-"easyprent_accounting" = ["templates/*.ods"]
+"easyprent_accounting" = ["templates/*.ods", "static_dist/index.html", "static_dist/assets/*"]
 """,
             encoding="utf-8",
         )
@@ -72,6 +83,9 @@ include = ["easyprent_accounting*"]
         )
         if stale:
             (package / "old_marker.py").write_text("OLD = True\n", encoding="utf-8")
+        for filename in packaging.FRONTEND_FILES:
+            shutil.copy2(REPOSITORY_ROOT / filename, root / filename)
+        shutil.copytree(REPOSITORY_ROOT / "src", root / "src")
         return root
 
     def _legacy_wheel(self, directory: Path) -> Path:
@@ -132,6 +146,9 @@ include = ["easyprent_accounting*"]
         dirty_build_marker = dirty_build / "dirty_leak.py"
         dirty_build_marker.write_text("# dirty", encoding="utf-8")
 
+        stale_dist = project_root / "easyprent_accounting" / "static_dist"
+        (stale_dist / "index.html").write_text("stale frontend", encoding="utf-8")
+
         dirty_egg = project_root / "easy_rem.egg-info"
         dirty_egg.mkdir(exist_ok=True)
         dirty_egg_marker = dirty_egg / "PKG-INFO"
@@ -153,6 +170,12 @@ include = ["easyprent_accounting*"]
                 self.assertIn("easyprent_accounting/__init__.py", names)
                 self.assertIn("easyprent_accounting/cli.py", names)
                 self.assertIn("easyprent_accounting/templates/utility_settlement.ods", names)
+                self.assertIn("easyprent_accounting/static_dist/index.html", names)
+                self.assertTrue(packaging._frontend_assets(names))
+                self.assertNotIn(
+                    b"stale frontend",
+                    archive.read("easyprent_accounting/static_dist/index.html"),
+                )
 
             self.assertTrue(dirty_build_marker.is_file())
             self.assertTrue(dirty_egg_marker.is_file())
@@ -348,6 +371,125 @@ print(len(doc))
                 f"ODS fallback rendering failed in foreign CWD:\n{completed.stderr}",
             )
             self.assertGreater(int(completed.stdout.strip()), 0)
+
+    @unittest.skipUnless(shutil.which("npm"), "npm is required to build the wheel")
+    def test_repeated_clean_builds_have_identical_vite_artifacts(self) -> None:
+        project_root = self._copy_project_source()
+        temp_dir = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        wheels = [
+            build_clean_wheel(project_root, temp_dir / label, sys.executable)
+            for label in ("first", "second")
+        ]
+        artifacts = []
+        for wheel in wheels:
+            with zipfile.ZipFile(wheel) as archive:
+                artifacts.append({
+                    name: archive.read(name)
+                    for name in archive.namelist()
+                    if name.startswith("easyprent_accounting/static_dist/")
+                    and not name.endswith("/")
+                })
+        self.assertEqual(artifacts[0], artifacts[1])
+
+    @unittest.skipUnless(
+        shutil.which("npm") and shutil.which("systemd-analyze") and os.geteuid() != 0,
+        "dry-run needs npm, systemd-analyze, and a non-root checkout owner",
+    )
+    def test_install_script_dry_run_checks_legacy_migration_without_installing(self) -> None:
+        project_root = self._copy_project_source()
+        shutil.copy2(REPOSITORY_ROOT / "install.sh", project_root / "install.sh")
+        database = project_root / "easyprent_accounting.db"
+        create_legacy_fixture(database)
+        before = database.read_bytes()
+
+        completed = subprocess.run(
+            ["bash", str(project_root / "install.sh"), "--dry-run"],
+            cwd=project_root, capture_output=True, text=True,
+        )
+
+        self.assertEqual(completed.returncode, 0, completed.stderr + completed.stdout)
+        self.assertIn('"database_state": "legacy"', completed.stdout)
+        self.assertEqual(database.read_bytes(), before)
+        self.assertFalse((project_root / ".venv").exists())
+        self.assertEqual(len(list(project_root.glob("*.legacy-backup-*.db"))), 1)
+        reports = list(project_root.glob("*.migration-report-*.json"))
+        self.assertEqual(len(reports), 1)
+        self.assertTrue(json.loads(reports[0].read_text(encoding="utf-8"))["success"])
+
+    @unittest.skipUnless(shutil.which("npm"), "npm is required to build the wheel")
+    def test_installed_wheel_starts_with_migrated_database_and_no_node(self) -> None:
+        project_root = self._copy_project_source()
+        temp_dir = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        wheel = build_clean_wheel(project_root, temp_dir / "wheels", sys.executable)
+        installed = temp_dir / "installed"
+        subprocess.run(
+            [sys.executable, "-m", "pip", "install", "--no-deps", "--target", str(installed), str(wheel)],
+            check=True, capture_output=True, text=True,
+        )
+
+        database = temp_dir / "active.db"
+        create_legacy_fixture(database)
+        migrate_database(database, cutover=True)
+        foreign = temp_dir / "runtime"
+        foreign.mkdir()
+        empty_path = temp_dir / "no-node-on-path"
+        empty_path.mkdir()
+        env = os.environ.copy()
+        env.update(
+            PYTHONPATH=str(installed),
+            PATH=str(empty_path),
+            EASYPRENT_PROJECT_ROOT=str(foreign),
+            EASYPRENT_DB_PATH=str(database),
+        )
+        with socket.socket() as candidate:
+            candidate.bind(("127.0.0.1", 0))
+            port = candidate.getsockname()[1]
+        server_script = """
+import shutil
+import uvicorn
+assert shutil.which("node") is None
+import easyprent_accounting
+assert "/installed/" in easyprent_accounting.__file__
+uvicorn.run("easyprent_accounting.asgi:app", host="127.0.0.1", port=port, log_level="error")
+"""
+        log = temp_dir / "server.log"
+        with log.open("w+", encoding="utf-8") as log_handle:
+            process = subprocess.Popen(
+                [sys.executable, "-c", f"port = {port}\n" + server_script],
+                cwd=foreign, env=env, stdout=log_handle, stderr=subprocess.STDOUT,
+            )
+            try:
+                opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+                base = f"http://127.0.0.1:{port}"
+                for _ in range(100):
+                    if process.poll() is not None:
+                        break
+                    try:
+                        with opener.open(base + "/api/v1/health", timeout=0.2) as response:
+                            health = json.load(response)
+                        break
+                    except (OSError, urllib.error.URLError):
+                        time.sleep(0.1)
+                else:
+                    self.fail("installed ASGI server did not become healthy")
+                self.assertIsNone(process.poll(), log.read_text(encoding="utf-8"))
+                self.assertEqual(health["status"], "ok")
+                with opener.open(base + "/", timeout=2) as response:
+                    index = response.read().decode("utf-8")
+                asset = re.search(r'/(assets/[^"\s]+\.js)', index)
+                self.assertIsNotNone(asset, index)
+                with opener.open(base + "/" + asset.group(1), timeout=2) as response:
+                    self.assertEqual(response.status, 200)
+                    self.assertTrue(response.read())
+            finally:
+                process.terminate()
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait(timeout=5)
+        self.assertNotIn("Traceback", log.read_text(encoding="utf-8"))
+
 
 
 if __name__ == "__main__":

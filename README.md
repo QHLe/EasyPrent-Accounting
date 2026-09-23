@@ -8,44 +8,35 @@ Die erste Version deckt vier Kernbereiche ab:
 - Nebenkostenabrechnung auf Basis konfigurierbarer Verteilerschlüssel
 - Abschreibungsberechnung als vorbereiteter steuerlicher Baustein mit linearer AfA
 
-## CLI
+## Installation und Start
 
-```bash
-pip install .
-easyprent-accounting start
-```
-
-Oder direkt aus dem Checkout:
+Für einen lokalen Start aus dem Checkout mit Python 3.11+ und installierten
+Python-Abhängigkeiten:
 
 ```bash
 python3 -m easyprent_accounting.cli start
 ```
 
-Danach ist die Anwendung unter `http://localhost:8020` erreichbar.
+Danach ist die Anwendung unter `http://localhost:8020` erreichbar. Für den
+Produktionsbetrieb baut `install.sh` den Vite-Produktionsstand in ein
+Python-Wheel und richtet einen systemd-Dienst mit Uvicorn ein:
 
-Verfügbare Befehle für einen direkt aus dem Checkout gestarteten Server:
+```bash
+./install.sh --dry-run
+./install.sh
+```
 
-- `python3 -m easyprent_accounting.cli start`
-- `python3 -m easyprent_accounting.cli stop`
-- `python3 -m easyprent_accounting.cli restart`
-- `python3 -m easyprent_accounting.cli update`
+Der Checkout muss einem nicht privilegierten Unix-Benutzer gehören.
+`--dry-run` prüft Wheel-Bau, Pfade, Laufzeitrechte, systemd-Unit und
+Datenbankschema ohne Paket- oder Dienstinstallation. Bei einem Legacy-Schema
+führt er eine vollständige Migrationsprobe durch und schreibt JSON-Bericht
+sowie verifizierte Sicherung. Vor `./install.sh` muss der explizite
+[Migrations-Cutover](docs/migration-and-restore.md) abgeschlossen sein.
+Node.js/npm sind zum Bauen nötig, nicht für den installierten Dienst.
+Weitere Voraussetzungen und Update-Schritte stehen in der
+[Wartungsanleitung](docs/maintenance.md).
 
-`update` führt `git pull --ff-only` aus, installiert das Python-Paket aus dem
-aktualisierten Checkout neu und startet einen laufenden Server anschließend
-automatisch neu. Node.js ist keine Laufzeitabhängigkeit.
-
-Logs und PID-Datei liegen unter `.easyprent/`.
-
-Die einmalige Migration des bekannten unversionierten SQLite-Schemas wird
-explizit über `migrate --dry-run` geprüft und erst mit `migrate --cutover`
-aktiviert. `restore --backup` stellt die datierte Sicherung wieder her. Die
-[Migrations- und Restore-Anleitung](docs/migration-and-restore.md) beschreibt
-die Befehle, Prüfberichte und den aktuell noch ausstehenden Anwendungscutover.
-
-Wurde die Anwendung mit `install.sh` als systemd-Dienst eingerichtet, wird der
-Server von `easyprent-accounting.service` verwaltet. In diesem Fall dürfen nicht parallel
-die direkten `start`- oder `restart`-Befehle verwendet werden, da sonst Port
-8020 bereits belegt ist. Für den installierten Dienst gelten stattdessen:
+Ein bestehender systemd-Dienst wird mit diesen Befehlen verwaltet:
 
 ```bash
 systemctl status easyprent-accounting.service
@@ -53,47 +44,23 @@ systemctl restart easyprent-accounting.service
 journalctl -u easyprent-accounting.service -n 100 --no-pager
 ```
 
-Für eine systemd-Installation wird `update` mit root-Rechten ausgeführt:
+Für einen direkt gestarteten CLI-Server stehen `start`, `stop` und
+`restart` zur Verfügung. Nicht parallel zum systemd-Dienst starten.
+`easyprent-accounting migrate --dry-run`, `migrate --cutover` und
+`restore --backup` sind die öffentlichen Datenbankbefehle; die
+[Migrationsanleitung](docs/migration-and-restore.md) beschreibt Bericht,
+Sicherung, Cutover und Wiederherstellung.
 
-```bash
-sudo .venv/bin/python -m easyprent_accounting.cli update
-```
+## API und Frontend
 
-Der Befehl ersetzt eine vorhandene alte `easy-prent.service`-Unit erst nach
-erfolgreichem Preflight und kanonischem Dienststart. Bei einem Fehler bleibt
-die Legacy-Unit für einen Rollback erhalten. Beim einmaligen Wechsel von
-einem Checkout vor dieser Update-Logik zuerst `git pull --ff-only` ausführen
-und danach `install.sh` aus dem aktualisierten Checkout erneut starten; bereits
-geladener alter CLI-Code kann sich nicht nachträglich selbst aktualisieren.
-
-`install.sh` und `update` ändern weder Besitzer noch Inhalte einer vorhandenen
-Datenbank. Ist `easyprent_accounting.db` aus einem alten root-Dienst nicht für
-den neuen Laufzeitbenutzer schreibbar oder enthält `.venv` fremde Besitzer,
-stoppt der Preflight mit dem betroffenen Pfad. Vor einer manuellen Korrektur
-die Datenbank sichern und Besitzer sowie Rechte gezielt prüfen.
-
-## Tests
-
-```bash
-python3 -m unittest discover -s tests
-```
-
-## API-Ueberblick
-
-- `GET /` HTML-Dashboard mit Demo-Daten
-- `GET /api/overview` Zusammenfassung und Listen
-- `POST /api/properties` Immobilie anlegen
-- `POST /api/buildings` Gebäude anlegen
-- `POST /api/units` Einheit anlegen
-- `POST /api/tenants` Mieter anlegen
-- `POST /api/leases` Mietvertrag anlegen
-- `POST /api/expenses` Nebenkostenposition anlegen
-- `POST /api/depreciation-assets` Abschreibungsobjekt anlegen
-- `GET /api/settlements?property_id=...&period_start=...&period_end=...`
-- `GET /api/settlements/document.ods?property_id=...&lease_id=...&period_start=...&period_end=...`
-  befüllt die ODS-Vorlage und lädt die editierbare Abrechnung herunter. Für eine
-  einzelne Wohnung ohne Objekt wird stattdessen `unit_id=...` übergeben.
-- `GET /api/depreciation-schedule?year=...`
+FastAPI erzeugt den API-Vertrag unter `/openapi.json` und die interaktive
+Dokumentation unter `/docs`. Der Health-Endpunkt ist
+`GET /api/v1/health`. Fachliche Endpunkte unter `/api/v1/` decken
+Anlagen, Mieter, Zähler, Kosten, Abrechnungen, Dokumente, Einstellungen,
+Abschreibung und Dashboard ab. Die React-Anwendung wird unter `/` aus dem
+Python-Paket ausgeliefert. [Architektur](Structure.md) und
+[Wartung](docs/maintenance.md) beschreiben die Modulgrenzen und
+Typgenerierung.
 
 ## ODS-Vorlage für Nebenkostenabrechnungen
 
@@ -163,6 +130,7 @@ Lokal läuft derselbe Befehl wie in CI:
 python3 scripts/quality.py
 ```
 
-Der kanonische Qualitätslauf benötigt Python, Node.js und npm. Er installiert
-die Node-Abhängigkeiten reproduzierbar mit `npm ci --ignore-scripts`; die
-Produktionsinstallation und der laufende Server benötigen Node.js nicht.
+Der Qualitätslauf benötigt Python, Node.js und npm; er installiert die
+Node-Abhängigkeiten reproduzierbar mit `npm ci --ignore-scripts`, prüft
+TypeScript, Vitest und den Vite-Build, gleicht generierte API-Typen ab und
+führt die Python-Tests aus. Der installierte Server benötigt Node.js nicht.

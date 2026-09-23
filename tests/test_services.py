@@ -1320,12 +1320,12 @@ class ExpenseServiceTests(unittest.TestCase):
         )
         self.assertEqual(created["charge_type"], "yearly")
         row = self.connection.execute(
-            "SELECT charge_type, recurrence, interval_name FROM expense_items WHERE id = ?",
+            "SELECT charge_type FROM expense_items WHERE id = ?",
             (created["id"],),
         ).fetchone()
         self.assertEqual(row["charge_type"], "yearly")
-        self.assertEqual(row["recurrence"], "recurring")
-        self.assertEqual(row["interval_name"], "yearly")
+        self.assertEqual(created["recurrence"], "recurring")
+        self.assertEqual(created["interval"], "yearly")
 
     def test_settlement_excludes_archived_expenses(self) -> None:
         created = create_expense(

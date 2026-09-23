@@ -2,43 +2,62 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from io import BytesIO
+import os
 from pathlib import Path
+import socket
 import sqlite3
 import tempfile
 import threading
-from typing import TYPE_CHECKING, cast
+import time
 
 from fastapi.testclient import TestClient
+import uvicorn
 
-if TYPE_CHECKING:
-    from wsgiref.simple_server import WSGIServer
-
-from easyprent_accounting.db import SCHEMA, initialize_database
-from tests.fixtures.demo_data import seed_demo_data
 from easyprent_accounting.asgi import create_asgi_app
-from easyprent_accounting.config import AppConfig, SenderAddress, get_global_config, set_global_config
+from easyprent_accounting.config import AppConfig, SenderAddress, get_global_config, load_config, set_global_config
+from easyprent_accounting.db import SCHEMA, initialize_database
+from easyprent_accounting.runtime_schema import prepare_database
+from tests.fixtures.demo_data import seed_demo_data
 from easyprent_accounting.integrations.gnucash import GnuCashReader
 from easyprent_accounting.integrations.paperless import PaperlessAdapter
-from easyprent_accounting.server import create_server
+
+
+@dataclass(frozen=True)
+class RunningServer:
+    server_port: int
 
 
 @contextmanager
-def running_server(host: str = "127.0.0.1", port: int = 0) -> Iterator[WSGIServer]:
-    server = create_server(host, port)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
+def running_server(host: str = "127.0.0.1", port: int = 0) -> Iterator[RunningServer]:
+    """Serve the production ASGI app on an ephemeral local socket."""
+
+    config = load_config(dict(os.environ))
+    prepare_database(config.db_path)
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    listener.bind((host, port))
+    listener.listen()
+    address_port = listener.getsockname()[1]
+    app = create_asgi_app(config)
+    server = uvicorn.Server(uvicorn.Config(app, host=host, port=address_port, log_level="error"))
+    thread = threading.Thread(target=server.run, kwargs={"sockets": [listener]}, daemon=True)
     try:
         thread.start()
-        try:
-            yield server
-        finally:
-            server.shutdown()
-            thread.join(5)
+        deadline = time.monotonic() + 5
+        while not server.started:
+            if not thread.is_alive():
+                raise RuntimeError("ASGI server exited before startup")
+            if time.monotonic() >= deadline:
+                raise RuntimeError("ASGI server did not start")
+            time.sleep(0.01)
+        yield RunningServer(address_port)
     finally:
-        server.server_close()
+        server.should_exit = True
+        if thread.is_alive():
+            thread.join(5)
+        listener.close()
 
 
 @contextmanager
@@ -58,13 +77,6 @@ def mocked_global_config(config: AppConfig) -> Iterator[None]:
     with preserved_global_config():
         set_global_config(config)
         yield
-
-
-@dataclass(frozen=True)
-class WsgiResponse:
-    status: str
-    headers: dict[str, str]
-    body: bytes
 
 
 @dataclass(frozen=True)
@@ -131,45 +143,3 @@ def temporary_database(
         if seeded:
             database.seed()
         yield database
-
-
-def call_wsgi_application(
-    application: Callable[..., Iterator[bytes]],
-    *,
-    method: str,
-    path: str,
-    body: bytes = b"",
-    query_string: str = "",
-    content_type: str = "application/json",
-) -> WsgiResponse:
-    """Call a WSGI application and collect its observable HTTP response."""
-
-    status_headers: dict[str, object] = {}
-
-    def start_response(status: str, headers: list[tuple[str, str]]) -> None:
-        status_headers["status"] = status
-        status_headers["headers"] = headers
-
-    response_iterable = application(
-        {
-            "REQUEST_METHOD": method,
-            "PATH_INFO": path,
-            "QUERY_STRING": query_string,
-            "CONTENT_LENGTH": str(len(body)),
-            "CONTENT_TYPE": content_type,
-            "wsgi.input": BytesIO(body),
-        },
-        start_response,
-    )
-    try:
-        response_body = b"".join(response_iterable)
-    finally:
-        close = getattr(response_iterable, "close", None)
-        if close is not None:
-            close()
-
-    return WsgiResponse(
-        status=str(status_headers["status"]),
-        headers=dict(cast(list[tuple[str, str]], status_headers["headers"])),
-        body=response_body,
-    )

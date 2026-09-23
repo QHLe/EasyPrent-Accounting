@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { useLinkedDocuments, OwnerType } from './useLinkedDocuments';
 import { useGlobalMessages } from '../../app/AppShell';
+import { useDeleteActions } from '../../hooks/useDeleteActions';
 
 interface Props {
   ownerType: OwnerType;
@@ -10,6 +11,7 @@ interface Props {
 export function LinkedDocumentsPanel({ ownerType, ownerId }: Props) {
   const { documents, isLoading, error, addDocuments, deleteDocument, downloadDocumentUrl } = useLinkedDocuments(ownerType, ownerId);
   const { showMessage } = useGlobalMessages();
+  const showDeleteActions = useDeleteActions();
   
   const [isUploading, setIsUploading] = useState(false);
   const [manualId, setManualId] = useState('');
@@ -101,9 +103,9 @@ export function LinkedDocumentsPanel({ ownerType, ownerId }: Props) {
                   ({doc.upload_status})
                 </span>
               </div>
-              <button onClick={() => handleDelete(doc.id)} className="button button-small button-outline">
+              {showDeleteActions && <button onClick={() => handleDelete(doc.id)} className="button button-small button-outline">
                 Löschen
-              </button>
+              </button>}
             </li>
           ))}
         </ul>

@@ -9,11 +9,13 @@ rollback.
 from __future__ import annotations
 
 import argparse
+from contextlib import closing
 import json
 import os
 import pwd
 import re
 import shlex
+import sqlite3
 import stat
 import subprocess
 import tempfile
@@ -34,7 +36,7 @@ CommandRunner = Callable[[list[str]], int]
 HealthProbe = Callable[[], bool]
 Sleeper = Callable[[float], None]
 
-HEALTH_URL = "http://127.0.0.1:8020/api/health"
+HEALTH_URL = "http://127.0.0.1:8020/api/v1/health"
 HEALTH_ATTEMPTS = 21
 HEALTH_RETRY_SECONDS = 0.25
 HEALTH_STABILITY_SECONDS = 1.0
@@ -76,6 +78,8 @@ def render_systemd_unit(project_root: Path, runtime_user: str) -> str:
         raise ValueError("project_root must be an absolute path")
     if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_-]{0,30}", runtime_user):
         raise ValueError("runtime_user must be a portable Unix account name")
+    if runtime_user == "root":
+        raise ValueError("runtime_user must be an unprivileged Unix account")
 
     python = project_root / ".venv" / "bin" / "python"
     return (
@@ -90,10 +94,11 @@ def render_systemd_unit(project_root: Path, runtime_user: str) -> str:
         # systemd rejects quotes and backslashes in the *executable* token,
         # even when correctly quoted. env execs the venv Python from argv,
         # where the full quoted path can contain those literal characters.
-        f"ExecStart=/usr/bin/env -- {_systemd_string(str(python), command=True)} -m easyprent_accounting.server\n"
+        f"ExecStart=/usr/bin/env -- {_systemd_string(str(python), command=True)} -m uvicorn easyprent_accounting.asgi:app --host 127.0.0.1 --port 8020\n"
         "Restart=on-failure\n"
         "RestartSec=5\n"
         "Environment=PYTHONUNBUFFERED=1\n"
+        f"Environment={_systemd_string('EASYPRENT_PROJECT_ROOT=' + str(project_root))}\n"
         "\n"
         "[Install]\n"
         "WantedBy=multi-user.target\n"
@@ -302,6 +307,8 @@ def validate_systemd_unit(
         account = pwd.getpwnam(runtime_user)
     except KeyError as exc:
         raise ValueError(f"runtime user does not exist: {runtime_user}") from exc
+    if account.pw_uid == 0:
+        raise ValueError("runtime user must be unprivileged")
     python = project_root / ".venv" / "bin" / "python"
     if not python.is_file() or not os.access(python, os.X_OK):
         raise ValueError(f"runtime Python is not executable: {python}")
@@ -314,6 +321,78 @@ def validate_systemd_unit(
         candidate.write_text(rendered, encoding="utf-8")
         _checked(run_command, ["systemd-analyze", "verify", str(candidate)])
 
+
+
+def preflight_database(database: Path, *, report_path: Path | None = None) -> dict[str, object]:
+    """Inspect the configured database without activating or altering it.
+
+    A recognized Legacy database receives the same complete migration dry run
+    as the public CLI. The dry run retains its dated verified backup and report.
+    """
+    from .legacy_schema import SUPPORTED_LEGACY_FINGERPRINTS, schema_fingerprint
+    from .migration import migrate_database
+    from .runtime_schema import MIGRATIONS
+    from .schema_runner import MigrationError, run_migrations, schema_version
+    from .schema_v1 import EXPECTED_SCHEMA_FINGERPRINT
+
+    database = Path(database).expanduser().absolute()
+    if not database.exists():
+        if database.is_symlink():
+            raise ValueError(f"database path is a broken symlink: {database}")
+        if not database.parent.is_dir():
+            raise ValueError(f"database directory does not exist: {database.parent}")
+        return {"database_state": "new", "database": str(database)}
+    if not database.is_file() or database.is_symlink():
+        raise ValueError(f"database must be a regular file: {database}")
+
+    try:
+        with closing(sqlite3.connect(database.resolve().as_uri() + "?mode=ro", uri=True)) as connection:
+            fingerprint = schema_fingerprint(connection)
+            if fingerprint in SUPPORTED_LEGACY_FINGERPRINTS:
+                state = "legacy"
+            else:
+                try:
+                    version = schema_version(connection)
+                except MigrationError as exc:
+                    raise ValueError(
+                        f"unrecognized database schema at {database}; no installation changes made"
+                    ) from exc
+                if version == 0:
+                    state = "new"
+                elif version == 1:
+                    if version != len(MIGRATIONS):
+                        raise ValueError(f"unsupported database schema version {version} at {database}")
+                    try:
+                        # A current v1 ledger has no pending migrations, so this
+                        # validates the same recorded history as runtime without writing.
+                        run_migrations(connection, MIGRATIONS)
+                    except MigrationError as exc:
+                        raise ValueError(
+                            f"incompatible database migration history at {database}: {exc}"
+                        ) from exc
+                    if fingerprint != EXPECTED_SCHEMA_FINGERPRINT:
+                        raise ValueError(f"unexpected schema v1 layout at {database}")
+                    if connection.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+                        raise ValueError(f"SQLite integrity check failed: {database}")
+                    if connection.execute("PRAGMA foreign_key_check").fetchone() is not None:
+                        raise ValueError(f"SQLite foreign key check failed: {database}")
+                    state = "v1"
+                else:
+                    raise ValueError(
+                        f"unsupported database schema version {version} at {database}"
+                    )
+    except sqlite3.DatabaseError as exc:
+        raise ValueError(f"database cannot be inspected: {database}: {exc}") from exc
+
+    if state == "legacy":
+        outcome = migrate_database(database, cutover=False, report_path=report_path)
+        return {
+            "database_state": state,
+            "database": str(database),
+            "migration_report": str(outcome.report_path),
+            "backup": str(outcome.backup_path),
+        }
+    return {"database_state": state, "database": str(database)}
 
 def _rollback(
     run_command: CommandRunner,
@@ -479,18 +558,34 @@ def deploy_systemd_unit(
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Small CLI for read-only preflight and privileged unit installation."""
+    """CLI for installation preflight and privileged unit activation."""
     parser = argparse.ArgumentParser(description="Validate or install the canonical EasyPrent systemd unit")
-    parser.add_argument("command", choices=("validate", "install"))
+    parser.add_argument("command", choices=("validate", "preflight", "install"))
     parser.add_argument("--project-root", type=Path, required=True)
     parser.add_argument("--runtime-user", required=True)
+    parser.add_argument("--database", type=Path)
+    parser.add_argument("--report", type=Path)
+    parser.add_argument("--require-ready", action="store_true")
     parser.add_argument("--preserve-inactive", action="store_true")
     args = parser.parse_args(argv)
+    if args.command != "install" and args.preserve_inactive:
+        parser.error("--preserve-inactive applies only to install")
+    if args.command != "preflight" and (args.database or args.report or args.require_ready):
+        parser.error("--database, --report, and --require-ready apply only to preflight")
     try:
         if args.command == "validate":
-            if args.preserve_inactive:
-                parser.error("--preserve-inactive applies only to install")
             validate_systemd_unit(args.project_root, args.runtime_user)
+        elif args.command == "preflight":
+            validate_systemd_unit(args.project_root, args.runtime_user)
+            database = args.database or args.project_root / "easyprent_accounting.db"
+            result = preflight_database(database, report_path=args.report)
+            print(json.dumps(result, sort_keys=True))
+            if args.require_ready and result["database_state"] == "legacy":
+                raise ValueError(
+                    "Legacy database requires explicit cutover before installation: "
+                    f"easyprent-accounting migrate --database {shlex.quote(str(database))} --cutover "
+                    f"(dry-run report: {result['migration_report']})"
+                )
         else:
             deploy_systemd_unit(
                 args.project_root,

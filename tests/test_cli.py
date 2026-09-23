@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from contextlib import chdir
+from contextlib import chdir, redirect_stderr
+from io import StringIO
 import os
 import tempfile
 import unittest
@@ -9,7 +10,7 @@ from unittest import mock
 
 from easyprent_accounting import cli
 from easyprent_accounting.config import get_global_config, load_config
-from tests.support import mocked_global_config
+from tests.support import mocked_global_config, temporary_database
 
 
 class EasyPrentCliTests(unittest.TestCase):
@@ -92,6 +93,37 @@ class EasyPrentCliTests(unittest.TestCase):
         )
         start_mock.assert_called_once_with({})
 
+
+    def test_start_aborts_legacy_database_before_spawning_server(self) -> None:
+        database = self.enterContext(temporary_database())
+        before = database.path.read_bytes()
+        config = load_config({
+            "EASYPRENT_PROJECT_ROOT": str(self.project_root),
+            "EASYPRENT_DB_PATH": str(database.path),
+        })
+        errors = StringIO()
+        with mocked_global_config(config):
+            with mock.patch.object(cli, "running_pid", return_value=None), \
+                 mock.patch.object(cli.subprocess, "Popen") as popen, \
+                 redirect_stderr(errors):
+                self.assertEqual(cli.start_server({}), 1)
+        popen.assert_not_called()
+        self.assertEqual(database.path.read_bytes(), before)
+        self.assertIn("migrate --database", errors.getvalue())
+
+    def test_restart_preserves_running_server_when_database_is_legacy(self) -> None:
+        database = self.enterContext(temporary_database())
+        config = load_config({
+            "EASYPRENT_PROJECT_ROOT": str(self.project_root),
+            "EASYPRENT_DB_PATH": str(database.path),
+        })
+        with mocked_global_config(config):
+            with mock.patch.object(cli, "stop_server") as stop, \
+                 mock.patch.object(cli, "start_server") as start, \
+                 redirect_stderr(StringIO()):
+                self.assertEqual(cli.restart_server({}), 1)
+        stop.assert_not_called()
+        start.assert_not_called()
 
     def test_stop_server_removes_stale_pid_file(self) -> None:
         self.runtime_dir.mkdir()
